@@ -32,6 +32,7 @@ router.get('/public', async (_req: Request, res: Response): Promise<void> => {
       nom, tel, adresse, email, ouverture, fermeture,
       dieteticienNom, dieteticienTitre, dieteticienBio, dieteticienExperience, dieteticienCredentials, dieteticienPhoto,
     } = settings;
+    res.set('Cache-Control', 'no-store');
     res.json({ success: true, data: {
       zonesLivraison, creneauxLivraison, etapesConsultation, etapesAbonnement,
       nom, tel, adresse, email, ouverture, fermeture,

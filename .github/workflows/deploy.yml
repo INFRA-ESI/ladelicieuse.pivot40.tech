@@ -5,17 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Requires CI to pass before deploying
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy to production
+    name: Deploy to production (VPS)
     runs-on: ubuntu-latest
     environment: production
-    needs: []   # Add: [frontend, backend] from ci.yml once workflows are in separate files
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +23,7 @@ jobs:
           node-version: 20
           cache: npm
 
-      # ── Build frontend ──────────────────────────────────────────────────────
+      # ── Build frontend (avec les secrets GitHub) ────────────────────────────
       - name: Install frontend dependencies
         run: npm ci
 
@@ -33,50 +31,37 @@ jobs:
         run: npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          # Add other VITE_* secrets here
+          VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
 
-      # ── Build backend ───────────────────────────────────────────────────────
-      - name: Install backend dependencies
-        run: npm ci
-        working-directory: backend
+      # ── Copier le dist/ sur le VPS ──────────────────────────────────────────
+      - name: Sync frontend dist to VPS
+        uses: burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -avzr --delete
+          path: dist/
+          remote_path: /var/www/ladelicieuse/dist/
+          remote_host: ${{ secrets.VPS_HOST }}
+          remote_user: ${{ secrets.VPS_USER }}
+          remote_key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Build backend
-        run: npm run build
-        working-directory: backend
+      # ── Backend : git pull + build + PM2 restart ────────────────────────────
+      - name: Deploy backend via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/ladelicieuse
 
-      # ── Deploy ──────────────────────────────────────────────────────────────
-      # Uncomment and adapt one of the sections below for your hosting provider.
+            git pull origin main
 
-      # --- Option A: Render (via Deploy Hook) ---
-      # - name: Trigger Render deploy
-      #   run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+            cd backend
+            npm ci --omit=dev
+            npm run build
 
-      # --- Option B: Railway ---
-      # - name: Deploy to Railway
-      #   uses: bervProject/railway-deploy@main
-      #   with:
-      #     railway_token: ${{ secrets.RAILWAY_TOKEN }}
-      #     service: ${{ secrets.RAILWAY_SERVICE_ID }}
+            pm2 restart ladelicieuse-api || pm2 start dist/index.js --name ladelicieuse-api
+            pm2 save
 
-      # --- Option C: VPS via SSH + rsync ---
-      # - name: Deploy to VPS
-      #   uses: appleboy/ssh-action@v1
-      #   with:
-      #     host: ${{ secrets.VPS_HOST }}
-      #     username: ${{ secrets.VPS_USER }}
-      #     key: ${{ secrets.VPS_SSH_KEY }}
-      #     script: |
-      #       cd /var/www/ladelicieuse
-      #       git pull origin main
-      #       cd backend && npm ci --omit=dev && npm run build && pm2 restart ladelicieuse-api
-      #       cd .. && npm ci --omit=dev && npm run build
-
-      # --- Option D: Docker + GHCR ---
-      # - name: Build and push Docker image
-      #   uses: docker/build-push-action@v5
-      #   with:
-      #     push: true
-      #     tags: ghcr.io/${{ github.repository }}:latest
-
-      - name: Deployment complete
-        run: echo "Deploy step — configure your hosting provider above."
+            echo "Deployment complete"
