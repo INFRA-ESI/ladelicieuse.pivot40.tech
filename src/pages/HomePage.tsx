@@ -272,7 +272,13 @@ export default function HomePage() {
             className="grid md:grid-cols-12 gap-8 md:gap-16 items-center"
           >
             <div className="md:col-span-5">
-              <img src={prepImage} alt="Préparation artisanale" className="w-full aspect-[4/3] object-cover rounded-xl" />
+              <img
+                src={prepImage}
+                alt="Chef coupant des légumes frais sur une planche en bois"
+                className="w-full aspect-[4/3] object-cover object-top rounded-xl"
+                loading="lazy"
+                decoding="async"
+              />
             </div>
             <div className="md:col-span-7">
               <h2 className="font-display text-3xl md:text-5xl text-foreground mb-6 leading-tight">
