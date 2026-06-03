@@ -31,6 +31,9 @@ test-results/
 bun.lock
 bun.lockb
 
+# ── Uploads utilisateurs ─────────────────────────────────────────────────────
+backend/public/uploads/
+
 # ── OS / Editor ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
