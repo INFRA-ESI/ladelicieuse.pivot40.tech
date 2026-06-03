@@ -4,8 +4,8 @@ import { formatFCFA, normalizeGabonPhoneNumber, validateGabonPhoneNumber } from 
 // ── formatFCFA ────────────────────────────────────────────────────────────────
 describe('formatFCFA', () => {
   it('formate un montant entier', () => {
-    // Intl.NumberFormat('fr-FR') utilise un espace insécable étroit   comme séparateur
-    expect(formatFCFA(5000)).toBe('5 000 FCFA');
+    // Intl.NumberFormat('fr-FR') utilise un espace insécable étroit   comme séparateur
+    expect(formatFCFA(5000)).toBe('5 000 FCFA');
   });
 
   it('formate zéro', () => {

@@ -449,7 +449,7 @@ function MobileForm({
         label="Numéro de téléphone"
         type="tel"
         value={phone}
-        onChange={v => setPhone(v.replace(/[^\d\s+\-]/g, ''))}
+        onChange={v => setPhone(v.replace(/[^\d\s+-]/g, ''))}
         placeholder={placeholder}
         disabled={loading || disabled}
       />

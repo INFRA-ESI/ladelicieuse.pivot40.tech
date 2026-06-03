@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, Clock, AlertCircle, ChevronDown, Phone, MapPin, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { orderService } from '@/services/orderService';
-import { Order, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_ICONS } from '@/types/order';
+import { Order, OrderStatus, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, PRIORITY_LABELS, PRIORITY_ICONS } from '@/types/order';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -68,7 +68,7 @@ export default function OrdersPageEnhanced() {
     const success = await orderService.updateOrderStatus(orderId, newStatus);
     if (success) {
       toast.success('Statut mis à jour');
-      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o));
+      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus as OrderStatus } : o));
     } else {
       toast.error('Erreur lors de la mise à jour');
     }
@@ -166,7 +166,7 @@ export default function OrdersPageEnhanced() {
                 variant={statusFilter === status ? 'default' : 'outline'}
                 onClick={() => setStatusFilter(status)}
               >
-                {ORDER_STATUS_LABELS[status as any]}
+                {ORDER_STATUS_LABELS[status as OrderStatus]}
               </Button>
             ))}
           </div>

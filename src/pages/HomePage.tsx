@@ -241,7 +241,6 @@ export default function HomePage() {
                   <X className="w-8 h-8" />
                 </button>
                 <div className="aspect-video rounded-xl overflow-hidden shadow-2xl bg-black">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                   <video
                     src={videoUrl}
                     autoPlay

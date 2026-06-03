@@ -717,7 +717,7 @@ export default function PromotionsPage() {
   const filteredMembers = useMemo(() => {
     const tierOrder: Record<string, number> = {};
     sortedTiers.forEach((t, i) => { tierOrder[t.slug] = i; });
-    let list = members.filter(m =>
+    const list = members.filter(m =>
       m.nom.toLowerCase().includes(searchMembers.toLowerCase()) &&
       (tierFilter === 'all' || m.tier === tierFilter)
     );
