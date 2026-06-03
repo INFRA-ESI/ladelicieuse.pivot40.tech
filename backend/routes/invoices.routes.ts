@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import Invoice from '../models/Invoice.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { verifyJWT } from './auth.routes.js';
+import { sendInvoiceEmail } from '../services/email.service.js';
 
 const router = Router();
 
@@ -179,6 +180,33 @@ router.patch('/:id', verifyJWT, async (req: Request, res: Response): Promise<voi
     res.json({ success: true, data: invoice });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur modification', error: (error as Error).message });
+  }
+});
+
+// ── POST /api/invoices/:id/send — Envoi par email au client ──────────────────
+router.post('/:id/send', verifyJWT, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const invoice = await Invoice.findById(req.params.id).lean();
+    if (!invoice) { res.status(404).json({ success: false, message: 'Facture introuvable' }); return; }
+    if (!invoice.email) { res.status(400).json({ success: false, message: 'Aucun email client pour cette facture' }); return; }
+
+    await sendInvoiceEmail(invoice.email, {
+      numero:       invoice.numero,
+      client:       invoice.client,
+      items:        (invoice.items as Array<{ nom: string; qty: number; prixUnit: number }>),
+      totalHT:      invoice.totalHT,
+      tva:          invoice.tva,
+      totalTTC:     invoice.totalTTC,
+      modePaiement: invoice.modePaiement,
+      statut:       invoice.statut as 'payee' | 'en_attente' | 'annulee' | 'remboursee',
+      createdAt:    (invoice.createdAt as Date).toISOString(),
+      notes:        invoice.notes,
+    });
+
+    await logAction(`Facture ${invoice.numero} envoyée par email à ${invoice.email}`, 'facture', 'Admin');
+    res.json({ success: true, message: `Facture envoyée à ${invoice.email}` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur envoi email', error: (error as Error).message });
   }
 });
 

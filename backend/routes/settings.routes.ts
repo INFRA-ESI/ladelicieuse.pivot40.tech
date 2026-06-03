@@ -31,12 +31,14 @@ router.get('/public', async (_req: Request, res: Response): Promise<void> => {
       zonesLivraison, creneauxLivraison, etapesConsultation, etapesAbonnement,
       nom, tel, adresse, email, ouverture, fermeture,
       dieteticienNom, dieteticienTitre, dieteticienBio, dieteticienExperience, dieteticienCredentials, dieteticienPhoto,
+      videoPresentation,
     } = settings;
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, data: {
       zonesLivraison, creneauxLivraison, etapesConsultation, etapesAbonnement,
       nom, tel, adresse, email, ouverture, fermeture,
       dieteticienNom, dieteticienTitre, dieteticienBio, dieteticienExperience, dieteticienCredentials, dieteticienPhoto,
+      videoPresentation,
     } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });

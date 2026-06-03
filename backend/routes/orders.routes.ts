@@ -127,6 +127,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const MODES_PAIEMENT  = ['mobile_money', 'carte', 'especes'];
     const STATUTS_VALIDES = ['en_attente', 'confirmee'];
 
+    // Validate datelivraison format (YYYY-MM-DD) if provided
+    let datelivraison: string | undefined;
+    if (body.datelivraison && typeof body.datelivraison === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(body.datelivraison)) {
+        datelivraison = body.datelivraison;
+      }
+    }
+
     const order = new Order({
       client: {
         nom:       String(client.nom).trim().slice(0, 100),
@@ -144,14 +152,16 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           ? (i.customizations as unknown[]).map(String).slice(0, 20)
           : [],
       })),
-      statut:       STATUTS_VALIDES.includes(String(body.statut)) ? String(body.statut) : 'en_attente',
-      priorite:     'normale',
-      modeCommande: MODES_COMMANDE.includes(String(body.modeCommande)) ? String(body.modeCommande) : 'livraison',
-      modePaiement: MODES_PAIEMENT.includes(String(body.modePaiement)) ? String(body.modePaiement) : 'especes',
+      statut:           STATUTS_VALIDES.includes(String(body.statut)) ? String(body.statut) : 'en_attente',
+      priorite:         'normale',
+      modeCommande:     MODES_COMMANDE.includes(String(body.modeCommande)) ? String(body.modeCommande) : 'livraison',
+      modePaiement:     MODES_PAIEMENT.includes(String(body.modePaiement)) ? String(body.modePaiement) : 'especes',
       sousTotal,
       fraisLivraison,
       total,
-      notes: body.notes ? String(body.notes).trim().slice(0, 500) : '',
+      datelivraison:    datelivraison ?? null,
+      creneauLivraison: body.creneauLivraison ? String(body.creneauLivraison).trim().slice(0, 10) : null,
+      notes:            body.notes ? String(body.notes).trim().slice(0, 500) : '',
     });
     await order.save();
     await logAction(`Commande ${order.numero} créée`, 'commande', String(client.nom).trim());

@@ -47,6 +47,8 @@ export interface IOrder extends Document {
   sousTotal: number;
   fraisLivraison: number;
   total: number;
+  datelivraison?: string;
+  creneauLivraison?: string;
   notes: string;
   historique: IOrderEvent[];
   anomalie?: {
@@ -96,10 +98,12 @@ const OrderSchema = new Schema<IOrder>(
     priorite:      { type: String, enum: ['normale','haute','urgente'], default: 'normale' },
     modeCommande:  { type: String, enum: ['livraison','sur_place','emporter'], default: 'livraison' },
     modePaiement:  { type: String, enum: ['mobile_money','carte','especes'], default: 'especes' },
-    sousTotal:     { type: Number, required: true, min: 0 },
-    fraisLivraison:{ type: Number, default: 0, min: 0 },
-    total:         { type: Number, required: true, min: 0 },
-    notes:         { type: String, default: '' },
+    sousTotal:        { type: Number, required: true, min: 0 },
+    fraisLivraison:   { type: Number, default: 0, min: 0 },
+    total:            { type: Number, required: true, min: 0 },
+    datelivraison:    { type: String, default: null },
+    creneauLivraison: { type: String, default: null },
+    notes:            { type: String, default: '' },
     historique:    { type: [OrderEventSchema], default: [] },
     anomalie: {
       type:    { type: String, enum: ['annulation','remboursement'] },

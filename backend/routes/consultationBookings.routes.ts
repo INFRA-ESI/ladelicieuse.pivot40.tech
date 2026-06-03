@@ -33,6 +33,18 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Anti-double réservation : même date + même créneau déjà pris
+    const dateStr = bookingDate.toISOString().split('T')[0];
+    const conflict = await ConsultationBooking.findOne({
+      date:    { $gte: new Date(dateStr), $lt: new Date(dateStr + 'T23:59:59') },
+      creneau: String(creneau),
+      statut:  { $nin: ['annule'] },
+    }).lean();
+    if (conflict) {
+      res.status(409).json({ success: false, message: 'Ce créneau est déjà réservé. Veuillez choisir un autre horaire.' });
+      return;
+    }
+
     const booking = await ConsultationBooking.create({
       userId:         userId ? new Types.ObjectId(String(userId)) : undefined,
       userNom:        String(userNom).slice(0, 100),

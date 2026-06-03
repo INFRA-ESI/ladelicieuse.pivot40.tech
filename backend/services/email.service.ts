@@ -531,7 +531,204 @@ export async function sendPasswordResetEmail(to: string, nom: string, token: str
   });
 }
 
-// ── 5. Confirmation de commande (NOUVEAU) ─────────────────────────────────────
+// ── 5. Envoi de facture client ────────────────────────────────────────────────
+
+export interface InvoiceEmailData {
+  numero:       string;
+  client:       string;
+  items:        { nom: string; qty: number; prixUnit: number }[];
+  totalHT:      number;
+  tva:          number;
+  totalTTC:     number;
+  modePaiement: string;
+  statut:       'payee' | 'en_attente' | 'annulee' | 'remboursee';
+  createdAt:    string;
+  notes?:       string;
+}
+
+const INVOICE_STATUT: Record<string, { label: string; bg: string; color: string }> = {
+  payee:      { label: 'Payée',      bg: '#d1fae5', color: '#065f46' },
+  en_attente: { label: 'En attente', bg: '#fef3c7', color: '#92400e' },
+  annulee:    { label: 'Annulée',    bg: '#fee2e2', color: '#991b1b' },
+  remboursee: { label: 'Remboursée', bg: '#ede9fe', color: '#5b21b6' },
+};
+
+export async function sendInvoiceEmail(to: string, invoice: InvoiceEmailData): Promise<void> {
+  const statut  = INVOICE_STATUT[invoice.statut] ?? INVOICE_STATUT['en_attente'];
+  const dateStr = new Date(invoice.createdAt).toLocaleDateString('fr-FR', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const itemRows = invoice.items.map(it => `
+    <tr style="border-bottom:1px solid ${C.muted};">
+      <td style="padding:10px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                 color:${C.textDark};line-height:1.4;">${it.nom}</td>
+      <td style="padding:10px 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                 color:${C.textMid};text-align:center;white-space:nowrap;">x&nbsp;${it.qty}</td>
+      <td style="padding:10px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                 color:${C.textMid};text-align:right;white-space:nowrap;">
+        ${fmt(it.prixUnit)}
+      </td>
+      <td style="padding:10px 0 10px 12px;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                 font-weight:700;color:${C.textDark};text-align:right;white-space:nowrap;">
+        ${fmt(it.prixUnit * it.qty)}
+      </td>
+    </tr>`).join('');
+
+  const rows = `
+    ${header('Votre facture')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+
+        <p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                  letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+          Bonjour
+        </p>
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:24px;
+                  font-weight:400;color:${C.textDark};">
+          ${invoice.client}
+        </p>
+        <p style="margin:0 0 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;
+                  line-height:1.9;color:${C.textMid};">
+          Veuillez trouver ci-dessous le détail de votre facture
+          <strong style="color:${C.textDark};">${invoice.numero}</strong>.
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:${C.dark};border-radius:4px;padding:20px 24px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td>
+                    <p style="margin:0 0 2px;font-family:Arial,Helvetica,sans-serif;font-size:9px;
+                              letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+                      Facture
+                    </p>
+                    <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:20px;
+                              font-weight:400;color:${C.white};">
+                      ${invoice.numero}
+                    </p>
+                  </td>
+                  <td style="text-align:right;vertical-align:top;">
+                    <span style="display:inline-block;background:${statut.bg};
+                                 color:${statut.color};padding:4px 12px;border-radius:20px;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                                 font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+                      ${statut.label}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:8px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                        color:${C.textLight};">${dateStr}</p>
+            </td>
+          </tr>
+        </table>
+
+        ${divider()}
+
+        <p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                  letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+          Détail de la facture
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0"
+               style="border-top:2px solid ${C.dark};">
+          <thead>
+            <tr style="background:${C.bg};">
+              <th style="padding:8px 0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                         letter-spacing:1px;text-transform:uppercase;color:${C.textLight};
+                         text-align:left;font-weight:400;">Article</th>
+              <th style="padding:8px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                         letter-spacing:1px;text-transform:uppercase;color:${C.textLight};
+                         text-align:center;font-weight:400;">Qté</th>
+              <th style="padding:8px 0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                         letter-spacing:1px;text-transform:uppercase;color:${C.textLight};
+                         text-align:right;font-weight:400;">P.U.</th>
+              <th style="padding:8px 0 8px 12px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                         letter-spacing:1px;text-transform:uppercase;color:${C.textLight};
+                         text-align:right;font-weight:400;">Total HT</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0"
+               style="margin-top:16px;border-top:1px solid ${C.muted};">
+          <tr>
+            <td style="padding:8px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                       color:${C.textMid};">Sous-total HT</td>
+            <td style="padding:8px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                       color:${C.textMid};text-align:right;">${fmt(invoice.totalHT)}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                       color:${C.textMid};">TVA (18 %)</td>
+            <td style="padding:4px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                       color:${C.textMid};text-align:right;">${fmt(invoice.tva)}</td>
+          </tr>
+          <tr style="border-top:2px solid ${C.dark};">
+            <td style="padding:12px 0 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;
+                       color:${C.textDark};">Total TTC</td>
+            <td style="padding:12px 0 0;font-family:Georgia,'Times New Roman',serif;font-size:18px;
+                       font-weight:700;color:${C.primary};text-align:right;">${fmt(invoice.totalTTC)}</td>
+          </tr>
+        </table>
+
+        ${divider()}
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="50%" style="padding:0 12px 0 0;vertical-align:top;">
+              <p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;font-size:9px;
+                        letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+                Mode de paiement
+              </p>
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                        color:${C.textMid};">
+                ${invoice.modePaiement}
+              </p>
+            </td>
+            <td width="50%" style="padding:0 0 0 12px;vertical-align:top;border-left:1px solid ${C.muted};">
+              <p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;font-size:9px;
+                        letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+                Statut
+              </p>
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                        color:${C.textMid};">
+                ${statut.label}
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        ${invoice.notes ? `
+        ${divider()}
+        <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:9px;
+                  letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">Notes</p>
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                  color:${C.textMid};font-style:italic;line-height:1.7;">${invoice.notes}</p>
+        ` : ''}
+
+        ${divider()}
+
+        ${alertBox('Des questions sur cette facture&nbsp;? Répondez à cet email ou contactez-nous directement. Nous traitons votre demande dans les meilleurs délais.', C.border)}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  const itemsText = invoice.items.map(it => `  - ${it.nom} x${it.qty}  ${fmt(it.prixUnit * it.qty)}`).join('\n');
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Facture ${invoice.numero} — La Délicieuse Diète`,
+    html:    wrapper(rows, `Facture ${invoice.numero} · Total TTC : ${fmt(invoice.totalTTC)}.`),
+    text:    `Bonjour ${invoice.client},\n\nVeuillez trouver ci-dessous le détail de votre facture ${invoice.numero}.\n\nArticles :\n${itemsText}\n\nSous-total HT : ${fmt(invoice.totalHT)}\nTVA (18%) : ${fmt(invoice.tva)}\nTotal TTC : ${fmt(invoice.totalTTC)}\n\nMode de paiement : ${invoice.modePaiement}\nStatut : ${statut.label}\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
+  });
+}
+
+// ── 6. Confirmation de commande ───────────────────────────────────────────────
 
 export interface OrderEmailData {
   numero:        string;
