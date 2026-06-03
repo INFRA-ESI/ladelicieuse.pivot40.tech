@@ -30,8 +30,6 @@ const TESTIMONIALS = [
   { name: 'Patrick O.',text: 'Enfin un restaurant qui allie santé et saveur à Libreville. Les repas sont top.',        rating: 4 },
 ];
 
-const VIDEO_ID = 'r_tzBQ_cah4';
-
 function promoLabel(p: ApiPromotion): string {
   if (p.type === 'pourcentage') return `-${p.valeur}%`;
   if (p.type === 'fixe')        return `-${new Intl.NumberFormat('fr-FR').format(p.valeur)} FCFA`;
@@ -44,6 +42,7 @@ export default function HomePage() {
   const [promotions, setPromotions]     = useState<ApiPromotion[]>([]);
   const [menuDuJour, setMenuDuJour]     = useState<ApiDailyMenu | null>(null);
   const [promoBanner, setPromoBanner]   = useState(true);
+  const [videoUrl, setVideoUrl]         = useState<string | null>(null);
 
   useEffect(() => {
     publicFetch<ApiPromotion[]>('/api/promotions/active').then(data => {
@@ -51,6 +50,9 @@ export default function HomePage() {
     });
     publicFetch<ApiDailyMenu>('/api/menu').then(data => {
       if (data) setMenuDuJour(data);
+    });
+    publicFetch<{ videoPresentation?: string }>('/api/settings/public').then(data => {
+      if (data?.videoPresentation) setVideoUrl(data.videoPresentation);
     });
   }, []);
 
@@ -177,66 +179,80 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Video Section */}
-      <section className="py-20 md:py-28 px-6 md:px-12 bg-background">
-        <div className="max-w-4xl mx-auto text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.7 }}
-          >
-            <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-4 block">Notre concept</span>
-            <h2 className="font-display text-3xl md:text-5xl text-foreground mb-6">
-              Comment ça se passe chez nous ?
-            </h2>
-            <p className="font-body text-muted-foreground text-lg mb-10 max-w-2xl mx-auto">
-              Découvrez comment nous préparons nos salades de fruits colorées — des produits frais,
-              choisis avec soin, assemblés avec amour à la façon africaine.
-            </p>
+      {/* Video Section — masquée si aucune vidéo configurée */}
+      {videoUrl && (
+        <>
+          <section className="py-20 md:py-28 px-6 md:px-12 bg-background">
+            <div className="max-w-4xl mx-auto text-center">
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7 }}
+              >
+                <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-4 block">Notre concept</span>
+                <h2 className="font-display text-3xl md:text-5xl text-foreground mb-6">
+                  Comment ça se passe chez nous ?
+                </h2>
+                <p className="font-body text-muted-foreground text-lg mb-10 max-w-2xl mx-auto">
+                  Découvrez comment nous préparons nos salades de fruits colorées — des produits frais,
+                  choisis avec soin, assemblés avec amour à la façon africaine.
+                </p>
 
-            <button
-              onClick={() => setVideoOpen(true)}
-              className="relative group mx-auto block w-full max-w-2xl overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-shadow"
-            >
-              <img
-                src={`https://img.youtube.com/vi/${VIDEO_ID}/maxresdefault.jpg`}
-                alt="Vidéo La Délicieuse Diète"
-                className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-700"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
-              />
-              <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-lg"
+                <button
+                  onClick={() => setVideoOpen(true)}
+                  className="relative group mx-auto block w-full max-w-2xl overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-shadow bg-black"
+                  aria-label="Lancer la vidéo de présentation"
                 >
-                  <Play className="w-8 h-8 text-primary fill-primary ml-1" />
-                </motion.div>
-              </div>
-            </button>
-          </motion.div>
-        </div>
-      </section>
-
-      {videoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-          <div className="relative w-full max-w-3xl">
-            <button onClick={() => setVideoOpen(false)} className="absolute -top-10 right-0 text-white/80 hover:text-white transition-colors" aria-label="Fermer">
-              <X className="w-8 h-8" />
-            </button>
-            <div className="aspect-video rounded-xl overflow-hidden shadow-2xl">
-              <iframe
-                src={`https://www.youtube.com/embed/${VIDEO_ID}?autoplay=1`}
-                title="La Délicieuse Diète — Présentation"
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+                  {/* Première image du fichier vidéo comme miniature naturelle */}
+                  <video
+                    src={videoUrl}
+                    preload="metadata"
+                    muted
+                    playsInline
+                    className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-700 pointer-events-none"
+                  />
+                  <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <motion.div
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-lg"
+                    >
+                      <Play className="w-8 h-8 text-primary fill-primary ml-1" />
+                    </motion.div>
+                  </div>
+                </button>
+              </motion.div>
             </div>
-          </div>
-        </div>
+          </section>
+
+          {videoOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
+              onClick={(e) => { if (e.target === e.currentTarget) setVideoOpen(false); }}
+            >
+              <div className="relative w-full max-w-3xl">
+                <button
+                  onClick={() => setVideoOpen(false)}
+                  className="absolute -top-10 right-0 text-white/80 hover:text-white transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="w-8 h-8" />
+                </button>
+                <div className="aspect-video rounded-xl overflow-hidden shadow-2xl bg-black">
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <video
+                    src={videoUrl}
+                    autoPlay
+                    controls
+                    className="w-full h-full"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Advantages strip */}

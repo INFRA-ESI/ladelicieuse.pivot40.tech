@@ -59,6 +59,17 @@ function getZoneInfo(
 
 // ─── Date / heure ─────────────────────────────────────────────────────────────
 
+// Retourne la date locale au format YYYY-MM-DD sans conversion UTC.
+// toISOString() convertit en UTC et peut retourner le jour précédent pour les
+// fuseaux UTC+ (ex: minuit local = 23h00 UTC J-1 en UTC+1 Gabon).
+function toLocalDateStr(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 function getNextDays(count = 5) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -66,7 +77,7 @@ function getNextDays(count = 5) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     return {
-      value: d.toISOString().split('T')[0],
+      value: toLocalDateStr(d),
       label: i === 0 ? "Aujourd'hui"
            : i === 1 ? 'Demain'
            : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }),
@@ -75,7 +86,7 @@ function getNextDays(count = 5) {
 }
 
 function isSlotAvailable(slot: string, selectedDate: string): boolean {
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDateStr(new Date());
   if (selectedDate !== today) return true;
   const hour = parseInt(slot.replace('h', ''), 10);
   const slotTime = new Date();
@@ -328,6 +339,8 @@ export default function CartPage() {
         sousTotal: totalPrice,
         fraisLivraison: _dFee,
         total: _total,
+        datelivraison:    _dMode === 'livraison' && _dDate ? _dDate : undefined,
+        creneauLivraison: _dMode === 'livraison' && _dTime ? _dTime : undefined,
         notes: '',
       }),
     }).catch(err => console.warn('[CartPage] Order save to DB failed:', err));

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 
@@ -45,8 +45,30 @@ const BOOKING_STATUTS: { value: string; label: string; cls: string }[] = [
   { value: 'annule',     label: 'Annulé',      cls: 'bg-red-50    text-red-700    border-red-200' },
 ];
 
+// ── Helpers calendrier ────────────────────────────────────────────────────────
+
+function getMondayOfWeek(d: Date): Date {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  return date;
+}
+
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+function toDateKey(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+const JOURS_FR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
 export default function ConsultationsAdminPage() {
-  const [tab, setTab] = useState<'consultations' | 'reservations'>('consultations');
+  const [tab, setTab] = useState<'consultations' | 'reservations' | 'calendrier'>('consultations');
 
   const [items, setItems]           = useState<Consultation[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -58,10 +80,11 @@ export default function ConsultationsAdminPage() {
   const [uploading, setUploading]   = useState(false);
   const fileInputRef                = useRef<HTMLInputElement>(null);
 
-  const [bookings, setBookings]         = useState<Booking[]>([]);
+  const [bookings, setBookings]             = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [expandedBooking, setExpandedBooking] = useState<string | null>(null);
-  const [planText, setPlanText]         = useState('');
+  const [planText, setPlanText]             = useState('');
+  const [calWeekStart, setCalWeekStart]     = useState<Date>(() => getMondayOfWeek(new Date()));
 
   useEffect(() => {
     let mounted = true;
@@ -72,8 +95,20 @@ export default function ConsultationsAdminPage() {
     return () => { mounted = false; };
   }, []);
 
+  // Données calendrier : groupées par date pour la semaine affichée
+  const calendarDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const day  = addDays(calWeekStart, i);
+      const key  = toDateKey(day);
+      const list = bookings
+        .filter(b => toDateKey(new Date(b.date)) === key)
+        .sort((a, b) => a.creneau.localeCompare(b.creneau));
+      return { day, key, list };
+    });
+  }, [calWeekStart, bookings]);
+
   useEffect(() => {
-    if (tab !== 'reservations' || bookings.length > 0) return;
+    if ((tab !== 'reservations' && tab !== 'calendrier') || bookings.length > 0) return;
     setBookingsLoading(true);
     adminGet<{ data: Booking[] }>('/consultation-bookings')
       .then(r => setBookings(r.data))
@@ -182,17 +217,98 @@ export default function ConsultationsAdminPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border">
-        {(['consultations', 'reservations'] as const).map(t => (
+      <div className="flex border-b border-border overflow-x-auto">
+        {(['consultations', 'reservations', 'calendrier'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`flex items-center gap-2 px-5 py-3 font-body text-sm border-b-2 transition-colors ${tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            className={`flex items-center gap-2 px-5 py-3 font-body text-sm border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
-            {t === 'reservations' ? <><CalendarDays className="w-4 h-4" /> Réservations</> : 'Offres'}
+            {t === 'reservations' ? <><CalendarDays className="w-4 h-4" />Réservations{bookings.length > 0 && <span className="bg-primary/10 text-primary text-xs px-1.5 py-0.5 rounded-full">{bookings.length}</span>}</> : t === 'calendrier' ? <><CalendarDays className="w-4 h-4" />Calendrier</> : 'Offres'}
           </button>
         ))}
       </div>
+
+      {/* ═══ CALENDRIER ══════════════════════════════════════════════════════════ */}
+      {tab === 'calendrier' && (
+        <div className="space-y-4">
+          {/* Navigation semaine */}
+          <div className="flex items-center justify-between bg-background border border-border rounded-xl px-4 py-3">
+            <button onClick={() => setCalWeekStart(d => addDays(d, -7))} className="p-2 hover:bg-muted rounded-lg transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="text-center">
+              <p className="font-body text-sm font-medium text-foreground">
+                Semaine du {calWeekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au{' '}
+                {addDays(calWeekStart, 6).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              {bookingsLoading && <p className="font-body text-xs text-muted-foreground">Chargement…</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCalWeekStart(getMondayOfWeek(new Date()))}
+                className="px-3 py-1.5 bg-muted rounded-lg font-body text-xs hover:bg-border transition-colors"
+              >
+                Aujourd'hui
+              </button>
+              <button onClick={() => setCalWeekStart(d => addDays(d, 7))} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Grille 7 jours */}
+          <div className="grid grid-cols-1 sm:grid-cols-7 gap-3">
+            {calendarDays.map(({ day, key, list }, dayIdx) => {
+              const isToday = toDateKey(new Date()) === key;
+              const isPast  = day < getMondayOfWeek(new Date()) && !isToday;
+              return (
+                <div
+                  key={key}
+                  className={`rounded-xl border min-h-[120px] ${isToday ? 'border-primary bg-primary/3' : 'border-border bg-background'} ${isPast ? 'opacity-60' : ''}`}
+                >
+                  {/* En-tête jour */}
+                  <div className={`px-3 py-2 border-b ${isToday ? 'border-primary/20' : 'border-border'}`}>
+                    <p className={`font-body text-xs uppercase tracking-wider ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {JOURS_FR[dayIdx]}
+                    </p>
+                    <p className={`font-display text-lg leading-tight ${isToday ? 'text-primary' : 'text-foreground'}`}>
+                      {day.getDate()}
+                    </p>
+                  </div>
+
+                  {/* Réservations du jour */}
+                  <div className="p-2 space-y-1.5">
+                    {list.length === 0 ? (
+                      <p className="font-body text-[11px] text-muted-foreground/50 text-center py-2 italic">Libre</p>
+                    ) : (
+                      list.map(b => {
+                        const s = BOOKING_STATUTS.find(x => x.value === b.statut) ?? BOOKING_STATUTS[0];
+                        return (
+                          <div key={b._id} className={`rounded-lg px-2 py-1.5 border text-[11px] font-body ${s.cls}`}>
+                            <p className="font-semibold leading-tight truncate">{b.creneau}</p>
+                            <p className="truncate opacity-80">{b.userPrenoms ? `${b.userPrenoms} ${b.userNom}` : b.userNom}</p>
+                            <p className="truncate opacity-70">{b.titre}</p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Légende statuts */}
+          <div className="flex flex-wrap gap-3 pt-1">
+            {BOOKING_STATUTS.map(s => (
+              <span key={s.value} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-body text-xs ${s.cls}`}>
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {tab === 'reservations' ? (
         bookingsLoading ? (
@@ -256,7 +372,7 @@ export default function ConsultationsAdminPage() {
       ) : loading ? (
         <div className="bg-background border border-border rounded-lg p-12 text-center font-body text-sm text-muted-foreground">Chargement...</div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map(c => (
             <div key={c._id} className={`bg-background border rounded-lg overflow-hidden flex flex-col gap-0 ${c.actif ? 'border-border' : 'border-border opacity-60'}`}>
               {c.image ? (

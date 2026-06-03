@@ -28,15 +28,26 @@ interface MealIngredient {
 
 interface Meal {
   _id: string;
-  date: string;
+  date: string | null;
   nom: string;
   categorie: 'Salade' | 'Jus & Détox' | 'Repas équilibré';
   description: string;
+  descriptionCourte?: string;
   prix: number;
+  prixPromo?: number | null;
   portions: number;
+  portion?: string;
+  tempsPrepMin?: number;
   image?: string;
   ingredients: Array<{ ingredientId: string; nom: string; quantite: number; unite: string }>;
   disponible: boolean;
+  bienfaits?: string[];
+  allergenes?: string[];
+  objectifsSante?: string[];
+  conseilsConsommation?: string[];
+  vedette?: boolean;
+  recommande?: boolean;
+  saisonnier?: boolean;
 }
 
 interface Nutrients { cal: number; prot: number; glu: number; lip: number; fib: number }
@@ -80,9 +91,31 @@ const mealToComposition = (meal: Meal): MealIngredient[] =>
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const ALLERGENS = [
+  { key: 'gluten', label: 'Gluten' }, { key: 'lait', label: 'Lait' },
+  { key: 'oeufs', label: 'Œufs' },   { key: 'arachides', label: 'Arachides' },
+  { key: 'soja', label: 'Soja' },    { key: 'noix', label: 'Fruits à coque' },
+  { key: 'poisson', label: 'Poisson' }, { key: 'crustaces', label: 'Crustacés' },
+  { key: 'sesame', label: 'Sésame' }, { key: 'sulfites', label: 'Sulfites' },
+];
+
+const HEALTH_GOALS = ['Détox', 'Minceur', 'Énergie', 'Sport', 'Bien-être', 'Digestion', 'Immunité', 'Rééquilibrage'];
+
 const EMPTY_FORM = {
   nom: '', categorie: 'Repas équilibré' as Meal['categorie'],
-  description: '', prix: '', portions: '1', image: '', composition: [] as MealIngredient[],
+  description: '', descriptionCourte: '',
+  prix: '', prixPromo: '',
+  portions: '1', portion: '', tempsPrepMin: '',
+  image: '',
+  composition: [] as MealIngredient[],
+  // Nutrition complémentaire (saisie manuelle)
+  sucres: '', sodium: '',
+  // Fiche produit
+  bienfaits: [] as string[],
+  allergenes: [] as string[],
+  objectifsSante: [] as string[],
+  conseilsConsommation: [] as string[],
+  vedette: false, recommande: false, saisonnier: false,
 };
 
 const CATEGORIES: Meal['categorie'][] = ['Salade', 'Jus & Détox', 'Repas équilibré'];
@@ -310,10 +343,26 @@ export default function MenuDayPage() {
 
   const openEdit = (meal: Meal) => {
     setForm({
-      nom: meal.nom, categorie: meal.categorie, description: meal.description,
-      prix: String(meal.prix), portions: String(meal.portions),
+      nom: meal.nom,
+      categorie: meal.categorie,
+      description: meal.description ?? '',
+      descriptionCourte: meal.descriptionCourte ?? '',
+      prix: String(meal.prix),
+      prixPromo: meal.prixPromo != null ? String(meal.prixPromo) : '',
+      portions: String(meal.portions),
+      portion: meal.portion ?? '',
+      tempsPrepMin: meal.tempsPrepMin != null ? String(meal.tempsPrepMin) : '',
       image: meal.image || '',
       composition: mealToComposition(meal),
+      sucres: '',
+      sodium: '',
+      bienfaits: meal.bienfaits ?? [],
+      allergenes: meal.allergenes ?? [],
+      objectifsSante: meal.objectifsSante ?? [],
+      conseilsConsommation: meal.conseilsConsommation ?? [],
+      vedette: meal.vedette ?? false,
+      recommande: meal.recommande ?? false,
+      saisonnier: meal.saisonnier ?? false,
     });
     if (meal.image) setImagePreview(meal.image);
     else setImagePreview('');
@@ -412,12 +461,23 @@ export default function MenuDayPage() {
       nom: form.nom.trim(),
       categorie: form.categorie,
       description: form.description,
+      descriptionCourte: form.descriptionCourte.trim(),
       prix: +form.prix,
+      prixPromo: form.prixPromo !== '' && +form.prixPromo > 0 ? +form.prixPromo : null,
       portions: Math.max(1, +form.portions || 1),
+      portion: form.portion.trim(),
+      tempsPrepMin: form.tempsPrepMin !== '' ? +form.tempsPrepMin : 0,
       image: form.image || '',
       ingredients,
       date: isCatalog ? null : date,
       disponible: true,
+      bienfaits: form.bienfaits.filter(Boolean),
+      allergenes: form.allergenes,
+      objectifsSante: form.objectifsSante,
+      conseilsConsommation: form.conseilsConsommation.filter(Boolean),
+      vedette: form.vedette,
+      recommande: form.recommande,
+      saisonnier: form.saisonnier,
     };
 
     setSaving(true);
@@ -719,18 +779,32 @@ export default function MenuDayPage() {
               <button onClick={resetForm} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border max-h-[80vh] overflow-y-auto">
+            <div className="max-h-[78vh] overflow-y-auto">
 
-              {/* Left */}
-              <div className="p-5 space-y-5 overflow-y-auto">
-                <div>
-                  <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Identification</p>
+              {/* ─ Section 1 : Composition (2 colonnes) ─ */}
+              <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+
+                {/* Left — Identification + sélecteur ingrédients */}
+                <div className="p-5 space-y-4">
+                  <p className="font-body text-xs uppercase tracking-wider text-primary">Identification</p>
                   <div className="space-y-3">
                     <div>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Nom du repas</label>
+                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Nom du repas *</label>
                       <input value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
                         placeholder="Ex: Poulet Grillé & Riz Basmati" type="text"
                         className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Description courte</label>
+                      <input value={form.descriptionCourte} onChange={e => setForm(f => ({ ...f, descriptionCourte: e.target.value }))}
+                        placeholder="Résumé en une phrase"
+                        className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Description complète</label>
+                      <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                        rows={2} placeholder="Ingrédients principaux, mode de cuisson…"
+                        className="w-full px-3 py-2 bg-muted border border-border rounded-md font-body text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -747,17 +821,33 @@ export default function MenuDayPage() {
                           className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                       </div>
                     </div>
-                    <div>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Description (optionnel)</label>
-                      <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                        rows={2} placeholder="Ingrédients principaux, mode de cuisson…"
-                        className="w-full px-3 py-2 bg-muted border border-border rounded-md font-body text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Prix (FCFA) *</label>
+                        <input value={form.prix} onChange={e => setForm(f => ({ ...f, prix: e.target.value }))}
+                          type="number" min="0" step="100" placeholder="3500"
+                          className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                      <div>
+                        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Prix promo</label>
+                        <input value={form.prixPromo} onChange={e => setForm(f => ({ ...f, prixPromo: e.target.value }))}
+                          type="number" min="0" step="100" placeholder="—"
+                          className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
                     </div>
-                    <div>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Prix (FCFA)</label>
-                      <input value={form.prix} onChange={e => setForm(f => ({ ...f, prix: e.target.value }))}
-                        type="number" min="0" step="100" placeholder="3500"
-                        className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Taille/portion</label>
+                        <input value={form.portion} onChange={e => setForm(f => ({ ...f, portion: e.target.value }))}
+                          placeholder="Ex: 350ml" type="text"
+                          className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                      <div>
+                        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Prépa (min)</label>
+                        <input value={form.tempsPrepMin} onChange={e => setForm(f => ({ ...f, tempsPrepMin: e.target.value }))}
+                          type="number" min="0" placeholder="5"
+                          className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
                     </div>
                     <div>
                       <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Photo du plat</label>
@@ -785,152 +875,270 @@ export default function MenuDayPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Ingredient picker */}
+                  <div>
+                    <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Ajouter des ingrédients</p>
+                    {loadingLib ? (
+                      <div className="flex items-center justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+                    ) : lib.length === 0 ? (
+                      <p className="font-body text-xs text-muted-foreground italic text-center py-4">Aucun ingrédient en base. Ajoutez-en depuis la page Ingrédients.</p>
+                    ) : (
+                      <>
+                        <div className="flex gap-2 mb-2">
+                          <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                            <input value={ingSearch} onChange={e => setIngSearch(e.target.value)}
+                              placeholder="Rechercher…"
+                              className="w-full h-8 pl-8 pr-3 bg-muted border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary" />
+                          </div>
+                          <select value={ingCat} onChange={e => setIngCat(e.target.value)}
+                            className="h-8 px-2 bg-muted border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary">
+                            {libCategories.map(c => <option key={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                          {filteredLib.map(ing => {
+                            const already = form.composition.some(mi => mi.ingredientId === ing.id);
+                            return (
+                              <button key={ing.id} onClick={() => addIngredient(ing.id)} disabled={already}
+                                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors ${already ? 'bg-muted/40 opacity-50 cursor-not-allowed' : 'bg-muted hover:bg-muted/70'}`}>
+                                <div>
+                                  <span className="font-body text-xs font-medium text-foreground">{ing.nom}</span>
+                                  <span className="font-body text-xs text-muted-foreground ml-2">{ing.categorie}</span>
+                                </div>
+                                <span className="font-body text-xs text-muted-foreground shrink-0">{ing.cal} kcal/100g</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Ingredient picker */}
-                <div>
-                  <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Ajouter des ingrédients</p>
-                  {loadingLib ? (
-                    <div className="flex items-center justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-                  ) : lib.length === 0 ? (
-                    <p className="font-body text-xs text-muted-foreground italic text-center py-4">Aucun ingrédient en base. Ajoutez-en depuis la page Ingrédients.</p>
-                  ) : (
-                    <>
-                      <div className="flex gap-2 mb-2">
-                        <div className="relative flex-1">
-                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                          <input value={ingSearch} onChange={e => setIngSearch(e.target.value)}
-                            placeholder="Rechercher…"
-                            className="w-full h-8 pl-8 pr-3 bg-muted border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <select value={ingCat} onChange={e => setIngCat(e.target.value)}
-                          className="h-8 px-2 bg-muted border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary">
-                          {libCategories.map(c => <option key={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                        {filteredLib.map(ing => {
-                          const already = form.composition.some(mi => mi.ingredientId === ing.id);
+                {/* Right — Composition + nutrition */}
+                <div className="p-5 space-y-5">
+                  <div>
+                    <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">
+                      Composition ({form.composition.length} ingrédient{form.composition.length !== 1 ? 's' : ''})
+                    </p>
+                    {form.composition.length === 0 ? (
+                      <p className="font-body text-xs text-muted-foreground italic py-4 text-center">
+                        Sélectionnez des ingrédients dans la bibliothèque
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {form.composition.map((mi, idx) => {
+                          const ing = libMap.get(mi.ingredientId);
+                          if (!ing) return null;
+                          const calContrib = mi.grams > 0 ? Math.round(ing.cal * mi.grams / 100) : 0;
                           return (
-                            <button key={ing.id} onClick={() => addIngredient(ing.id)} disabled={already}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors ${already ? 'bg-muted/40 opacity-50 cursor-not-allowed' : 'bg-muted hover:bg-muted/70'}`}>
-                              <div>
-                                <span className="font-body text-xs font-medium text-foreground">{ing.nom}</span>
-                                <span className="font-body text-xs text-muted-foreground ml-2">{ing.categorie}</span>
+                            <div key={idx} className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+                              <GripVertical className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-body text-xs font-medium text-foreground truncate">{ing.nom}</p>
+                                <p className="font-body text-xs text-muted-foreground">{calContrib} kcal</p>
                               </div>
-                              <span className="font-body text-xs text-muted-foreground shrink-0">{ing.cal} kcal/100g</span>
-                            </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <input
+                                  type="number" min="1" max="2000" value={mi.grams}
+                                  onChange={e => updateGrams(idx, +e.target.value)}
+                                  className="w-16 h-7 px-2 text-center bg-background border border-border rounded font-body text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                                <span className="font-body text-xs text-muted-foreground">g</span>
+                                <button onClick={() => removeIngredient(idx)}
+                                  className="p-1 text-muted-foreground hover:text-destructive ml-1">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
-                    </>
-                  )}
+                    )}
+                  </div>
+
+                  {/* Live nutrition */}
+                  <div className="bg-muted/50 border border-border rounded-xl p-4">
+                    <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Aperçu nutritionnel</p>
+                    {form.composition.length === 0 ? (
+                      <p className="font-body text-xs text-muted-foreground italic text-center py-2">Ajoutez des ingrédients pour voir le calcul</p>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-center gap-2 mb-4 p-3 bg-primary/10 rounded-lg">
+                          <Flame className="w-5 h-5 text-primary" />
+                          <div className="text-center">
+                            <p className="font-display text-2xl text-primary">{Math.round(liveNutri.cal)}</p>
+                            <p className="font-body text-xs text-muted-foreground">kcal / portion</p>
+                          </div>
+                          {+form.portions > 1 && (
+                            <div className="text-center border-l border-border pl-3 ml-1">
+                              <p className="font-display text-lg text-foreground">{Math.round(liveTotalCal)}</p>
+                              <p className="font-body text-xs text-muted-foreground">kcal total ({form.portions}p)</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-blue-50 rounded-lg p-2.5">
+                            <p className="font-body text-xs text-blue-600 mb-0.5">Protéines</p>
+                            <p className="font-body text-sm font-semibold text-blue-700">{r(liveNutri.prot)} g</p>
+                          </div>
+                          <div className="bg-yellow-50 rounded-lg p-2.5">
+                            <p className="font-body text-xs text-yellow-600 mb-0.5">Glucides</p>
+                            <p className="font-body text-sm font-semibold text-yellow-700">{r(liveNutri.glu)} g</p>
+                          </div>
+                          <div className="bg-red-50 rounded-lg p-2.5">
+                            <p className="font-body text-xs text-red-600 mb-0.5">Lipides</p>
+                            <p className="font-body text-sm font-semibold text-red-700">{r(liveNutri.lip)} g</p>
+                          </div>
+                          <div className="bg-green-50 rounded-lg p-2.5">
+                            <p className="font-body text-xs text-green-600 mb-0.5">Fibres</p>
+                            <p className="font-body text-sm font-semibold text-green-700">{r(liveNutri.fib)} g</p>
+                          </div>
+                        </div>
+                        {(() => {
+                          const totalMacro = liveNutri.prot * 4 + liveNutri.glu * 4 + liveNutri.lip * 9;
+                          if (totalMacro <= 0) return null;
+                          const pPct = Math.round(liveNutri.prot * 4 / totalMacro * 100);
+                          const gPct = Math.round(liveNutri.glu  * 4 / totalMacro * 100);
+                          const lPct = 100 - pPct - gPct;
+                          return (
+                            <div className="mt-3">
+                              <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
+                                <div className="bg-blue-400 transition-all" style={{ width: `${pPct}%` }} />
+                                <div className="bg-yellow-400 transition-all" style={{ width: `${gPct}%` }} />
+                                <div className="bg-red-400 transition-all" style={{ width: `${lPct}%` }} />
+                              </div>
+                              <div className="flex justify-between font-body text-xs text-muted-foreground mt-1">
+                                <span className="text-blue-500">P {pPct}%</span>
+                                <span className="text-yellow-600">G {gPct}%</span>
+                                <span className="text-red-500">L {lPct}%</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Right */}
-              <div className="p-5 space-y-5 overflow-y-auto">
+              {/* ─ Section 2 : Fiche produit (pleine largeur) ─ */}
+              <div className="border-t border-border p-5 space-y-5">
+                <p className="font-body text-xs uppercase tracking-wider text-primary">Fiche produit</p>
+
+                {/* Bienfaits */}
                 <div>
-                  <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">
-                    Composition ({form.composition.length} ingrédient{form.composition.length !== 1 ? 's' : ''})
-                  </p>
-                  {form.composition.length === 0 ? (
-                    <p className="font-body text-xs text-muted-foreground italic py-4 text-center">
-                      Sélectionnez des ingrédients dans la bibliothèque
-                    </p>
-                  ) : (
-                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                      {form.composition.map((mi, idx) => {
-                        const ing = libMap.get(mi.ingredientId);
-                        if (!ing) return null;
-                        const calContrib = mi.grams > 0 ? Math.round(ing.cal * mi.grams / 100) : 0;
-                        return (
-                          <div key={idx} className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
-                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-body text-xs font-medium text-foreground truncate">{ing.nom}</p>
-                              <p className="font-body text-xs text-muted-foreground">{calContrib} kcal</p>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <input
-                                type="number" min="1" max="2000" value={mi.grams}
-                                onChange={e => updateGrams(idx, +e.target.value)}
-                                className="w-16 h-7 px-2 text-center bg-background border border-border rounded font-body text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-                              <span className="font-body text-xs text-muted-foreground">g</span>
-                              <button onClick={() => removeIngredient(idx)}
-                                className="p-1 text-muted-foreground hover:text-destructive ml-1">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Bienfaits</label>
+                  <div className="space-y-2">
+                    {form.bienfaits.map((b, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input value={b}
+                          onChange={e => { const n = [...form.bienfaits]; n[i] = e.target.value; setForm(f => ({ ...f, bienfaits: n })); }}
+                          placeholder="Ex: Renforce l'immunité"
+                          className="flex-1 h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        <button onClick={() => setForm(f => ({ ...f, bienfaits: f.bienfaits.filter((_, j) => j !== i) }))}
+                          className="p-2 hover:bg-destructive/10 rounded-md transition-colors">
+                          <X className="w-3.5 h-3.5 text-destructive" />
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={() => setForm(f => ({ ...f, bienfaits: [...f.bienfaits, ''] }))}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-border rounded-md font-body text-xs hover:bg-border transition-colors">
+                      <Plus className="w-3 h-3" /> Ajouter un bienfait
+                    </button>
+                  </div>
                 </div>
 
-                {/* Live nutrition preview */}
-                <div className="bg-muted/50 border border-border rounded-xl p-4">
-                  <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Aperçu nutritionnel</p>
-                  {form.composition.length === 0 ? (
-                    <p className="font-body text-xs text-muted-foreground italic text-center py-2">Ajoutez des ingrédients pour voir le calcul</p>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-center gap-2 mb-4 p-3 bg-primary/10 rounded-lg">
-                        <Flame className="w-5 h-5 text-primary" />
-                        <div className="text-center">
-                          <p className="font-display text-2xl text-primary">{Math.round(liveNutri.cal)}</p>
-                          <p className="font-body text-xs text-muted-foreground">kcal / portion</p>
-                        </div>
-                        {+form.portions > 1 && (
-                          <div className="text-center border-l border-border pl-3 ml-1">
-                            <p className="font-display text-lg text-foreground">{Math.round(liveTotalCal)}</p>
-                            <p className="font-body text-xs text-muted-foreground">kcal total ({form.portions}p)</p>
-                          </div>
-                        )}
+                {/* Allergènes */}
+                <div>
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Allergènes</label>
+                  <div className="flex flex-wrap gap-2">
+                    {ALLERGENS.map(a => (
+                      <button key={a.key} type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          allergenes: f.allergenes.includes(a.key)
+                            ? f.allergenes.filter(x => x !== a.key)
+                            : [...f.allergenes, a.key],
+                        }))}
+                        className={`px-3 py-1.5 rounded-full border font-body text-xs transition-colors ${
+                          form.allergenes.includes(a.key)
+                            ? 'bg-amber-50 border-amber-400 text-amber-800'
+                            : 'border-border text-muted-foreground hover:border-amber-300'
+                        }`}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Objectifs santé */}
+                <div>
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Objectifs santé</label>
+                  <div className="flex flex-wrap gap-2">
+                    {HEALTH_GOALS.map(g => (
+                      <button key={g} type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          objectifsSante: f.objectifsSante.includes(g)
+                            ? f.objectifsSante.filter(x => x !== g)
+                            : [...f.objectifsSante, g],
+                        }))}
+                        className={`px-3 py-1.5 rounded-full border font-body text-xs transition-colors ${
+                          form.objectifsSante.includes(g)
+                            ? 'bg-primary/10 border-primary text-primary'
+                            : 'border-border text-muted-foreground hover:border-primary/40'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conseils de consommation */}
+                <div>
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Conseils de consommation</label>
+                  <div className="space-y-2">
+                    {form.conseilsConsommation.map((c, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input value={c}
+                          onChange={e => { const n = [...form.conseilsConsommation]; n[i] = e.target.value; setForm(f => ({ ...f, conseilsConsommation: n })); }}
+                          placeholder="Ex: À consommer frais, idéal le matin"
+                          className="flex-1 h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        <button onClick={() => setForm(f => ({ ...f, conseilsConsommation: f.conseilsConsommation.filter((_, j) => j !== i) }))}
+                          className="p-2 hover:bg-destructive/10 rounded-md transition-colors">
+                          <X className="w-3.5 h-3.5 text-destructive" />
+                        </button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-blue-50 rounded-lg p-2.5">
-                          <p className="font-body text-xs text-blue-600 mb-0.5">Protéines</p>
-                          <p className="font-body text-sm font-semibold text-blue-700">{r(liveNutri.prot)} g</p>
-                        </div>
-                        <div className="bg-yellow-50 rounded-lg p-2.5">
-                          <p className="font-body text-xs text-yellow-600 mb-0.5">Glucides</p>
-                          <p className="font-body text-sm font-semibold text-yellow-700">{r(liveNutri.glu)} g</p>
-                        </div>
-                        <div className="bg-red-50 rounded-lg p-2.5">
-                          <p className="font-body text-xs text-red-600 mb-0.5">Lipides</p>
-                          <p className="font-body text-sm font-semibold text-red-700">{r(liveNutri.lip)} g</p>
-                        </div>
-                        <div className="bg-green-50 rounded-lg p-2.5">
-                          <p className="font-body text-xs text-green-600 mb-0.5">Fibres</p>
-                          <p className="font-body text-sm font-semibold text-green-700">{r(liveNutri.fib)} g</p>
-                        </div>
-                      </div>
-                      {(() => {
-                        const totalMacro = liveNutri.prot * 4 + liveNutri.glu * 4 + liveNutri.lip * 9;
-                        if (totalMacro <= 0) return null;
-                        const pPct = Math.round(liveNutri.prot * 4 / totalMacro * 100);
-                        const gPct = Math.round(liveNutri.glu  * 4 / totalMacro * 100);
-                        const lPct = 100 - pPct - gPct;
-                        return (
-                          <div className="mt-3">
-                            <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
-                              <div className="bg-blue-400 transition-all" style={{ width: `${pPct}%` }} />
-                              <div className="bg-yellow-400 transition-all" style={{ width: `${gPct}%` }} />
-                              <div className="bg-red-400 transition-all" style={{ width: `${lPct}%` }} />
-                            </div>
-                            <div className="flex justify-between font-body text-xs text-muted-foreground mt-1">
-                              <span className="text-blue-500">P {pPct}%</span>
-                              <span className="text-yellow-600">G {gPct}%</span>
-                              <span className="text-red-500">L {lPct}%</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  )}
+                    ))}
+                    <button onClick={() => setForm(f => ({ ...f, conseilsConsommation: [...f.conseilsConsommation, ''] }))}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-border rounded-md font-body text-xs hover:bg-border transition-colors">
+                      <Plus className="w-3 h-3" /> Ajouter un conseil
+                    </button>
+                  </div>
+                </div>
+
+                {/* Flags produit */}
+                <div>
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Mise en avant</label>
+                  <div className="flex flex-wrap gap-3">
+                    {([
+                      ['vedette',   'Produit vedette'],
+                      ['recommande','Recommandé'],
+                      ['saisonnier','Saisonnier'],
+                    ] as [keyof typeof form, string][]).map(([k, lbl]) => (
+                      <label key={k} className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={form[k] as boolean}
+                          onChange={e => setForm(f => ({ ...f, [k]: e.target.checked }))}
+                          className="w-4 h-4 rounded accent-primary" />
+                        <span className="font-body text-sm text-foreground">{lbl}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

@@ -9,6 +9,7 @@ import { FlyingIngredient } from '@/components/FlyingIngredient';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiMeal } from '@/types/api.types';
 import Footer from '@/components/Footer';
+import ProductSheetModal from '@/components/ProductSheetModal';
 
 function isJuice(cat: string) {
   const c = cat.toLowerCase();
@@ -51,6 +52,7 @@ export default function JuicesPage() {
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [juices, setJuices] = useState<JuiceProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sheetId, setSheetId] = useState<string | null>(null);
 
   useEffect(() => {
     publicFetch<ApiMeal[]>('/api/meals?catalog=true').then(data => {
@@ -133,7 +135,7 @@ export default function JuicesPage() {
 
                 <div className="grid md:grid-cols-3 gap-6">
                   {items.map((juice, i) => (
-                    <JuiceCard key={juice.id} juice={juice} onAdd={handleAdd} delay={i * 0.1} />
+                    <JuiceCard key={juice.id} juice={juice} onAdd={handleAdd} onSheet={() => setSheetId(juice.id)} delay={i * 0.1} />
                   ))}
                 </div>
               </div>
@@ -145,6 +147,7 @@ export default function JuicesPage() {
       {flyingItems.map(item => (
         <FlyingIngredient key={item.id} item={item} onComplete={removeFlyingItem} />
       ))}
+      <ProductSheetModal productId={sheetId} onClose={() => setSheetId(null)} />
       <Footer />
     </div>
   );
@@ -153,10 +156,12 @@ export default function JuicesPage() {
 function JuiceCard({
   juice,
   onAdd,
+  onSheet,
   delay,
 }: {
   juice: JuiceProduct;
   onAdd: (j: JuiceProduct, e: React.MouseEvent) => void;
+  onSheet: () => void;
   delay: number;
 }) {
   return (
@@ -196,12 +201,20 @@ function JuiceCard({
           <span className="font-body text-sm font-bold text-primary">{formatPrice(juice.price)}</span>
         </div>
 
-        <button
-          onClick={(e) => onAdd(juice, e)}
-          className="w-full font-body text-xs uppercase tracking-[0.15em] px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all rounded-lg"
-        >
-          Ajouter au panier
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={(e) => onAdd(juice, e)}
+            className="flex-1 font-body text-xs uppercase tracking-[0.15em] px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all rounded-lg"
+          >
+            Ajouter au panier
+          </button>
+          <button
+            onClick={onSheet}
+            className="flex-1 font-body text-xs uppercase tracking-[0.15em] px-4 py-3 border-2 border-primary text-primary bg-transparent hover:bg-primary/10 active:scale-95 transition-all rounded-lg"
+          >
+            Voir la fiche produit
+          </button>
+        </div>
       </div>
     </motion.div>
   );

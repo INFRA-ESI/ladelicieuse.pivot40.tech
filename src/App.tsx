@@ -55,6 +55,7 @@ const ConsultationsAdminPage = lazy(() => import("@/pages/admin/ConsultationsAdm
 const PlansAdminPage        = lazy(() => import("@/pages/admin/PlansAdminPage"));
 const FAQsAdminPage         = lazy(() => import("@/pages/admin/FAQsAdminPage"));
 const LivraisonAdminPage    = lazy(() => import("@/pages/admin/LivraisonAdminPage"));
+const ProductPage           = lazy(() => import("@/pages/ProductPage"));
 
 const PageFallback = () => (
   <div className="flex items-center justify-center min-h-[60vh]">
@@ -127,6 +128,7 @@ const App = () => (
             <Route path="/composer/:type" element={<><Header /><PublicSuspense><SaladComposerPage /></PublicSuspense></>} />
             <Route path="/jus" element={<><Header /><PublicSuspense><JuicesPage /></PublicSuspense></>} />
             <Route path="/repas" element={<><Header /><PublicSuspense><MealsPage /></PublicSuspense></>} />
+            <Route path="/produit/:slug" element={<><Header /><PublicSuspense><ProductPage /></PublicSuspense></>} />
             <Route path="/dieteticien" element={<><Header /><PublicSuspense><ConsultationsPage /></PublicSuspense></>} />
             <Route path="/abonnement" element={<><Header /><PublicSuspense><AbonnementPage /></PublicSuspense></>} />
             <Route path="/panier" element={<><Header /><PublicSuspense><CartPage /></PublicSuspense></>} />

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X } from 'lucide-react';
+import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X, Film, Play } from 'lucide-react';
 import { toast } from 'sonner';
-import { adminGet, adminPatch, adminPost, adminUploadImage } from '@/services/adminApiService';
+import { adminGet, adminPatch, adminPost, adminUploadImage, adminUploadVideo, adminDeleteUpload } from '@/services/adminApiService';
 
 interface SettingsData {
   nom: string;
@@ -20,6 +20,7 @@ interface SettingsData {
   dieteticienExperience: string;
   dieteticienCredentials: string[];
   dieteticienPhoto: string;
+  videoPresentation: string;
 }
 
 const DEFAULTS: SettingsData = {
@@ -39,6 +40,7 @@ const DEFAULTS: SettingsData = {
   dieteticienExperience: '10+',
   dieteticienCredentials: [],
   dieteticienPhoto: '',
+  videoPresentation: '',
 };
 
 // ─── Sub-components at module level (never re-created on render) ──────────────
@@ -116,6 +118,35 @@ export default function SettingsPage() {
     }
   };
 
+  // ── Vidéo de présentation ──────────────────────────────────────────────────
+  const [videoPreview, setVideoPreview] = useState('');
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  // Garde la dernière URL sauvegardée pour suppression propre après remplacement
+  const savedVideoUrlRef = useRef<string>('');
+
+  const handleVideoFile = async (file: File) => {
+    const MAX_SIZE = 200 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error('La vidéo dépasse la taille maximale autorisée (200 Mo).');
+      return;
+    }
+    setVideoPreview(URL.createObjectURL(file));
+    setUploadingVideo(true);
+    setUploadProgress(0);
+    try {
+      const url = await adminUploadVideo(file, (pct) => setUploadProgress(pct));
+      setForm(f => ({ ...f, videoPresentation: url }));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erreur upload vidéo');
+      setVideoPreview(form.videoPresentation ? `${window.location.origin.replace('5100', '3000')}${form.videoPresentation}` : '');
+    } finally {
+      setUploadingVideo(false);
+      setUploadProgress(0);
+    }
+  };
+
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pwForm, setPwForm] = useState({ motDePasseActuel: '', nouveauMotDePasse: '', confirmation: '' });
   const [showCurrent, setShowCurrent] = useState(false);
@@ -128,6 +159,10 @@ export default function SettingsPage() {
         const merged = { ...DEFAULTS, ...res.data };
         setForm(merged);
         if (merged.dieteticienPhoto) setPhotoPreview(merged.dieteticienPhoto);
+        if (merged.videoPresentation) {
+          setVideoPreview(merged.videoPresentation);
+          savedVideoUrlRef.current = merged.videoPresentation;
+        }
       })
       .catch(() => toast.error('Impossible de charger les paramètres'))
       .finally(() => setLoading(false));
@@ -135,6 +170,7 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    const oldVideoUrl = savedVideoUrlRef.current;
     try {
       await adminPatch('/settings', {
         nom:                    form.nom,
@@ -153,7 +189,13 @@ export default function SettingsPage() {
         dieteticienExperience:  form.dieteticienExperience,
         dieteticienCredentials: form.dieteticienCredentials,
         dieteticienPhoto:       form.dieteticienPhoto,
+        videoPresentation:      form.videoPresentation,
       });
+      // Supprimer l'ancienne vidéo après sauvegarde réussie du nouveau chemin
+      if (oldVideoUrl && oldVideoUrl !== form.videoPresentation) {
+        adminDeleteUpload(oldVideoUrl); // fire-and-forget
+      }
+      savedVideoUrlRef.current = form.videoPresentation;
       toast.success('Paramètres enregistrés avec succès !');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
@@ -345,6 +387,86 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </Section>
+
+      {/* Vidéo de présentation — pleine largeur */}
+      <Section icon={Film} title="Vidéo de présentation — « Comment ça se passe chez nous »">
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime"
+          className="hidden"
+          onChange={e => { if (e.target.files?.[0]) handleVideoFile(e.target.files[0]); }}
+        />
+        {videoPreview ? (
+          <div className="space-y-3">
+            <div className="relative w-full rounded-lg overflow-hidden border border-border bg-black aspect-video">
+              <video
+                src={videoPreview}
+                controls
+                preload="metadata"
+                className="w-full h-full"
+              />
+              {uploadingVideo && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 gap-3 p-6">
+                  <div className="w-full max-w-xs bg-border rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <span className="font-body text-sm text-foreground">
+                    Envoi en cours… {uploadProgress}%
+                  </span>
+                </div>
+              )}
+              {!uploadingVideo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVideoPreview('');
+                    setForm(f => ({ ...f, videoPresentation: '' }));
+                    if (videoInputRef.current) videoInputRef.current.value = '';
+                  }}
+                  className="absolute top-2 right-2 p-1.5 bg-foreground/70 text-background rounded-full hover:bg-foreground transition-colors"
+                  title="Supprimer la vidéo"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {!uploadingVideo && (
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-md font-body text-sm hover:bg-border transition-colors"
+              >
+                <Play className="w-4 h-4 text-primary" />
+                Remplacer la vidéo
+              </button>
+            )}
+            <p className="font-body text-xs text-muted-foreground">
+              MP4, WebM, MOV · 200 Mo maximum · La vidéo actuelle sera remplacée après enregistrement.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              className="w-full h-40 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-3 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+            >
+              <Film className="w-8 h-8" />
+              <div className="text-center">
+                <span className="font-body text-sm block">Cliquer pour ajouter une vidéo</span>
+                <span className="font-body text-xs opacity-60">MP4, WebM, MOV · max 200 Mo</span>
+              </div>
+            </button>
+            <p className="font-body text-xs text-muted-foreground px-1">
+              Seul l'upload direct de fichier est autorisé. Les liens YouTube, Vimeo ou externes ne sont pas acceptés.
+            </p>
+          </div>
+        )}
       </Section>
 
       {/* Password modal */}

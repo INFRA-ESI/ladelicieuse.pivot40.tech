@@ -297,6 +297,314 @@ export default function SalesReportPage() {
   }, [periodDays]);
 
   const bestProduct  = sortedProducts[0];
+
+  // ── Export CSV ───────────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    const rows: string[][] = [];
+    const sep = ';';
+
+    rows.push(['La Délicieuse Diète — Rapport de ventes']);
+    rows.push([`Période : ${periodLabel}`]);
+    rows.push([`Généré le : ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`]);
+    rows.push([]);
+
+    rows.push(['=== RÉSUMÉ ===']);
+    rows.push(['Revenus', `${stats.revenus} FCFA`]);
+    rows.push(['Coût matières (estimé)', `${stats.cout} FCFA`]);
+    rows.push(['Marge brute', `${stats.marge} FCFA`]);
+    rows.push(['Marge %', `${r1(stats.margePct)}%`]);
+    rows.push(['Commandes', String(stats.commandes)]);
+    rows.push(['Panier moyen', `${Math.round(stats.panierMoyen)} FCFA`]);
+    rows.push([]);
+
+    if (periodDays.length > 0) {
+      rows.push(['=== DONNÉES JOURNALIÈRES ===']);
+      rows.push(['Date', 'Revenus (FCFA)', 'Commandes', 'Coût (FCFA)', 'Marge (FCFA)', 'Marge %']);
+      periodDays.forEach(d => {
+        const marge = d.revenus - d.cout;
+        const pct   = d.revenus > 0 ? r1(marge / d.revenus * 100) : 0;
+        rows.push([d.dateStr, String(d.revenus), String(d.commandes), String(d.cout), String(marge), `${pct}%`]);
+      });
+      rows.push([]);
+    }
+
+    if (sortedProducts.length > 0) {
+      rows.push(['=== PRODUITS ===']);
+      rows.push(['Rang', 'Produit', 'Qté vendue', 'CA (FCFA)', 'Coût total (FCFA)', 'Marge (FCFA)', 'Marge %']);
+      sortedProducts.forEach((p, i) => {
+        rows.push([String(i + 1), p.nom, String(p.vendu), String(p.ca), String(p.coutTotal), String(p.marge), `${p.margePct}%`]);
+      });
+    }
+
+    const csv = '﻿' + rows.map(r => r.join(sep)).join('\n'); // BOM pour Excel
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `rapport-ventes-${periodLabel.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Export PDF (impression navigateur) ───────────────────────────────────────
+  const printReport = () => {
+    const G1 = '#1c4028', G2 = '#267340', GL = '#f4f7f2';
+    const genDate = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    // Barre de progression CSS pour la marge
+    const bar = (pct: number) => {
+      const clr = pct >= 55 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
+      const w   = Math.max(4, Math.min(100, pct));
+      return `<div style="display:flex;align-items:center;gap:6px">
+        <div style="flex:1;height:5px;background:#eee;border-radius:3px;overflow:hidden">
+          <div style="width:${w}%;height:100%;background:${clr};border-radius:3px"></div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${clr};width:36px;text-align:right">${pct}%</span>
+      </div>`;
+    };
+
+    const detailRows = (period === 'mois' && periodBilanRows.length > 0)
+      ? periodBilanRows.map(r => {
+          const pct = r.revenus > 0 ? r1(r.benefice / r.revenus * 100) : 0;
+          return `<tr>
+            <td><strong>${r.mois} ${new Date(r.moisKey + '-01').getFullYear()}</strong></td>
+            <td class="r">${r.revenus.toLocaleString('fr-FR')}</td>
+            <td class="r">${r.count}</td>
+            <td class="r">${r.coutMatieres.toLocaleString('fr-FR')}</td>
+            <td class="r">${r.benefice.toLocaleString('fr-FR')}</td>
+            <td style="min-width:120px">${bar(pct)}</td>
+          </tr>`;
+        }).join('')
+      : periodDays.map(d => {
+          const m = d.revenus - d.cout;
+          const pct = d.revenus > 0 ? r1(m / d.revenus * 100) : 0;
+          return `<tr>
+            <td>${d.dateStr}</td>
+            <td class="r">${d.revenus.toLocaleString('fr-FR')}</td>
+            <td class="r">${d.commandes}</td>
+            <td class="r">${d.cout.toLocaleString('fr-FR')}</td>
+            <td class="r">${m.toLocaleString('fr-FR')}</td>
+            <td style="min-width:120px">${bar(pct)}</td>
+          </tr>`;
+        }).join('');
+
+    const prodRows = sortedProducts.map((p, i) =>
+      `<tr>
+        <td class="r" style="color:#888;font-weight:300">${i + 1}</td>
+        <td><strong>${p.nom}</strong></td>
+        <td class="r">${p.vendu}</td>
+        <td class="r"><strong>${p.ca.toLocaleString('fr-FR')}</strong></td>
+        <td class="r">${p.coutTotal.toLocaleString('fr-FR')}</td>
+        <td class="r">${p.marge.toLocaleString('fr-FR')}</td>
+        <td style="min-width:120px">${bar(p.margePct)}</td>
+      </tr>`
+    ).join('');
+
+    const totalMarge = r1(stats.margePct);
+    const margeCls   = totalMarge >= 55 ? '#16a34a' : totalMarge >= 40 ? '#d97706' : '#dc2626';
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Rapport de ventes — ${periodLabel}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;color:#333;font-size:12px;background:#fff;line-height:1.5}
+  .bar-top{height:4px;background:#267340;font-size:0;line-height:0}
+  .bar-mid{height:2px;background:#267340;font-size:0;line-height:0}
+  .bar-bot{height:4px;background:#267340;font-size:0;line-height:0}
+  /* ── En-tête ─────────────────────────────────────────────────────────── */
+  .header{background:#1c4028;color:#fff;padding:28px 44px;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;position:relative;overflow:hidden}
+  .header::before{content:'';position:absolute;right:-60px;bottom:-60px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.04)}
+  .brand-wrap{display:flex;align-items:center;gap:12px}
+  .brand-mono{width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:700;color:#fff;letter-spacing:-1px;flex-shrink:0}
+  .brand-name{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:4px;text-transform:uppercase;line-height:1.1}
+  .brand-tag{font-size:9px;color:#267340;letter-spacing:3px;text-transform:uppercase;margin-top:4px}
+  .doc-info{text-align:right}
+  .doc-title{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:3px;text-transform:uppercase;opacity:.95}
+  .doc-period{font-size:11px;opacity:.7;margin-top:4px}
+  .doc-date{font-size:10px;opacity:.5;margin-top:2px}
+  /* ── Séparateur ──────────────────────────────────────────────────────── */
+  .stripe{height:0}
+  /* ── Corps ───────────────────────────────────────────────────────────── */
+  .body{padding:32px 44px}
+  /* Section */
+  .section{margin-bottom:32px}
+  .section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .section-num{width:22px;height:22px;background:${G2};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+  .section-title{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:${G2};font-weight:700}
+  .section-line{flex:1;height:1px;background:${GL}}
+  /* KPI */
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .kpi-card{border-radius:10px;padding:14px 16px;border:1px solid transparent}
+  .kpi-card.primary{background:#f4f7f2;border-color:#d0dccb}
+  .kpi-card.secondary{background:#f9faf9;border-color:#e4ebe2}
+  .kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#7a9488;font-weight:700;margin-bottom:6px}
+  .kpi-val{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:400;line-height:1.1}
+  .kpi-card.primary .kpi-val{color:#267340}
+  .kpi-card.secondary .kpi-val{color:#1c4028}
+  .kpi-unit{font-size:10px;font-family:Arial,Helvetica,sans-serif;font-weight:400;color:#7a9488;margin-left:3px}
+  /* Synthèse marge */
+  .marge-summary{display:flex;align-items:center;gap:16px;background:#f4f7f2;border-left:3px solid #267340;border-radius:0 8px 8px 0;padding:14px 18px;margin-top:10px}
+  .marge-big{font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:400;color:${margeCls}}
+  .marge-bar-wrap{flex:1}
+  .marge-bar-bg{height:6px;background:#d0dccb;border-radius:4px;overflow:hidden}
+  .marge-bar-fill{height:100%;background:${margeCls};border-radius:4px;width:${Math.min(100, totalMarge)}%}
+  .marge-label{font-size:10px;color:#4a6357;margin-top:4px}
+  /* Tables */
+  .table-wrap{border-radius:6px;overflow:hidden;border:1px solid #e4ebe2}
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  thead tr{background:#1c4028}
+  th{padding:10px 12px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:2px;font-weight:700;text-align:left}
+  th.r{text-align:right}
+  td{padding:10px 12px;border-bottom:1px solid #f0f4f0;color:#333}
+  tr:last-child td{border-bottom:none}
+  tr:nth-child(even) td{background:#f9fbf9}
+  td.r{text-align:right}
+  /* Pied */
+  .footer-sep{height:1px;background:#e4ebe2;margin-top:24px;font-size:0}
+  .footer{background:#f4f7f2;padding:20px 44px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}
+  .footer-brand{font-family:Georgia,'Times New Roman',serif;font-size:12px;font-weight:400;color:#267340;letter-spacing:3px;text-transform:uppercase}
+  .footer-info{font-size:10px;color:#7a9488;line-height:1.7;margin-top:2px}
+  .footer-right{text-align:right;font-size:10px;color:#aaa;line-height:1.8}
+  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+</style></head><body>
+
+<div class="bar-top"></div>
+<div class="header">
+  <div class="brand-wrap">
+    <div class="brand-mono">LD</div>
+    <div>
+      <div class="brand-name">La Délicieuse Diète</div>
+      <div class="brand-tag">Cuisine saine &amp; savoureuse · Libreville, Gabon</div>
+    </div>
+  </div>
+  <div class="doc-info">
+    <div class="doc-title">Rapport de ventes</div>
+    <div class="doc-period">${periodLabel}</div>
+    <div class="doc-date">Généré le ${genDate}</div>
+  </div>
+</div>
+<div class="bar-mid"></div>
+<div class="stripe"></div>
+
+<div class="body">
+
+  <!-- 1. KPI -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">1</div>
+      <div class="section-title">Indicateurs clés de performance</div>
+      <div class="section-line"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-card primary">
+        <div class="kpi-lbl">Revenus totaux</div>
+        <div class="kpi-val">${stats.revenus.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
+      </div>
+      <div class="kpi-card primary">
+        <div class="kpi-lbl">Marge brute</div>
+        <div class="kpi-val">${stats.marge.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
+      </div>
+      <div class="kpi-card secondary">
+        <div class="kpi-lbl">Commandes</div>
+        <div class="kpi-val">${stats.commandes}</div>
+      </div>
+      <div class="kpi-card secondary">
+        <div class="kpi-lbl">Panier moyen</div>
+        <div class="kpi-val">${Math.round(stats.panierMoyen).toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
+      </div>
+      <div class="kpi-card secondary">
+        <div class="kpi-lbl">Coût matières</div>
+        <div class="kpi-val">${stats.cout.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
+      </div>
+      <div class="kpi-card secondary">
+        <div class="kpi-lbl">Résultat net</div>
+        <div class="kpi-val" style="color:${margeCls}">${(stats.revenus - stats.cout).toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
+      </div>
+    </div>
+    <div class="marge-summary">
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:4px">Taux de marge global</div>
+        <div class="marge-big">${totalMarge}%</div>
+      </div>
+      <div class="marge-bar-wrap">
+        <div class="marge-bar-bg"><div class="marge-bar-fill"></div></div>
+        <div class="marge-label">${totalMarge >= 55 ? '✓ Excellente rentabilité' : totalMarge >= 40 ? '→ Rentabilité correcte' : '⚠ Marge à améliorer'}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Détail -->
+  ${detailRows ? `
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">2</div>
+      <div class="section-title">Détail ${period === 'mois' ? 'mensuel' : 'journalier'}</div>
+      <div class="section-line"></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Période</th>
+          <th class="r">Revenus (FCFA)</th>
+          <th class="r">Commandes</th>
+          <th class="r">Coût (FCFA)</th>
+          <th class="r">Marge (FCFA)</th>
+          <th>Marge %</th>
+        </tr></thead>
+        <tbody>${detailRows}</tbody>
+      </table>
+    </div>
+  </div>` : ''}
+
+  <!-- 3. Produits -->
+  ${prodRows ? `
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">3</div>
+      <div class="section-title">Performance produits</div>
+      <div class="section-line"></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th class="r">#</th>
+          <th>Produit</th>
+          <th class="r">Qté vendue</th>
+          <th class="r">CA (FCFA)</th>
+          <th class="r">Coût total</th>
+          <th class="r">Marge (FCFA)</th>
+          <th>Marge %</th>
+        </tr></thead>
+        <tbody>${prodRows}</tbody>
+      </table>
+    </div>
+  </div>` : ''}
+
+
+</div>
+
+<div class="footer-sep"></div>
+<div class="footer">
+  <div>
+    <div class="footer-brand">La Délicieuse Diète</div>
+    <div class="footer-info">Quartier Louis, Libreville, Gabon · ladelicieuse.1@gmail.com · +241 76 35 90 20</div>
+  </div>
+  <div class="footer-right">
+    Document confidentiel — usage interne<br>
+    Généré le ${genDate}
+  </div>
+</div>
+<div class="bar-bot"></div>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 600);
+  };
   const worstMarge   = productStats.length > 0 ? [...productStats].sort((a, b) => a.margePct - b.margePct)[0] : null;
 
   const canGoNext = offset > 0;
@@ -330,11 +638,18 @@ export default function SalesReportPage() {
             {!dataLoading && revenueApiData.length > 0 && <span className="ml-2 text-green-600">• {revenueApiData.length} jours · {bilanData.length} mois</span>}
           </p>
         </div>
-        <button
-          onClick={() => { alert('Export CSV — fonctionnalité disponible en production.'); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border text-sm font-body text-muted-foreground rounded-md hover:text-foreground hover:border-foreground transition-colors">
-          <Download className="w-4 h-4" /> Exporter CSV
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border text-sm font-body text-muted-foreground rounded-md hover:text-foreground hover:border-foreground transition-colors">
+            <Download className="w-4 h-4" /> CSV
+          </button>
+          <button
+            onClick={printReport}
+            className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border text-sm font-body text-muted-foreground rounded-md hover:text-foreground hover:border-foreground transition-colors">
+            <Download className="w-4 h-4" /> PDF
+          </button>
+        </div>
       </div>
 
       {/* Period tabs */}

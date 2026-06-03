@@ -241,13 +241,13 @@ export default function IngredientsPage() {
 
   return (
     <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Ingrédients</h2>
           <p className="font-body text-sm text-muted-foreground">{items.length} ingrédients gérés</p>
         </div>
         <button onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-body rounded-md hover:bg-primary/90">
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-body rounded-md hover:bg-primary/90 shrink-0">
           <Plus className="w-4 h-4" /> Ajouter
         </button>
       </div>
@@ -321,8 +321,64 @@ export default function IngredientsPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-background border border-border rounded-lg overflow-x-auto shadow-sm">
+      {/* ── Vue mobile en cartes (< md) ── */}
+      <div className="md:hidden space-y-3">
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-background border border-border rounded-xl p-4 animate-pulse space-y-2">
+                <div className="h-4 w-1/2 bg-muted rounded" />
+                <div className="h-3 w-1/3 bg-muted rounded" />
+              </div>
+            ))
+          : filtered.length === 0
+            ? <div className="text-center py-10 bg-background border border-border rounded-xl">
+                <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="font-body text-sm text-muted-foreground">Aucun ingrédient trouvé</p>
+              </div>
+            : filtered.map(i => {
+                const m = marge(i);
+                return (
+                  <div key={i._id} className="bg-background border border-border rounded-xl p-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      {i.image && (
+                        <img src={i.image} alt={i.nom} className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-body font-semibold text-foreground leading-tight">{i.nom}</p>
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => handleEdit(i)} className="p-2 rounded-lg hover:bg-muted transition-colors"><Edit2 className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                            <button onClick={() => setDeleteConfirm(i._id)} className="p-2 rounded-lg hover:bg-destructive/10 transition-colors"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
+                          </div>
+                        </div>
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground">{i.categorie}</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-muted rounded-lg p-2">
+                        <p className="font-body text-[10px] text-muted-foreground uppercase tracking-wide">Vente</p>
+                        <p className="font-body text-sm font-semibold text-foreground">{i.prixVente.toLocaleString()}</p>
+                      </div>
+                      <div className="bg-muted rounded-lg p-2">
+                        <p className="font-body text-[10px] text-muted-foreground uppercase tracking-wide">Marge</p>
+                        <MargeBadge pct={m} />
+                      </div>
+                      <div className="bg-muted rounded-lg p-2">
+                        <p className="font-body text-[10px] text-muted-foreground uppercase tracking-wide">Stock</p>
+                        <StockBadge stock={i.stock} min={i.stockMin} />
+                      </div>
+                    </div>
+                    {i.nutrition.calories > 0 && (
+                      <p className="mt-2 font-body text-xs text-muted-foreground">{i.nutrition.calories} kcal · P {i.nutrition.proteines}g · G {i.nutrition.glucides}g · L {i.nutrition.lipides}g</p>
+                    )}
+                  </div>
+                );
+              })
+        }
+      </div>
+
+      {/* ── Vue tableau desktop (≥ md) ── */}
+      <div className="hidden md:block bg-background border border-border rounded-lg overflow-x-auto shadow-sm">
         <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="border-b border-border bg-muted/50">
@@ -333,8 +389,8 @@ export default function IngredientsPage() {
               <IngTh label="Marge" k="marge" sortKey={sort.key} sortDir={sort.dir} onSort={toggleSort} cls="text-center" />
               <IngTh label="Stock" k="stock" sortKey={sort.key} sortDir={sort.dir} onSort={toggleSort} cls="text-center" />
               <IngTh label="Cal" k="calories" sortKey={sort.key} sortDir={sort.dir} onSort={toggleSort} cls="text-right" />
-              <th className="p-3 font-body text-xs uppercase tracking-wider text-muted-foreground text-right">P / G / L / F</th>
-              <th className="p-3 w-16"></th>
+              <th className="p-3 font-body text-xs uppercase tracking-wider text-muted-foreground text-right hidden lg:table-cell">P / G / L / F</th>
+              <th className="p-3 w-16" />
             </tr>
           </thead>
           <tbody>
@@ -351,7 +407,7 @@ export default function IngredientsPage() {
                       <td className="p-3 text-center"><MargeBadge pct={m} /></td>
                       <td className="p-3 text-center"><StockBadge stock={i.stock} min={i.stockMin} /></td>
                       <td className="p-3 font-body text-muted-foreground text-right">{i.nutrition.calories}</td>
-                      <td className="p-3 font-body text-xs text-muted-foreground text-right whitespace-nowrap">
+                      <td className="p-3 font-body text-xs text-muted-foreground text-right hidden lg:table-cell">
                         {i.nutrition.proteines}g / {i.nutrition.glucides}g / {i.nutrition.lipides}g / {i.nutrition.fibres}g
                       </td>
                       <td className="p-3">
@@ -381,7 +437,7 @@ export default function IngredientsPage() {
                 <td className="p-3 font-body text-xs font-medium text-center">
                   <Package className="w-3.5 h-3.5 inline text-muted-foreground" /> {filtered.reduce((s, i) => s + i.stock, 0)}
                 </td>
-                <td colSpan={3}></td>
+                <td colSpan={2} className="hidden lg:table-cell" /><td />
               </tr>
             </tfoot>
           )}

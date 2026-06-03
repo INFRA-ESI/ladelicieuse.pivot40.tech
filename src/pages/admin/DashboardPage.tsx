@@ -257,28 +257,30 @@ export default function DashboardPage() {
 
       {/* Note moyenne */}
       {!loading && stats && (
-        <div className="bg-background border border-border rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-300 flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <Star className="w-6 h-6 text-primary fill-primary" />
-            <div>
-              <p className="font-display text-3xl text-foreground">{(stats.noteMoyenne ?? 0).toFixed(1)}</p>
-              <p className="font-body text-xs text-muted-foreground">Note moyenne clients</p>
+        <div className="bg-background border border-border rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-300">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-3">
+              <Star className="w-6 h-6 text-primary fill-primary shrink-0" />
+              <div>
+                <p className="font-display text-3xl text-foreground">{(stats.noteMoyenne ?? 0).toFixed(1)}</p>
+                <p className="font-body text-xs text-muted-foreground">Note moyenne clients</p>
+              </div>
             </div>
-          </div>
-          <div className="h-10 w-px bg-border" />
-          <div>
-            <p className="font-display text-2xl text-foreground">{stats.abonnementsActifs}</p>
-            <p className="font-body text-xs text-muted-foreground">Abonnements actifs</p>
-          </div>
-          <div className="h-10 w-px bg-border" />
-          <div>
-            <p className="font-display text-2xl text-foreground">{stats.utilisateursActifs}</p>
-            <p className="font-body text-xs text-muted-foreground">Clients actifs</p>
-          </div>
-          <div className="ml-auto">
-            <Link to="/admin/avis" className="flex items-center gap-1 text-xs font-body text-primary hover:underline">
-              Voir les avis <ArrowUpRight className="w-3 h-3" />
-            </Link>
+            <div className="hidden sm:block h-10 w-px bg-border" />
+            <div>
+              <p className="font-display text-2xl text-foreground">{stats.abonnementsActifs}</p>
+              <p className="font-body text-xs text-muted-foreground">Abonnements actifs</p>
+            </div>
+            <div className="hidden sm:block h-10 w-px bg-border" />
+            <div>
+              <p className="font-display text-2xl text-foreground">{stats.utilisateursActifs}</p>
+              <p className="font-body text-xs text-muted-foreground">Clients actifs</p>
+            </div>
+            <div className="sm:ml-auto">
+              <Link to="/admin/avis" className="flex items-center gap-1 text-xs font-body text-primary hover:underline">
+                Voir les avis <ArrowUpRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
         </div>
       )}

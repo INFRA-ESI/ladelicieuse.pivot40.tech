@@ -95,7 +95,7 @@ export default function LivraisonAdminPage() {
         </div>
         <div className="space-y-3">
           {data.zonesLivraison.map((z, idx) => (
-            <div key={idx} className="grid grid-cols-[1fr_2fr_120px_36px] gap-3 items-start">
+            <div key={idx} className="flex flex-col sm:grid sm:grid-cols-[1fr_2fr_120px_36px] gap-3 items-start">
               <div>
                 <label className="font-body text-xs text-muted-foreground block mb-1">Label</label>
                 <input value={z.label} onChange={e => updateZone(idx, 'label', e.target.value)} placeholder="Ex : Owendo" className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />

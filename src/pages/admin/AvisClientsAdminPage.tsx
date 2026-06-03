@@ -400,7 +400,7 @@ export default function AvisClientsAdminPage() {
               <p className="font-body text-xs text-muted-foreground">
                 {pending.length} soumission{pending.length > 1 ? 's' : ''} client{pending.length > 1 ? 's' : ''} à valider
               </p>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {pending.map(t => (
                   <TestimonialCard key={t._id} item={t} showActions="pending"
                     isLoading={isLoading(t._id)}
@@ -432,7 +432,7 @@ export default function AvisClientsAdminPage() {
               </button>
               {showRefused && (
                 <div className="p-4">
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {refused.map(t => (
                       <TestimonialCard key={t._id} item={t} showActions="refused"
                         isLoading={isLoading(t._id)}
@@ -492,7 +492,7 @@ export default function AvisClientsAdminPage() {
           ) : (
             <>
               <p className="font-body text-xs text-muted-foreground">{published.length} témoignage{published.length > 1 ? 's' : ''}</p>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {published.map(t => (
                   <TestimonialCard key={t._id} item={t} showActions="published"
                     isLoading={isLoading(t._id)}

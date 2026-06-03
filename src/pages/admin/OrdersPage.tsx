@@ -551,7 +551,7 @@ export default function OrdersPage() {
 
               {activeTab === 'resume' && (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">Client</p>
                       <p className="font-body text-sm font-medium text-foreground">{selectedOrder.client}</p>
@@ -685,7 +685,7 @@ export default function OrdersPage() {
                       </div>
                       <div>
                         <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-2">Référence commande</p>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="bg-muted rounded-md p-3">
                             <p className="font-body text-xs text-muted-foreground">Montant initial</p>
                             <p className="font-body text-sm font-medium text-foreground">{fmtFCFA(selectedOrder.montant)}</p>

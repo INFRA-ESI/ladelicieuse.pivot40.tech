@@ -9,19 +9,58 @@ export interface ApiCategory {
   ordre: number;
 }
 
+// Ingrédient enrichi pour la fiche produit
+export interface ApiProductIngredient {
+  nom: string;
+  quantite: number;
+  unite: string;
+  image?: string;
+  description?: string;
+  apportNutritif?: string;
+  calories?: number;
+}
+
+// ApiMeal — rétrocompatible + nouveaux champs fiche produit
 export interface ApiMeal {
   _id: string;
   nom: string;
+  slug?: string;
   categorie: string;
   description: string;
+  descriptionCourte?: string;
   prix: number;
+  prixPromo?: number | null;
   image: string;
-  ingredients: Array<{ nom: string; quantite: number; unite: string }>;
-  nutrition: { calories: number; proteines: number; glucides: number; lipides: number; fibres: number };
+  galerie?: string[];
+  ingredients: ApiProductIngredient[];
+  nutrition: {
+    calories: number;
+    proteines: number;
+    glucides: number;
+    lipides: number;
+    fibres: number;
+    sucres?: number;
+    sodium?: number;
+  };
+  bienfaits?: string[];
+  allergenes?: string[];
+  objectifsSante?: string[];
+  conseilsConsommation?: string[];
   popular: boolean;
+  vedette?: boolean;
+  recommande?: boolean;
+  saisonnier?: boolean;
   disponible: boolean;
   portions: number;
+  portion?: string;
+  tempsPrepMin?: number;
+  date?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+// Alias sémantique pour les pages de fiches produits
+export type ApiProduct = ApiMeal;
 
 export interface ApiIngredient {
   _id: string;

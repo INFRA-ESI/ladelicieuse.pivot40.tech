@@ -113,7 +113,7 @@ export default function PlansAdminPage() {
       {loading ? (
         <div className="bg-background border border-border rounded-lg p-12 text-center font-body text-sm text-muted-foreground">Chargement...</div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {items.map(p => (
             <div key={p._id} className={`bg-background border rounded-lg p-5 flex flex-col gap-3 ${p.populaire ? 'border-primary ring-1 ring-primary' : 'border-border'} ${!p.actif ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between gap-2">

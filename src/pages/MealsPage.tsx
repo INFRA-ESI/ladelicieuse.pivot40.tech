@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
+import ProductSheetModal from '@/components/ProductSheetModal';
 import { MEALS, MealProduct, formatPrice } from '@/data/products';
 import { toast } from 'sonner';
 import mealImage from '@/assets/balanced-meal.jpg';
@@ -52,6 +53,7 @@ export default function MealsPage() {
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [meals, setMeals] = useState<MealProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sheetId, setSheetId] = useState<string | null>(null);
 
   useEffect(() => {
     publicFetch<ApiMeal[]>('/api/meals?catalog=true').then(data => {
@@ -174,12 +176,20 @@ export default function MealsPage() {
                         </div>
                         <div className="md:col-span-4 flex flex-col justify-between items-end">
                           <span className="font-display text-3xl text-primary">{formatPrice(meal.price)}</span>
-                          <button
-                            onClick={(e) => handleAdd(meal, e)}
-                            className="font-body text-xs uppercase tracking-[0.15em] px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all mt-4 rounded-lg"
-                          >
-                            Ajouter au panier
-                          </button>
+                          <div className="flex flex-col items-end gap-2 mt-4 w-full md:w-auto">
+                            <button
+                              onClick={(e) => handleAdd(meal, e)}
+                              className="w-full font-body text-xs uppercase tracking-[0.15em] px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all rounded-lg"
+                            >
+                              Ajouter au panier
+                            </button>
+                            <button
+                              onClick={() => setSheetId(meal.id)}
+                              className="w-full font-body text-xs uppercase tracking-[0.15em] px-6 py-2.5 border-2 border-primary text-primary bg-transparent hover:bg-primary/10 active:scale-95 transition-all rounded-lg"
+                            >
+                              Voir la fiche produit
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </motion.div>
@@ -194,6 +204,7 @@ export default function MealsPage() {
       {flyingItems.map(item => (
         <FlyingIngredient key={item.id} item={item} onComplete={removeFlyingItem} />
       ))}
+      <ProductSheetModal productId={sheetId} onClose={() => setSheetId(null)} />
       <Footer />
     </div>
   );
