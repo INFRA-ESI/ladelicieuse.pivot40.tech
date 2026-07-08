@@ -913,10 +913,10 @@ export default function PromotionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 overflow-x-auto border-b border-border">
         {([['offres', <Zap className="w-4 h-4" />, 'Offres spéciales'], ['codes', <Tag className="w-4 h-4" />, 'Codes promo'], ['fidelite', <Star className="w-4 h-4" />, 'Programme fidélité']] as const).map(([key, icon, label]) => (
           <button key={key} onClick={() => setTab(key as Tab)}
-            className={`flex items-center gap-2 px-4 py-2.5 font-body text-sm border-b-2 transition-colors -mb-px ${tab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            className={`whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 font-body text-sm border-b-2 transition-colors -mb-px ${tab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {icon}{label}
           </button>
         ))}
@@ -1051,16 +1051,21 @@ export default function PromotionsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  {['Code', 'Réduction', 'Utilisations', 'Expiration', 'Statut', ''].map(h => (
-                    <th key={h} className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground">{h}</th>
-                  ))}
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground">Code</th>
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground">Réduction</th>
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Utilisations</th>
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Expiration</th>
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground">Statut</th>
+                  <th className="p-4 text-left font-body text-xs uppercase tracking-wider text-muted-foreground"></th>
                 </tr>
               </thead>
               <tbody>
                 {loadingCodes
                   ? Array.from({ length: 4 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/50">
-                      {[1,2,3,4,5,6].map(j => <td key={j} className="p-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
+                      {[1,2].map(j => <td key={j} className="p-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
+                    {[3,4].map(j => <td key={j} className="p-4 hidden sm:table-cell"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
+                    {[5,6].map(j => <td key={j} className="p-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
                     </tr>
                   ))
                   : filteredCodes.map(code => {
@@ -1084,7 +1089,7 @@ export default function PromotionsPage() {
                             <p className="font-body text-xs text-muted-foreground">min. {code.minCommande.toLocaleString('fr-FR')} F</p>
                           )}
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 hidden sm:table-cell">
                           <span className="font-body text-foreground">{code.utilisations}{code.maxUtilisations ? `/${code.maxUtilisations}` : ''}</span>
                           {usagePct !== null && (
                             <div className="mt-1 h-1 w-20 bg-muted rounded-full overflow-hidden">
@@ -1092,7 +1097,7 @@ export default function PromotionsPage() {
                             </div>
                           )}
                         </td>
-                        <td className="p-4 font-body text-muted-foreground">{code.expiry ? fmtDate(code.expiry) : '—'}</td>
+                        <td className="p-4 font-body text-muted-foreground hidden sm:table-cell">{code.expiry ? fmtDate(code.expiry) : '—'}</td>
                         <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-xs font-body ${cfg.color}`}>{cfg.label}</span></td>
                         <td className="p-4">
                           <div className="flex gap-1">

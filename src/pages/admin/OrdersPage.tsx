@@ -1,12 +1,15 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  Search, Eye, X, MapPin, Clock, Phone, ChevronRight,
+  Search, Eye, X, MapPin, Clock, Phone, ChevronRight, ChevronDown,
   AlertTriangle, RefreshCw, Ban, RotateCcw, CheckCircle,
   Package, Truck, UtensilsCrossed, XCircle,
   CreditCard, Banknote, Smartphone, FileText, Filter,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPatch, adminPost } from '@/services/adminApiService';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +190,19 @@ const isLate = (order: Order): boolean => {
   return diff > 45 * 60 * 1000;
 };
 
+const minutesSinceLastUpdate = (order: Order): number => {
+  const lastEvent = order.history[order.history.length - 1];
+  if (!lastEvent) return 0;
+  return Math.floor((Date.now() - new Date(lastEvent.date).getTime()) / 60000);
+};
+
+const fmtElapsed = (minutes: number): string => {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+};
+
 // ─── Subcomponents ────────────────────────────────────────────────────────────
 
 function StatusBadge({ statut, small = false }: { statut: OrderStatus; small?: boolean }) {
@@ -350,7 +366,7 @@ export default function OrdersPage() {
     <div className="space-y-5 bg-muted/30 -m-6 p-6 min-h-screen">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Suivi des commandes</h2>
           <p className="font-body text-sm text-muted-foreground">{orders.length} commandes · actualisé {ago(lastRefresh.toISOString())}</p>
@@ -362,7 +378,7 @@ export default function OrdersPage() {
       </div>
 
       {/* KPI bar */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: 'En attente',    value: kpis.attente,     color: 'text-yellow-600', dot: 'bg-yellow-400' },
           { label: 'En prép.',      value: kpis.preparation,  color: 'text-purple-600', dot: 'bg-purple-400' },
@@ -387,19 +403,56 @@ export default function OrdersPage() {
       </div>
 
       {/* Late orders alert */}
-      {!loading && lateOrders.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-body text-sm font-medium text-red-700">
-              {lateOrders.length} commande{lateOrders.length > 1 ? 's' : ''} en retard (&gt; 45 min sans mise à jour)
-            </p>
-            <p className="font-body text-xs text-red-600 mt-1">
-              {lateOrders.map(o => `${o.id} — ${o.client}`).join(' · ')}
-            </p>
-          </div>
-        </div>
-      )}
+      {!loading && lateOrders.length > 0 && (() => {
+        const sorted = [...lateOrders].sort((a, b) => minutesSinceLastUpdate(b) - minutesSinceLastUpdate(a));
+        const criticalCount = sorted.filter(o => minutesSinceLastUpdate(o) > 90).length;
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-full flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-left hover:bg-red-100/60 transition-colors">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <p className="font-body text-sm font-semibold text-red-700">
+                  {sorted.length} commande{sorted.length > 1 ? 's' : ''} en retard
+                </p>
+                <span className="font-body text-xs text-red-500/80 hidden sm:inline">— plus de 45 min sans mise à jour</span>
+                {criticalCount > 0 && (
+                  <span className="font-body text-xs font-medium px-1.5 py-0.5 rounded-full bg-red-600 text-white">
+                    {criticalCount} critique{criticalCount > 1 ? 's' : ''}
+                  </span>
+                )}
+                <ChevronDown className="w-3.5 h-3.5 text-red-500/70 ml-auto shrink-0" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[--radix-dropdown-menu-trigger-width] min-w-[320px] max-h-80 overflow-y-auto">
+              {sorted.map(o => {
+                const minutes = minutesSinceLastUpdate(o);
+                const critical = minutes > 90;
+                return (
+                  <DropdownMenuItem
+                    key={o.dbId}
+                    onClick={() => { setSelectedOrder(o); setActiveTab('resume'); }}
+                    className="flex items-center justify-between gap-3 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-body text-xs font-semibold text-foreground shrink-0">{o.id}</span>
+                      <span className="font-body text-xs text-muted-foreground truncate">{o.client}</span>
+                      <StatusBadge statut={o.statut} small />
+                    </div>
+                    <span
+                      className={`shrink-0 font-body text-xs font-medium px-2 py-0.5 rounded-full ${
+                        critical ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
+                      }`}
+                    >
+                      {fmtElapsed(minutes)}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      })()}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -409,22 +462,38 @@ export default function OrdersPage() {
             placeholder="Client, numéro, téléphone…"
             className="w-full h-10 pl-10 pr-4 bg-background border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {ALL_STATUSES.map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-3 py-2 rounded-md text-xs font-body whitespace-nowrap transition-colors ${statusFilter === s ? 'bg-primary text-primary-foreground' : 'bg-background border border-border text-muted-foreground hover:text-foreground'}`}>
-              {s === 'tous' ? 'Toutes' : STATUS_LABEL[s]}
-              <span className="ml-1 opacity-60">
-                ({s === 'tous' ? orders.length : orders.filter(o => o.statut === s).length})
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center justify-between gap-2 px-3 py-2 min-w-[180px] rounded-md text-xs font-body bg-background border border-border text-foreground hover:bg-muted/50 transition-colors">
+              <span>
+                {statusFilter === 'tous' ? 'Toutes' : STATUS_LABEL[statusFilter]}
+                <span className="ml-1 opacity-60">
+                  ({statusFilter === 'tous' ? orders.length : orders.filter(o => o.statut === statusFilter).length})
+                </span>
               </span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
             </button>
-          ))}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[180px]">
+            {ALL_STATUSES.map(s => (
+              <DropdownMenuItem
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`text-xs font-body cursor-pointer ${statusFilter === s ? 'bg-primary/10 text-primary font-medium' : ''}`}
+              >
+                {s === 'tous' ? 'Toutes' : STATUS_LABEL[s]}
+                <span className="ml-1 opacity-60">
+                  ({s === 'tous' ? orders.length : orders.filter(o => o.statut === s).length})
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Table */}
       <div className="bg-background border border-border rounded-lg overflow-x-auto shadow-sm">
-        <table className="w-full text-sm min-w-[700px]">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="text-left p-3 font-body text-xs uppercase tracking-wider text-muted-foreground">Commande</th>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 
@@ -85,6 +85,8 @@ export default function ConsultationsAdminPage() {
   const [expandedBooking, setExpandedBooking] = useState<string | null>(null);
   const [planText, setPlanText]             = useState('');
   const [calWeekStart, setCalWeekStart]     = useState<Date>(() => getMondayOfWeek(new Date()));
+  const [confirmDeleteBookingId, setConfirmDeleteBookingId] = useState<string | null>(null);
+  const [deletingBooking, setDeletingBooking] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -122,6 +124,20 @@ export default function ConsultationsAdminPage() {
       setBookings(prev => prev.map(b => b._id === id ? res.data : b));
       toast.success('Statut mis à jour');
     } catch { toast.error('Erreur mise à jour'); }
+  }
+
+  async function deleteBooking(id: string) {
+    setDeletingBooking(true);
+    try {
+      await adminDelete(`/consultation-bookings/${id}`);
+      setBookings(prev => prev.filter(b => b._id !== id));
+      setConfirmDeleteBookingId(null);
+      toast.success('Réservation supprimée');
+    } catch {
+      toast.error('Erreur lors de la suppression');
+    } finally {
+      setDeletingBooking(false);
+    }
   }
 
   async function savePlan(id: string) {
@@ -346,6 +362,13 @@ export default function ConsultationsAdminPage() {
                       >
                         {isExpanded ? 'Fermer' : 'Plan alimentaire'}
                       </button>
+                      <button
+                        onClick={() => setConfirmDeleteBookingId(b._id)}
+                        className="p-1.5 rounded-md hover:bg-destructive/10 transition-colors"
+                        title="Supprimer la réservation"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                      </button>
                     </div>
                   </div>
                   {isExpanded && (
@@ -500,6 +523,43 @@ export default function ConsultationsAdminPage() {
               <button onClick={closeForm} className="flex-1 py-2 border border-border rounded-md font-body text-sm hover:bg-muted transition-colors">Annuler</button>
               <button onClick={handleSave} disabled={saving || uploading} className="flex-1 py-2 bg-primary text-primary-foreground rounded-md font-body text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors">
                 {saving ? 'Enregistrement...' : uploading ? 'Upload en cours...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteBookingId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-foreground/70 px-4">
+          <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-destructive" />
+              </div>
+              <div>
+                <h4 className="font-display text-lg text-foreground">Supprimer la réservation</h4>
+                <p className="font-body text-sm text-muted-foreground">Cette action est irréversible.</p>
+              </div>
+            </div>
+            <p className="font-body text-sm text-foreground">
+              Confirmer la suppression de cette réservation ?
+              Toutes les données associées seront effacées définitivement.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setConfirmDeleteBookingId(null)}
+                disabled={deletingBooking}
+                className="flex-1 px-4 py-2 text-sm font-body border border-border rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => deleteBooking(confirmDeleteBookingId)}
+                disabled={deletingBooking}
+                className="flex-1 px-4 py-2 text-sm font-body bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deletingBooking ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Supprimer
               </button>
             </div>
           </div>

@@ -44,7 +44,6 @@ export interface ISettings extends Document {
   devise: string;
   notifEmail: boolean;
   notifWhatsApp: boolean;
-  notifSms: boolean;
   adminPasswordHash?: string;
   zonesLivraison: IZoneLivraison[];
   creneauxLivraison: string[];
@@ -84,7 +83,6 @@ const SettingsSchema = new Schema<ISettings>(
     devise:            { type: String, default: 'FCFA' },
     notifEmail:        { type: Boolean, default: true },
     notifWhatsApp:     { type: Boolean, default: true },
-    notifSms:          { type: Boolean, default: false },
     adminPasswordHash: { type: String, select: false },
     zonesLivraison:    { type: [ZoneSchema], default: () => ZONES_DEFAULT },
     creneauxLivraison: { type: [String],     default: () => [...SLOTS_DEFAULT] },

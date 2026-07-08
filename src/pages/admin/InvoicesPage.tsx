@@ -1,7 +1,7 @@
 import {
   Download, Eye, Search, X, Printer, FileText, Plus, TrendingUp, TrendingDown,
   Minus, BarChart2, ChevronUp, ChevronDown, RefreshCw, CheckCircle, Clock,
-  AlertCircle, Receipt, Layers, Mail,
+  AlertCircle, Receipt, Layers, Mail, Trash2, AlertTriangle,
 } from 'lucide-react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
@@ -9,7 +9,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts';
-import { adminGet, adminPost, adminPatch } from '@/services/adminApiService';
+import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -532,6 +535,9 @@ export default function InvoicesPage() {
   const [sortKey, setSortKey] = useState<SortKey>('revenus');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
+  const [confirmDeleteInvoiceId, setConfirmDeleteInvoiceId] = useState<string | null>(null);
+  const [deletingInvoice, setDeletingInvoice] = useState(false);
+
   const [bilanData, setBilanData]           = useState<BilanRow[]>([]);
   const [bilanLoading, setBilanLoading]     = useState(false);
   const [rentaData, setRentaData]           = useState<IngredientRenta[]>([]);
@@ -590,6 +596,20 @@ export default function InvoicesPage() {
       toast.success('Facture marquée comme payée');
     } catch {
       toast.error('Erreur mise à jour du statut');
+    }
+  };
+
+  const deleteInvoice = async (id: string) => {
+    setDeletingInvoice(true);
+    try {
+      await adminDelete(`/invoices/${id}`);
+      setInvoices(p => p.filter(i => i._id !== id));
+      setConfirmDeleteInvoiceId(null);
+      toast.success('Facture supprimée');
+    } catch {
+      toast.error('Erreur lors de la suppression');
+    } finally {
+      setDeletingInvoice(false);
     }
   };
 
@@ -674,14 +694,14 @@ export default function InvoicesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 overflow-x-auto border-b border-border">
         {([
           ['factures',    <Receipt  className="w-4 h-4" />, 'Factures'],
           ['rentabilite', <Layers   className="w-4 h-4" />, 'Rentabilité ingrédients'],
           ['bilan',       <BarChart2 className="w-4 h-4" />, 'Bilan mensuel'],
         ] as const).map(([key, icon, label]) => (
           <button key={key} onClick={() => setTab(key as Tab)}
-            className={`flex items-center gap-2 px-4 py-2.5 font-body text-sm border-b-2 transition-colors -mb-px ${
+            className={`whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 font-body text-sm border-b-2 transition-colors -mb-px ${
               tab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}>
             {icon}{label}
@@ -707,14 +727,31 @@ export default function InvoicesPage() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Client, numéro…"
                 className="w-full h-10 pl-10 pr-4 bg-background border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
-            <div className="flex gap-1">
-              {([['all','Tous'],['payee','Payées'],['en_attente','En attente'],['annulee','Annulées']] as const).map(([v, l]) => (
-                <button key={v} onClick={() => setStatusFilter(v)}
-                  className={`h-10 px-3 rounded-md font-body text-sm transition-colors ${statusFilter === v ? 'bg-primary text-primary-foreground' : 'bg-background border border-border hover:bg-muted'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            {(() => {
+              const options = [['all','Tous'],['payee','Payées'],['en_attente','En attente'],['annulee','Annulées']] as const;
+              const activeLabel = options.find(([v]) => v === statusFilter)?.[1] ?? 'Tous';
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center justify-between gap-2 h-10 px-3 min-w-[160px] rounded-md font-body text-sm bg-background border border-border hover:bg-muted transition-colors">
+                      <span>{activeLabel}</span>
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[160px]">
+                    {options.map(([v, l]) => (
+                      <DropdownMenuItem
+                        key={v}
+                        onClick={() => setStatusFilter(v)}
+                        className={`text-sm font-body cursor-pointer ${statusFilter === v ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                      >
+                        {l}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })()}
           </div>
 
           <div className="bg-background border border-border rounded-lg overflow-x-auto">
@@ -749,6 +786,7 @@ export default function InvoicesPage() {
                           <td className="p-4 flex gap-2">
                             <button onClick={() => setSelectedInvoice(inv)} className="text-muted-foreground hover:text-foreground" title="Voir"><Eye className="w-4 h-4" /></button>
                             <button onClick={() => printInvoice(inv)} className="text-muted-foreground hover:text-primary" title="PDF"><Download className="w-4 h-4" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteInvoiceId(inv._id); }} className="text-muted-foreground hover:text-destructive" title="Supprimer"><Trash2 className="w-4 h-4" /></button>
                           </td>
                         </tr>
                       );
@@ -942,7 +980,7 @@ export default function InvoicesPage() {
           </div>
 
           <div className="bg-background border border-border rounded-lg overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   {['Mois','Revenus HT','Coût matières','% Coût','Factures','Bénéfice net','Marge nette'].map(h => (
@@ -978,6 +1016,42 @@ export default function InvoicesPage() {
 
       {selectedInvoice && <InvoiceModal inv={selectedInvoice} onClose={() => setSelectedInvoice(null)} onMarkPaid={markPaid} />}
       {showGenModal && <AutoGenModal onClose={() => setShowGenModal(false)} onGenerate={addInvoice} />}
+
+      {confirmDeleteInvoiceId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-foreground/70 px-4">
+          <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-destructive" />
+              </div>
+              <div>
+                <h4 className="font-display text-lg text-foreground">Supprimer la facture</h4>
+                <p className="font-body text-sm text-muted-foreground">Cette action est irréversible.</p>
+              </div>
+            </div>
+            <p className="font-body text-sm text-foreground">
+              Voulez-vous vraiment supprimer la facture <strong>{invoices.find(i => i._id === confirmDeleteInvoiceId)?.numero}</strong> ?
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setConfirmDeleteInvoiceId(null)}
+                disabled={deletingInvoice}
+                className="flex-1 px-4 py-2 text-sm font-body border border-border rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => deleteInvoice(confirmDeleteInvoiceId)}
+                disabled={deletingInvoice}
+                className="flex-1 px-4 py-2 text-sm font-body bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deletingInvoice ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -711,17 +711,17 @@ export default function MenuDayPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-background border border-border rounded-lg p-4 text-center">
-          <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">Repas ce jour</p>
-          <p className="font-display text-3xl text-foreground">{loadingMeals ? '—' : kpis.total}</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-background border border-border rounded-lg p-2 sm:p-4 text-center">
+          <p className="font-body text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mb-1">Repas ce jour</p>
+          <p className="font-display text-2xl sm:text-3xl text-foreground">{loadingMeals ? '—' : kpis.total}</p>
         </div>
-        <div className="bg-background border border-border rounded-lg p-4 text-center">
-          <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">Publiés</p>
-          <p className="font-display text-3xl text-foreground">{loadingMeals ? '—' : kpis.visible}</p>
+        <div className="bg-background border border-border rounded-lg p-2 sm:p-4 text-center">
+          <p className="font-body text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mb-1">Publiés</p>
+          <p className="font-display text-2xl sm:text-3xl text-foreground">{loadingMeals ? '—' : kpis.visible}</p>
         </div>
-        <div className="bg-background border border-border rounded-lg p-4 text-center">
-          <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">Plage cal./portion</p>
+        <div className="bg-background border border-border rounded-lg p-2 sm:p-4 text-center">
+          <p className="font-body text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground mb-1">Cal./portion</p>
           {loadingMeals || loadingLib
             ? <p className="font-display text-xl text-muted-foreground">—</p>
             : kpis.total > 0

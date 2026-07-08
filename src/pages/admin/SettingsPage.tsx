@@ -13,7 +13,6 @@ interface SettingsData {
   devise: string;
   notifEmail: boolean;
   notifWhatsApp: boolean;
-  notifSms: boolean;
   dieteticienNom: string;
   dieteticienTitre: string;
   dieteticienBio: string;
@@ -33,7 +32,6 @@ const DEFAULTS: SettingsData = {
   devise: 'FCFA',
   notifEmail: true,
   notifWhatsApp: true,
-  notifSms: false,
   dieteticienNom: 'Dr. Carlos BATTY',
   dieteticienTitre: 'Diététicien nutritionniste',
   dieteticienBio: '',
@@ -182,7 +180,6 @@ export default function SettingsPage() {
         devise:                 form.devise,
         notifEmail:             form.notifEmail,
         notifWhatsApp:          form.notifWhatsApp,
-        notifSms:               form.notifSms,
         dieteticienNom:         form.dieteticienNom,
         dieteticienTitre:       form.dieteticienTitre,
         dieteticienBio:         form.dieteticienBio,
@@ -276,7 +273,6 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <Toggle label="Notifications par email" checked={form.notifEmail} onChange={v => setForm(f => ({ ...f, notifEmail: v }))} />
             <Toggle label="Notifications WhatsApp" checked={form.notifWhatsApp} onChange={v => setForm(f => ({ ...f, notifWhatsApp: v }))} />
-            <Toggle label="Notifications SMS" checked={form.notifSms} onChange={v => setForm(f => ({ ...f, notifSms: v }))} />
           </div>
         </Section>
 

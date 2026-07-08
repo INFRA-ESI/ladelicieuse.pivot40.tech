@@ -2,6 +2,9 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -311,14 +314,25 @@ export default function IngredientsPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un ingrédient…"
             className="w-full h-10 pl-10 pr-4 bg-background border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {['Tous', ...categories].map(c => (
-            <button key={c} onClick={() => setCatFilter(c)}
-              className={`px-3 py-2 rounded-md text-xs font-body whitespace-nowrap transition-colors ${catFilter === c ? 'bg-primary text-primary-foreground' : 'bg-background border border-border text-muted-foreground hover:text-foreground'}`}>
-              {c}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center justify-between gap-2 px-3 py-2 min-w-[180px] rounded-md text-xs font-body bg-background border border-border text-foreground hover:bg-muted/50 transition-colors">
+              <span>{catFilter}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
             </button>
-          ))}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[180px]">
+            {['Tous', ...categories].map(c => (
+              <DropdownMenuItem
+                key={c}
+                onClick={() => setCatFilter(c)}
+                className={`text-xs font-body cursor-pointer ${catFilter === c ? 'bg-primary/10 text-primary font-medium' : ''}`}
+              >
+                {c}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* ── Vue mobile en cartes (< md) ── */}

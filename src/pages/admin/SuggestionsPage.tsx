@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, Sparkles, Leaf, Grape } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, Sparkles, Leaf, Grape, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 import { INGREDIENTS } from '@/data/products';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 type IngredientItem = { id: string; name: string };
 type IngredientGroup = { label: string; category: string; items: IngredientItem[] };
@@ -260,25 +263,37 @@ export default function SuggestionsPage() {
       </div>
 
       {/* Filtres */}
-      <div className="flex gap-2 flex-wrap">
-        {([
-          { key: 'all',      label: 'Toutes'          },
-          { key: 'crudites', label: 'Crudités'        },
-          { key: 'fruits',   label: 'Fruits de saison' },
-        ] as { key: FilterType; label: string }[]).map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 rounded-md font-body text-sm transition-colors ${
-              filter === f.key
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-background border border-border text-foreground hover:border-primary hover:text-primary'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        const options: { key: FilterType; label: string; count: number }[] = [
+          { key: 'all',      label: 'Toutes',           count: kpi.total    },
+          { key: 'crudites', label: 'Crudités',         count: kpi.crudites },
+          { key: 'fruits',   label: 'Fruits de saison',  count: kpi.fruits   },
+        ];
+        const active = options.find(o => o.key === filter)!;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center justify-between gap-2 px-3 py-2 min-w-[180px] rounded-md font-body text-sm bg-background border border-border text-foreground hover:bg-muted/50 transition-colors">
+                <span>
+                  {active.label} <span className="ml-1 opacity-60">({active.count})</span>
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[180px]">
+              {options.map(f => (
+                <DropdownMenuItem
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`text-sm font-body cursor-pointer ${filter === f.key ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                >
+                  {f.label} <span className="ml-1 opacity-60">({f.count})</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      })()}
 
       {/* Liste */}
       {loading ? (

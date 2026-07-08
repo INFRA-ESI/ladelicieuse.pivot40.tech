@@ -629,7 +629,7 @@ export default function SalesReportPage() {
     <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Rapports de ventes</h2>
           <p className="font-body text-sm text-muted-foreground">
@@ -686,7 +686,7 @@ export default function SalesReportPage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
           label="Revenus"
           value={fmtK(stats.revenus) + ' FCFA'}
@@ -723,10 +723,10 @@ export default function SalesReportPage() {
       </div>
 
       {/* Main chart + Category */}
-      <div className="grid xl:grid-cols-3 gap-5">
+      <div className="grid lg:grid-cols-3 gap-5">
 
         {/* Revenue chart (2/3) */}
-        <div className="xl:col-span-2 bg-background border border-border rounded-xl p-5 shadow-sm">
+        <div className="lg:col-span-2 bg-background border border-border rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-5">
             <h3 className="font-display text-lg text-foreground">
               {period === 'semaine' ? 'Revenus par jour' : 'Revenus par jour du mois'}
@@ -798,7 +798,7 @@ export default function SalesReportPage() {
           <p className="font-body text-xs text-muted-foreground">{sortedProducts.length} produits · toutes périodes</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <Th label="Produit"   k="nom"      sortKey={sortKey} sortDir={sortDir} onSort={onSort} cls="text-left" />

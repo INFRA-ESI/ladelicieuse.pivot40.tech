@@ -115,4 +115,18 @@ router.patch('/:id', verifyJWT, async (req: Request, res: Response): Promise<voi
   }
 });
 
+// ── DELETE /api/consultation-bookings/:id — Admin: supprimer une réservation ───
+router.delete('/:id', verifyJWT, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const booking = await ConsultationBooking.findByIdAndDelete(req.params.id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Réservation introuvable.' });
+      return;
+    }
+    res.json({ success: true, message: 'Réservation supprimée.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur suppression.', error: (error as Error).message });
+  }
+});
+
 export default router;

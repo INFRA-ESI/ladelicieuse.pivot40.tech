@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Clock, ShoppingCart, User, Settings, Package, FileText, Search, Tag, UtensilsCrossed, Megaphone } from 'lucide-react';
+import { Clock, ShoppingCart, User, Settings, Package, FileText, Search, Tag, UtensilsCrossed, Megaphone, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet } from '@/services/adminApiService';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 interface HistoryEntry {
   _id: string;
@@ -95,14 +98,25 @@ export default function HistoryPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher…"
             className="w-full h-10 pl-10 pr-4 bg-background border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
-        <div className="flex gap-2 overflow-x-auto">
-          {TYPE_OPTIONS.map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)}
-              className={`px-3 py-2 rounded-md text-xs font-body whitespace-nowrap transition-colors ${typeFilter === t ? 'bg-primary text-primary-foreground' : 'bg-background border border-border text-muted-foreground hover:text-foreground'}`}>
-              {TYPE_LABELS[t]}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center justify-between gap-2 px-3 py-2 min-w-[180px] rounded-md text-xs font-body bg-background border border-border text-foreground hover:bg-muted/50 transition-colors">
+              <span>{TYPE_LABELS[typeFilter]}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
             </button>
-          ))}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[180px]">
+            {TYPE_OPTIONS.map(t => (
+              <DropdownMenuItem
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`text-xs font-body cursor-pointer ${typeFilter === t ? 'bg-primary/10 text-primary font-medium' : ''}`}
+              >
+                {TYPE_LABELS[t]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="space-y-1">
