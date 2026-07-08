@@ -149,12 +149,12 @@ export default function Footer() {
             © {new Date().getFullYear()} {info.nom} · Libreville, Gabon · Tous droits réservés
           </p>
           <div className="flex gap-6">
-            <span className="font-body text-xs text-primary-foreground/40 hover:text-primary-foreground/60 cursor-pointer transition-colors">
+            <Link to="/mentions-legales" className="font-body text-xs text-primary-foreground/40 hover:text-primary-foreground/60 transition-colors">
               Mentions légales
-            </span>
-            <span className="font-body text-xs text-primary-foreground/40 hover:text-primary-foreground/60 cursor-pointer transition-colors">
+            </Link>
+            <Link to="/politique-confidentialite" className="font-body text-xs text-primary-foreground/40 hover:text-primary-foreground/60 transition-colors">
               Politique de confidentialité
-            </span>
+            </Link>
           </div>
         </div>
       </div>

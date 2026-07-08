@@ -31,7 +31,9 @@ const ResetPasswordPage   = lazy(() => import("@/pages/ResetPasswordPage"));
 const CheckoutPage        = lazy(() => import("@/pages/CheckoutPage"));
 const PaymentSuccessPage  = lazy(() => import("@/pages/PaymentSuccessPage"));
 const PaymentFailurePage  = lazy(() => import("@/pages/PaymentFailurePage"));
-const NotFound            = lazy(() => import("./pages/NotFound"));
+const NotFound                   = lazy(() => import("./pages/NotFound"));
+const MentionsLegalesPage        = lazy(() => import("@/pages/MentionsLegalesPage"));
+const PolitiqueConfidentialitePage = lazy(() => import("@/pages/PolitiqueConfidentialitePage"));
 
 // Admin pages — lazy-loadées (chunk séparé, pas chargé pour les clients)
 const AdminLoginPage        = lazy(() => import("@/pages/admin/AdminLoginPage"));
@@ -141,6 +143,8 @@ const App = () => (
             <Route path="/checkout" element={<PublicSuspense><CheckoutPage /></PublicSuspense>} />
             <Route path="/paiement/succes" element={<PublicSuspense><PaymentSuccessPage /></PublicSuspense>} />
             <Route path="/paiement/echec" element={<PublicSuspense><PaymentFailurePage /></PublicSuspense>} />
+            <Route path="/mentions-legales" element={<><Header /><PublicSuspense><MentionsLegalesPage /></PublicSuspense></>} />
+            <Route path="/politique-confidentialite" element={<><Header /><PublicSuspense><PolitiqueConfidentialitePage /></PublicSuspense></>} />
 
             {/* Admin routes — lazy + guard synchrone */}
             <Route path="/admin/login" element={<AdminSuspense><AdminLoginPage /></AdminSuspense>} />
