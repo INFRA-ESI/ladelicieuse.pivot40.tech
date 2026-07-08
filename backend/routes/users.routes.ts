@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import User from '../models/User.model.js';
+import Order from '../models/Order.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { verifyJWT } from './auth.routes.js';
 
@@ -12,11 +13,13 @@ const parseLimit   = (v: string, max = 200) => Math.min(max, Math.max(1, parseIn
 // ── GET /api/users — Liste paginée avec filtres ───────────────────────────────
 router.get('/', verifyJWT, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { search, statut, tier, page = '1', limit = '50' } = req.query as Record<string, string>;
+    const { search, statut, tier, emailVerified, page = '1', limit = '50' } = req.query as Record<string, string>;
     const filter: Record<string, unknown> = {};
 
     if (statut && statut !== 'tous') filter.statut = statut;
     if (tier && tier !== 'tous') filter.tier = tier;
+    if (emailVerified === 'true')  filter.emailVerified = true;
+    if (emailVerified === 'false') filter.emailVerified = false;
     if (search) {
       const safe = escapeRegex(search.slice(0, 100));
       filter.$or = [
@@ -130,6 +133,34 @@ router.patch('/:id/points', verifyJWT, async (req: Request, res: Response): Prom
     res.json({ success: true, data: user });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur mise à jour points', error: (error as Error).message });
+  }
+});
+
+// ── GET /api/users/:id/orders — Historique commandes (admin) ─────────────────
+router.get('/:id/orders', verifyJWT, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orders = await Order.find({ userId: req.params.id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .select('numero statut total items modePaiement modeCommande createdAt')
+      .lean();
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur', error: (error as Error).message });
+  }
+});
+
+// ── DELETE /api/users/cleanup-unverified — Purge comptes non vérifiés expirés ──
+router.delete('/cleanup-unverified', verifyJWT, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await User.deleteMany({
+      emailVerified: false,
+      emailVerificationExpires: { $lt: new Date() },
+    });
+    await logAction(`Purge ${result.deletedCount} compte(s) non vérifié(s) expirés`, 'utilisateur', 'Admin');
+    res.json({ success: true, deleted: result.deletedCount });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur purge', error: (error as Error).message });
   }
 });
 
