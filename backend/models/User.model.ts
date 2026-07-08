@@ -35,6 +35,8 @@ export interface IUser extends Document {
     startDate: Date;
     endDate: Date;
   };
+  // Préférences alimentaires (libres, non chiffrées)
+  preferences?: string[];
   // Suivi diététique — chiffrés AES-256-GCM en base, exposés comme number
   taille?:            number;
   objectifPoids?:     number;
@@ -76,6 +78,7 @@ const UserSchema = new Schema<IUser>(
       startDate: Date,
       endDate:   Date,
     },
+    preferences: { type: [String], default: [] },
     // Stockés chiffrés → type Mixed (string chiffrée en production, number legacy possible)
     taille:            { type: Schema.Types.Mixed },
     objectifPoids:     { type: Schema.Types.Mixed },

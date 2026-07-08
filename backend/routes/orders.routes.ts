@@ -92,8 +92,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     if (!client?.nom || typeof client.nom !== 'string' || !client.nom.trim()) {
       res.status(400).json({ success: false, message: 'Nom du client requis.' }); return;
     }
-    if (!client.email || typeof client.email !== 'string') {
-      res.status(400).json({ success: false, message: 'Email du client requis.' }); return;
+    if (client.email && typeof client.email !== 'string') {
+      res.status(400).json({ success: false, message: 'Email invalide.' }); return;
     }
     if (!client.telephone || typeof client.telephone !== 'string') {
       res.status(400).json({ success: false, message: 'Téléphone du client requis.' }); return;

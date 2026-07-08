@@ -88,7 +88,7 @@ const OrderSchema = new Schema<IOrder>(
     client: {
       nom:       { type: String, required: true },
       prenoms:   { type: String, default: '' },
-      email:     { type: String, required: true, lowercase: true },
+      email:     { type: String, default: '', lowercase: true },
       telephone: { type: String, required: true },
       adresse:   { type: String, default: '' },
     },

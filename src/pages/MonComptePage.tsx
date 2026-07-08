@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, Navigate } from 'react-router-dom';
 import { useUser, getTier, TIER_CONFIG, buildTierConfig, type UserOrder } from '@/context/UserContext';
@@ -13,11 +13,11 @@ import {
   Clock, CheckCircle, ChefHat, Package, Bike,
   Leaf, Zap, Crown, CalendarDays, PauseCircle, XCircle, PlayCircle,
   Edit3, Check, X, ArrowRight, RefreshCcw, AlertTriangle, Stethoscope,
-  LayoutDashboard, TrendingUp, Lock, Eye, EyeOff, Gift, Loader2,
+  TrendingUp, Lock, Eye, EyeOff, Gift, Loader2,
   BadgeCheck, Sparkles, Plus, Minus, Ban, RotateCcw, Home, ArrowLeft,
+  UtensilsCrossed,
 } from 'lucide-react';
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 const HERO_IMG = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1920&q=80';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
@@ -80,6 +80,33 @@ const TXTYPE_CFG = {
   rachat:      { label: 'Rachat',      icon: Gift,      color: 'text-violet-600' },
   ajustement:  { label: 'Ajustement',  icon: Sparkles,  color: 'text-sky-600' },
 };
+
+const PREF_OPTIONS = [
+  { key: 'vegetarien',      label: 'Végétarien',        desc: 'Sans viande ni poisson' },
+  { key: 'vegan',           label: 'Vegan',             desc: 'Sans produits animaux' },
+  { key: 'sans_gluten',     label: 'Sans gluten',       desc: 'Cœliaque ou intolérant' },
+  { key: 'sans_lactose',    label: 'Sans lactose',      desc: 'Intolérance au lactose' },
+  { key: 'halal',           label: 'Halal',             desc: 'Préparation certifiée halal' },
+  { key: 'sans_porc',       label: 'Sans porc',         desc: 'Aucun produit à base de porc' },
+  { key: 'low_carb',        label: 'Low-carb',          desc: 'Faible en glucides' },
+  { key: 'riche_proteines', label: 'Riche en protéines',desc: 'Apport élevé en protéines' },
+] as const;
+
+type PrefKey = (typeof PREF_OPTIONS)[number]['key'];
+
+async function fetchPreferences(token: string): Promise<PrefKey[]> {
+  const r = await fetch('/api/client/preferences', { headers: { Authorization: `Bearer ${token}` } });
+  const j = await r.json();
+  return j.success ? (j.data.preferences as PrefKey[]) : [];
+}
+
+async function savePreferences(token: string, prefs: PrefKey[]): Promise<void> {
+  await fetch('/api/client/preferences', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferences: prefs }),
+  });
+}
 
 function validatePassword(pwd: string): string | null {
   if (pwd.length < 8)             return 'Au moins 8 caractères.';
@@ -263,7 +290,7 @@ export default function MonComptePage() {
   const { addItem } = useCart();
 
   // ── Tab & UI state ──
-  const [activeTab, setActiveTab]           = useState<'commandes' | 'fidelite' | 'abonnement'>('commandes');
+  const [activeTab, setActiveTab]           = useState<'commandes' | 'fidelite' | 'abonnement' | 'preferences'>('commandes');
   const [expandedOrder, setExpandedOrder]   = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm]   = useState(false);
 
@@ -289,6 +316,11 @@ export default function MonComptePage() {
   const [redeemLoading, setRedeemLoading]     = useState(false);
   const [lastCode, setLastCode]               = useState<{ code: string; valeurFCFA: number } | null>(null);
 
+  // ── Dietary preferences ──
+  const [prefSelected, setPrefSelected]   = useState<PrefKey[]>([]);
+  const [prefLoading, setPrefLoading]     = useState(false);
+  const [prefSaving, setPrefSaving]       = useState(false);
+
   // ── Effects — AVANT le guard !user (règle des hooks) ──
   // user?.id et non user — refreshOrders() crée un nouvel objet user à chaque appel,
   // ce qui déclencherait une boucle infinie si on dépendait de l'objet entier.
@@ -298,6 +330,16 @@ export default function MonComptePage() {
     refreshOrders()
       .catch(e => setOrdersError((e as Error).message))
       .finally(() => setOrdersLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, user?.id, refreshOrders]);
+
+  // Actualisation silencieuse toutes les 30s pour les mises à jour de statut en temps réel
+  useEffect(() => {
+    if (!user?.id || activeTab !== 'commandes') return;
+    const id = setInterval(() => {
+      refreshOrders().catch(() => {});
+    }, 30000);
+    return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user?.id, refreshOrders]);
 
@@ -311,6 +353,35 @@ export default function MonComptePage() {
       .catch(() => {})
       .finally(() => setFideliteLoading(false));
   }, [activeTab, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || activeTab !== 'preferences') return;
+    const token = ls.get(TOKEN_KEY);
+    if (!token) return;
+    setPrefLoading(true);
+    fetchPreferences(token)
+      .then(p => setPrefSelected(p))
+      .catch(() => {})
+      .finally(() => setPrefLoading(false));
+  }, [activeTab, user?.id]);
+
+  const togglePref = useCallback((key: PrefKey) => {
+    setPrefSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  }, []);
+
+  const handleSavePreferences = async () => {
+    const token = ls.get(TOKEN_KEY);
+    if (!token) return;
+    setPrefSaving(true);
+    try {
+      await savePreferences(token, prefSelected);
+      toast.success('Préférences enregistrées');
+    } catch {
+      toast.error('Erreur lors de la sauvegarde');
+    } finally {
+      setPrefSaving(false);
+    }
+  };
 
   if (!user) return <Navigate to="/connexion" replace />;
 
@@ -663,15 +734,6 @@ export default function MonComptePage() {
                     )}
                   </div>
 
-                  {ADMIN_EMAIL && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && (
-                    <Link
-                      to="/admin/login"
-                      className="mt-4 w-full flex items-center justify-center gap-2 font-body text-xs uppercase tracking-[0.15em] px-3 py-2.5 border border-border text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors rounded-xl"
-                    >
-                      <LayoutDashboard className="w-3.5 h-3.5" />Espace administration
-                    </Link>
-                  )}
-
                   <button
                     onClick={logout}
                     className="mt-2 w-full flex items-center justify-center gap-2 font-body text-xs uppercase tracking-[0.15em] px-3 py-2.5 border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors rounded-xl"
@@ -742,17 +804,18 @@ export default function MonComptePage() {
 
               {/* ── Tabs ── */}
               <div className="bg-background border border-border rounded-2xl overflow-hidden">
-                <div className="flex border-b border-border">
-                  {(['commandes', 'fidelite', 'abonnement'] as const).map(tab => (
+                <div className="flex border-b border-border overflow-x-auto">
+                  {(['commandes', 'fidelite', 'abonnement', 'preferences'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-4 font-body text-sm uppercase tracking-wider transition-colors
+                      className={`relative shrink-0 flex items-center justify-center gap-2 px-4 py-4 font-body text-sm uppercase tracking-wider transition-colors
                         ${activeTab === tab ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      {tab === 'commandes' && 'Commandes'}
-                      {tab === 'fidelite'  && 'Fidélité'}
-                      {tab === 'abonnement'&& 'Abonnement'}
+                      {tab === 'commandes'   && 'Commandes'}
+                      {tab === 'fidelite'    && 'Fidélité'}
+                      {tab === 'abonnement'  && 'Abonnement'}
+                      {tab === 'preferences' && 'Préférences'}
                       {tab === 'commandes' && commandes.length > 0 && (
                         <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-body text-[10px] flex items-center justify-center">
                           {commandes.length}
@@ -1131,6 +1194,73 @@ export default function MonComptePage() {
                       )}
                     </motion.div>
                   )}
+                  {/* ─── Préférences alimentaires ─── */}
+                  {activeTab === 'preferences' && (
+                    <motion.div
+                      key="preferences"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.16 }}
+                      className="p-6 flex flex-col gap-6"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                          <UtensilsCrossed className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <h3 className="font-display text-xl text-foreground">Préférences alimentaires</h3>
+                          <p className="font-body text-sm text-muted-foreground mt-0.5 leading-relaxed">
+                            Indiquez vos restrictions et préférences. Elles nous permettent de mieux vous conseiller.
+                          </p>
+                        </div>
+                      </div>
+
+                      {prefLoading ? (
+                        <div className="flex items-center justify-center py-10">
+                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {PREF_OPTIONS.map(opt => {
+                            const active = prefSelected.includes(opt.key);
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => togglePref(opt.key)}
+                                className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-all
+                                  ${active
+                                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                                    : 'border-border hover:border-primary/40 bg-background'
+                                  }`}
+                              >
+                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors
+                                  ${active ? 'bg-primary border-primary' : 'bg-background border-border'}`}
+                                >
+                                  {active && <Check className="w-3 h-3 text-primary-foreground" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`font-body text-sm font-semibold ${active ? 'text-primary' : 'text-foreground'}`}>{opt.label}</p>
+                                  <p className="font-body text-xs text-muted-foreground">{opt.desc}</p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleSavePreferences}
+                        disabled={prefSaving || prefLoading}
+                        className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
+                      >
+                        {prefSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        Enregistrer mes préférences
+                      </button>
+                    </motion.div>
+                  )}
+
                 </AnimatePresence>
               </div>
 

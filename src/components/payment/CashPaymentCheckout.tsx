@@ -120,7 +120,7 @@ export const CashPaymentCheckout: React.FC<CashPaymentCheckoutProps> = ({
             <Input
               id="fullName"
               type="text"
-              placeholder="Jean Dupont"
+              placeholder="Votre prénom et nom"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               disabled={isLoading}

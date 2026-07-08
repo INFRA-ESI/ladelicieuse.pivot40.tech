@@ -441,6 +441,45 @@ router.patch('/profile', requireClient, async (req: ClientRequest, res: Response
   }
 });
 
+// ── GET /api/client/preferences — Préférences alimentaires ───────────────────
+router.get('/preferences', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+  try {
+    const user = await User.findById(req.clientId).select('preferences').lean();
+    if (!user) { res.status(404).json({ success: false, message: 'Compte introuvable.' }); return; }
+    res.json({ success: true, data: { preferences: user.preferences ?? [] } });
+  } catch {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+});
+
+// ── PATCH /api/client/preferences — Mettre à jour les préférences ─────────────
+const ALLOWED_PREFERENCES = [
+  'vegetarien', 'vegan', 'sans_gluten', 'sans_lactose',
+  'halal', 'sans_porc', 'low_carb', 'riche_proteines',
+] as const;
+
+router.patch('/preferences', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+  try {
+    const { preferences } = req.body as { preferences?: unknown };
+    if (!Array.isArray(preferences)) {
+      res.status(400).json({ success: false, message: 'preferences doit être un tableau.' });
+      return;
+    }
+    const valid = (preferences as unknown[]).filter(
+      (p): p is string => typeof p === 'string' && (ALLOWED_PREFERENCES as readonly string[]).includes(p)
+    );
+    const user = await User.findByIdAndUpdate(
+      req.clientId,
+      { $set: { preferences: valid } },
+      { new: true }
+    ).select('preferences');
+    if (!user) { res.status(404).json({ success: false, message: 'Compte introuvable.' }); return; }
+    res.json({ success: true, data: { preferences: user.preferences } });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Mise à jour échouée.', error: (error as Error).message });
+  }
+});
+
 // ── POST /api/client/change-password — Changement de mot de passe ─────────────
 router.post('/change-password', rateLimiter(5, 900, 'client-change-pwd'), requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
   try {

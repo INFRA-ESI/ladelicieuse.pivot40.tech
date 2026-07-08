@@ -275,12 +275,15 @@ export default function CartPage() {
     ? [user.prenoms, user.nom].filter(Boolean).join(' ')
     : [prenoms, nom].filter(Boolean).join(' ') || nom;
 
-  const finishOrder = (mode = 'En ligne', ov: Partial<{
+  const finishOrder = async (mode = 'En ligne', ov: Partial<{
     pendingOrderId: string; nom: string; prenoms: string; telephone: string;
     deliveryMode: 'livraison' | 'retrait' | null;
     deliveryDate: string; deliveryTime: string; deliveryAddress: string;
     deliveryFee: number; orderTotal: number;
   }> = {}) => {
+    // Capture snapshot immédiatement avant toute opération async
+    const itemsSnapshot = [...items];
+
     const _id     = ov.pendingOrderId ?? pendingOrderId ?? `ORDER-${Date.now()}`;
     const _nom    = (ov.nom     ?? user?.nom     ?? nom).trim();
     const _pre    = (ov.prenoms ?? user?.prenoms ?? prenoms).trim();
@@ -298,53 +301,89 @@ export default function CartPage() {
     const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const pts     = calcPoints(_total);
     const snap    = _dMode ? { mode: _dMode, address: _dAddr, date: _dDate, time: _dTime, fee: _dFee } : null;
-
-    setConfirmedItems([...items]);
-    setConfirmedTotal(_total);
-    setConfirmedMode(mode);
-    setConfirmedAt(`${dateStr} à ${timeStr}`);
-    setConfirmedOrderId(_id);
-    setConfirmedDelivery(snap as typeof confirmedDelivery);
-
-    addOrder({
-      id: _id,
-      date: dateStr,
-      items: items.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice })),
-      total: _total,
-      statut: 'en_attente',
-      modePaiement: mode,
-      pointsGagnes: pts,
-    });
+    const sousTotal = itemsSnapshot.reduce((s, i) => s + i.totalPrice * i.quantity, 0);
 
     const modePaiementMap: Record<string, 'mobile_money' | 'carte' | 'especes'> = {
       'Airtel Money': 'mobile_money', 'Moov Money': 'mobile_money',
       'Carte bancaire': 'carte', 'En ligne': 'carte',
     };
-    fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client: {
-          nom: _nom, prenoms: _pre,
-          email: user?.email ?? '',
-          telephone: _phone,
-          adresse: _dMode === 'livraison' ? _dAddr : 'Sur place',
-        },
-        userId: user?.id ?? undefined,
-        items: items.map(i => ({ nom: i.name, qty: i.quantity, prix: i.totalPrice, customizations: [] })),
-        statut: 'en_attente',
-        priorite: 'normale',
-        modeCommande: _dMode === 'retrait' ? 'sur_place' : 'livraison',
-        modePaiement: modePaiementMap[mode] ?? 'especes',
-        sousTotal: totalPrice,
-        fraisLivraison: _dFee,
-        total: _total,
-        datelivraison:    _dMode === 'livraison' && _dDate ? _dDate : undefined,
-        creneauLivraison: _dMode === 'livraison' && _dTime ? _dTime : undefined,
-        notes: '',
-      }),
-    }).catch(err => console.warn('[CartPage] Order save to DB failed:', err));
+    const modePaiementCode = modePaiementMap[mode] ?? 'especes';
 
+    // Afficher l'écran de confirmation immédiatement (optimiste)
+    setConfirmedItems(itemsSnapshot);
+    setConfirmedTotal(_total);
+    setConfirmedMode(mode);
+    setConfirmedAt(`${dateStr} à ${timeStr}`);
+    setConfirmedOrderId(_id);
+    setConfirmedDelivery(snap as typeof confirmedDelivery);
+    setCheckoutOpen(false);
+    setOrderConfirmed(true);
+    setTimeout(() => clearCart(), 1500);
+
+    // Mise à jour locale du contexte utilisateur
+    addOrder({
+      id: _id,
+      date: dateStr,
+      items: itemsSnapshot.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice })),
+      total: _total,
+      statut: 'en_attente',
+      modePaiement: modePaiementCode,
+      modeCommande: _dMode === 'retrait' ? 'sur_place' : 'livraison',
+      pointsGagnes: pts,
+    });
+
+    // Sauvegarde en base — chemin critique, erreurs visibles
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: {
+            nom: _nom,
+            prenoms: _pre,
+            email: user?.email ?? '',
+            telephone: _phone,
+            adresse: _dMode === 'livraison' ? _dAddr : 'Sur place',
+          },
+          userId: user?.id ?? undefined,
+          items: itemsSnapshot.map(i => ({
+            nom: i.name,
+            qty: i.quantity,
+            prix: i.totalPrice,
+            customizations: [],
+          })),
+          statut: 'en_attente',
+          priorite: 'normale',
+          modeCommande: _dMode === 'retrait' ? 'sur_place' : 'livraison',
+          modePaiement: modePaiementCode,
+          sousTotal,
+          fraisLivraison: _dFee,
+          total: _total,
+          datelivraison:    _dMode === 'livraison' && _dDate ? _dDate : undefined,
+          creneauLivraison: _dMode === 'livraison' && _dTime ? _dTime : undefined,
+          notes: '',
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success && json.data?.numero) {
+        // Mettre à jour l'ID avec le vrai numéro de la DB (CMD-XXXX)
+        setConfirmedOrderId(json.data.numero);
+      } else if (!res.ok) {
+        toast.error(
+          'Commande confirmée mais l\'enregistrement a échoué. Appelez-nous pour confirmer.',
+          { duration: 10000 }
+        );
+        console.error('[CartPage] Échec sauvegarde commande:', json?.message);
+      }
+    } catch (err) {
+      toast.error(
+        'Erreur réseau — commande non enregistrée. Appelez-nous pour confirmer.',
+        { duration: 10000 }
+      );
+      console.error('[CartPage] Erreur réseau sauvegarde commande:', err);
+    }
+
+    // Notification WhatsApp — fire-and-forget (secondaire)
     fetch('/api/notifications/whatsapp/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -352,16 +391,12 @@ export default function CartPage() {
         orderId: _id,
         customerName: _name,
         customerPhone: _phone,
-        items: items.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice })),
+        items: itemsSnapshot.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice })),
         total: _total,
         modePaiement: mode,
         delivery: _dMode ? { mode: _dMode, address: _dAddr, date: _dDate, time: _dTime, fee: _dFee } : undefined,
       }),
     }).catch(err => console.warn('[CartPage] WhatsApp notification :', err));
-
-    setCheckoutOpen(false);
-    setOrderConfirmed(true);
-    setTimeout(() => clearCart(), 1500);
   };
 
   const openCheckout = () => {
@@ -995,7 +1030,7 @@ export default function CartPage() {
                             type="text"
                             value={prenoms}
                             onChange={e => { setPrenoms(e.target.value); setInfoError(''); }}
-                            placeholder="Jean-Marie"
+                            placeholder="Votre prénom"
                             autoComplete="given-name"
                             className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
                           />
@@ -1006,7 +1041,7 @@ export default function CartPage() {
                             type="text"
                             value={nom}
                             onChange={e => { setNom(e.target.value); setInfoError(''); }}
-                            placeholder="DUPONT"
+                            placeholder="Votre nom"
                             autoComplete="family-name"
                             className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
                             required
