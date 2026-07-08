@@ -131,6 +131,13 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                 </div>
               )}
 
+              {!loading && !product && (
+                <div className="p-10 flex flex-col items-center justify-center gap-3 text-center">
+                  <p className="font-display text-lg text-foreground">Fiche introuvable</p>
+                  <p className="font-body text-sm text-muted-foreground">Ce produit n'est pas disponible dans le catalogue.</p>
+                </div>
+              )}
+
               {!loading && product && (
                 <>
                   {/* ── Galerie ── */}

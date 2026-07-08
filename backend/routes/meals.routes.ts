@@ -79,10 +79,9 @@ router.get('/product/:identifier', cache(300), async (req: Request, res: Respons
     const { identifier } = req.params;
     const isObjectId = /^[a-f\d]{24}$/i.test(identifier);
 
-    const baseFilter = { disponible: true, date: null };
     const meal = isObjectId
-      ? await Meal.findOne({ _id: identifier,                  ...baseFilter }).lean()
-      : await Meal.findOne({ slug: identifier.toLowerCase(),   ...baseFilter }).lean();
+      ? await Meal.findOne({ _id: identifier,                 disponible: true }).lean()
+      : await Meal.findOne({ slug: identifier.toLowerCase(),  disponible: true }).lean();
 
     if (!meal) {
       res.status(404).json({ success: false, message: 'Produit introuvable' });

@@ -1,13 +1,15 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { INGREDIENTS, CATEGORY_LABELS, formatPrice, type Ingredient, type IngredientCategory } from '@/data/products';
 import { toast } from 'sonner';
 import { FlyingIngredient, type FlyingItem } from '@/components/FlyingIngredient';
-import { ChevronRight, ChevronLeft, ShoppingCart, Check } from 'lucide-react';
+import { ChevronRight, ChevronLeft, ShoppingCart, Check, Info } from 'lucide-react';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiIngredient } from '@/types/api.types';
+import { ss } from '@/lib/storage';
+import IngredientSheetModal from '@/components/IngredientSheetModal';
 
 type SaladType = 'crudites' | 'fruits';
 
@@ -146,16 +148,49 @@ export default function SaladComposerPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [ingredientsLoaded, setIngredientsLoaded] = useState(false);
   const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
+  const [sheetIngredient, setSheetIngredient] = useState<Ingredient | null>(null);
+  // Empêche la persistance immédiate au montage (avant réhydratation)
+  const draftRestoredRef = useRef(false);
+
+  // Clé sessionStorage pour le brouillon en cours
+  const draftKey = saladType ? `ld_salade_draft_${saladType}` : null;
 
   // Charger les ingrédients depuis l'API — démarrer avec tableau vide pour éviter le flash
   useEffect(() => {
     publicFetch<ApiIngredient[]>('/api/ingredients/public')
       .then(data => {
-        setIngredients(data && data.length > 0 ? data.map(apiToIngredient) : INGREDIENTS);
+        const list = data && data.length > 0 ? data.map(apiToIngredient) : INGREDIENTS;
+        setIngredients(list);
+        // Réhydrater le brouillon après chargement des ingrédients
+        if (draftKey && !draftRestoredRef.current) {
+          try {
+            const raw = ss.get(draftKey);
+            if (raw) {
+              const { entries, step: savedStep } = JSON.parse(raw) as { entries: [string, number][]; step: number };
+              const validEntries = entries.filter(([id]) => list.some(i => i.id === id));
+              if (validEntries.length > 0) {
+                setSelected(new Map(validEntries));
+                setStep(savedStep ?? 0);
+                toast.info('Votre composition précédente a été restaurée.');
+              }
+            }
+          } catch { /* brouillon corrompu — ignorer */ }
+          draftRestoredRef.current = true;
+        }
       })
-      .catch(() => setIngredients(INGREDIENTS))
+      .catch(() => { setIngredients(INGREDIENTS); draftRestoredRef.current = true; })
       .finally(() => setIngredientsLoaded(true));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persister le brouillon à chaque changement (après réhydratation)
+  useEffect(() => {
+    if (!draftKey || !draftRestoredRef.current) return;
+    if (selected.size === 0) {
+      ss.remove(draftKey);
+    } else {
+      ss.set(draftKey, JSON.stringify({ entries: Array.from(selected.entries()), step }));
+    }
+  }, [selected, step, draftKey]);
 
   // Charger les suggestions depuis l'API
   useEffect(() => {
@@ -299,6 +334,8 @@ export default function SaladComposerPage() {
       totalPrice,
       quantity:      1,
     });
+    // Vider le brouillon une fois ajouté au panier
+    if (draftKey) ss.remove(draftKey);
   };
 
   const handleFinaliser  = () => { addCurrentToCart(); navigate('/panier'); };
@@ -480,7 +517,16 @@ export default function SaladComposerPage() {
                                 />
                               </div>
                               <div className="p-3 flex flex-col flex-1">
-                                <h4 className="font-display text-base text-foreground mb-1">{ingredient.name}</h4>
+                                <div className="flex items-start justify-between gap-1 mb-1">
+                                  <h4 className="font-display text-base text-foreground leading-tight">{ingredient.name}</h4>
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setSheetIngredient(ingredient); }}
+                                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                                    title="Voir la fiche"
+                                  >
+                                    <Info className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                                 <div className="flex justify-between items-center mb-1">
                                   <span className="font-body text-xs text-muted-foreground">{ingredient.caloriesPerPortion} cal</span>
                                   <span className="font-body text-sm text-primary font-semibold">{formatPrice(ingredient.pricePerPortion)}</span>
@@ -652,6 +698,8 @@ export default function SaladComposerPage() {
       {flyingItems.map(item => (
         <FlyingIngredient key={item.id} item={item} onComplete={removeFlyingItem} />
       ))}
+
+      <IngredientSheetModal ingredient={sheetIngredient} onClose={() => setSheetIngredient(null)} />
     </div>
   );
 }

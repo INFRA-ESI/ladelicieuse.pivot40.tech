@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { JUICES, JuiceProduct, formatPrice } from '@/data/products';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { publicFetch } from '@/services/publicApiService';
 import { ApiMeal } from '@/types/api.types';
 import Footer from '@/components/Footer';
 import ProductSheetModal from '@/components/ProductSheetModal';
+import { Check, FileText, Plus, Minus } from 'lucide-react';
 
 function isJuice(cat: string) {
   const c = cat.toLowerCase();
@@ -29,7 +30,6 @@ function toJuiceProduct(m: ApiMeal): JuiceProduct {
   };
 }
 
-// Sections d'affichage — générées dynamiquement à partir des catégories DB
 const SECTION_DISPLAY = [
   {
     type: 'detox' as const,
@@ -47,8 +47,11 @@ const SECTION_DISPLAY = [
   },
 ];
 
+// Préfixe stable utilisé pour identifier les articles jus dans le panier
+const cartPrefix = (id: string) => `jus-${id}-`;
+
 export default function JuicesPage() {
-  const { addItem } = useCart();
+  const { addItem, removeItem, updateQuantity, items } = useCart();
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [juices, setJuices] = useState<JuiceProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,23 +65,45 @@ export default function JuicesPage() {
     });
   }, []);
 
-  const handleAdd = (juice: JuiceProduct, e: React.MouseEvent) => {
-    addItem({
-      id:            `jus-${juice.id}-${Date.now()}`,
-      type:          'jus',
-      name:          juice.name,
-      product:       juice,
-      totalCalories: juice.calories,
-      totalPrice:    juice.price,
-      quantity:      1,
-    });
-    launchFly(e, { image: juice.image });
-    toast.success(`${juice.name} ajouté au panier !`);
+  const getCartItem = (juice: JuiceProduct) =>
+    items.find(item => item.id.startsWith(cartPrefix(juice.id)));
+
+  const getQty = (juice: JuiceProduct): number =>
+    getCartItem(juice)?.quantity ?? 0;
+
+  const handleIncrement = (juice: JuiceProduct, e: React.MouseEvent) => {
+    const existing = getCartItem(juice);
+    if (!existing) {
+      addItem({
+        id:            `jus-${juice.id}`,
+        type:          'jus',
+        name:          juice.name,
+        product:       juice,
+        totalCalories: juice.calories,
+        totalPrice:    juice.price,
+        quantity:      1,
+      });
+      launchFly(e, { image: juice.image });
+      toast.success(`${juice.name} ajouté au panier !`);
+    } else {
+      updateQuantity(existing.id, existing.quantity + 1);
+      launchFly(e, { image: juice.image });
+    }
+  };
+
+  const handleDecrement = (juice: JuiceProduct) => {
+    const existing = getCartItem(juice);
+    if (!existing) return;
+    if (existing.quantity <= 1) {
+      removeItem(existing.id);
+      toast.info(`${juice.name} retiré du panier`);
+    } else {
+      updateQuantity(existing.id, existing.quantity - 1);
+    }
   };
 
   return (
     <div className="min-h-screen pt-24 pb-32 bg-muted/30">
-      {/* Hero */}
       <section className="relative h-[50vh] mb-16 overflow-hidden">
         <img src={juicesImage} alt="Nos jus détox et fruits" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/50 to-transparent" />
@@ -88,9 +113,7 @@ export default function JuicesPage() {
           className="absolute bottom-0 left-0 p-6 md:p-12 max-w-2xl"
         >
           <h1 className="font-display text-4xl md:text-6xl text-foreground mb-3">Jus & Détox</h1>
-          <p className="font-body text-foreground/80 text-lg">
-            Des recettes pensées pour purifier, énergiser et ravir.
-          </p>
+          <p className="font-body text-foreground/80 text-lg">Des recettes pensées pour purifier, énergiser et ravir.</p>
         </motion.div>
       </section>
 
@@ -101,15 +124,15 @@ export default function JuicesPage() {
               <div className="h-8 w-48 bg-muted animate-pulse rounded" />
               <div className="grid md:grid-cols-3 gap-6">
                 {Array.from({ length: 3 }).map((_, j) => (
-                  <div key={j} className="h-64 bg-muted animate-pulse rounded-xl" />
+                  <div key={j} className="h-80 bg-muted animate-pulse rounded-xl" />
                 ))}
               </div>
             </div>
           ))
         ) : (
           SECTION_DISPLAY.map(section => {
-            const items = juices.filter(j => j.type === section.type);
-            if (items.length === 0) return null;
+            const sectionItems = juices.filter(j => j.type === section.type);
+            if (sectionItems.length === 0) return null;
             return (
               <div key={section.type} id={section.type} className="scroll-mt-28">
                 <motion.div
@@ -134,8 +157,16 @@ export default function JuicesPage() {
                 </motion.div>
 
                 <div className="grid md:grid-cols-3 gap-6">
-                  {items.map((juice, i) => (
-                    <JuiceCard key={juice.id} juice={juice} onAdd={handleAdd} onSheet={() => setSheetId(juice.id)} delay={i * 0.1} />
+                  {sectionItems.map((juice, i) => (
+                    <JuiceCard
+                      key={juice.id}
+                      juice={juice}
+                      qty={getQty(juice)}
+                      onIncrement={e => handleIncrement(juice, e)}
+                      onDecrement={() => handleDecrement(juice)}
+                      onSheet={() => setSheetId(juice.id)}
+                      delay={i * 0.1}
+                    />
                   ))}
                 </div>
               </div>
@@ -155,65 +186,121 @@ export default function JuicesPage() {
 
 function JuiceCard({
   juice,
-  onAdd,
+  qty,
+  onIncrement,
+  onDecrement,
   onSheet,
   delay,
 }: {
   juice: JuiceProduct;
-  onAdd: (j: JuiceProduct, e: React.MouseEvent) => void;
+  qty: number;
+  onIncrement: (e: React.MouseEvent) => void;
+  onDecrement: () => void;
   onSheet: () => void;
   delay: number;
 }) {
+  const selected = qty > 0;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       transition={{ delay }}
       viewport={{ once: true }}
-      className="border border-border bg-background flex flex-col rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden"
+      className={`group relative border-2 bg-background flex flex-col rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden
+        ${selected
+          ? 'border-green-500 ring-2 ring-green-500/30 shadow-green-100'
+          : 'border-border hover:border-primary/50'}`}
     >
-      {juice.image && (
-        <div className="relative h-44 overflow-hidden">
+      {/* Image */}
+      <div className="relative h-52 overflow-hidden bg-muted shrink-0">
+        {juice.image ? (
           <img
             src={juice.image}
             alt={juice.name}
-            className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
           />
-        </div>
-      )}
-      <div className="p-6 flex flex-col flex-1">
-        <h3 className="font-display text-xl text-foreground mb-2">{juice.name}</h3>
-        <p className="font-body text-sm text-muted-foreground mb-4 flex-1">{juice.description}</p>
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
 
+        {/* Badge sélection */}
+        <AnimatePresence>
+          {selected && (
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shadow-lg z-10"
+            >
+              <Check className="w-4 h-4 text-white" strokeWidth={3} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Prix + calories */}
+        <div className="absolute bottom-3 left-3">
+          <span className="font-display text-xl text-white drop-shadow-md">{formatPrice(juice.price)}</span>
+        </div>
+        <div className="absolute bottom-3 right-3">
+          <span className="font-body text-xs text-white/80 bg-black/30 px-2 py-0.5 rounded-full">{juice.calories} cal</span>
+        </div>
+      </div>
+
+      {/* Contenu texte */}
+      <div className="p-5 flex flex-col flex-1">
+        <h3 className={`font-display text-xl mb-1.5 ${selected ? 'text-green-700' : 'text-foreground'}`}>{juice.name}</h3>
+        <p className="font-body text-sm text-muted-foreground mb-3 flex-1 leading-relaxed line-clamp-3">{juice.description}</p>
         {juice.benefits.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-1.5 mb-4">
             {juice.benefits.slice(0, 3).map(b => (
-              <span key={b} className="font-body text-[10px] uppercase tracking-wider px-2 py-1 bg-primary/15 text-primary rounded">
+              <span key={b} className="font-body text-[10px] uppercase tracking-wider px-2 py-1 bg-primary/10 text-primary rounded">
                 {b}
               </span>
             ))}
           </div>
         )}
-
-        <div className="flex justify-between items-center mb-4">
-          <span className="font-body text-xs text-muted-foreground">{juice.calories} cal</span>
-          <span className="font-body text-sm font-bold text-primary">{formatPrice(juice.price)}</span>
-        </div>
-
-        <div className="flex gap-2">
+        {/* Actions : fiche produit + contrôle quantité */}
+        <div className="flex items-center gap-2 mt-auto pt-1">
           <button
-            onClick={(e) => onAdd(juice, e)}
-            className="flex-1 font-body text-xs uppercase tracking-[0.15em] px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all rounded-lg"
+            type="button"
+            onClick={e => { e.stopPropagation(); onSheet(); }}
+            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl"
           >
-            Ajouter au panier
+            <FileText className="w-3.5 h-3.5" />
+            Fiche
           </button>
-          <button
-            onClick={onSheet}
-            className="flex-1 font-body text-xs uppercase tracking-[0.15em] px-4 py-3 border-2 border-primary text-primary bg-transparent hover:bg-primary/10 active:scale-95 transition-all rounded-lg"
-          >
-            Voir la fiche produit
-          </button>
+          {qty === 0 ? (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onIncrement(e); }}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl font-body text-xs uppercase tracking-wider"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Ajouter
+            </button>
+          ) : (
+            <div className="flex items-center border border-primary/30 bg-primary/5 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onDecrement(); }}
+                className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
+                aria-label="Diminuer"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-2 font-body text-sm font-bold text-primary min-w-[1.5rem] text-center">{qty}</span>
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onIncrement(e); }}
+                className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
+                aria-label="Augmenter"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
