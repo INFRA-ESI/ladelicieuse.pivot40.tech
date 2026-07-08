@@ -118,7 +118,7 @@ export default function ConnexionPage() {
 
   return (
     <>
-    <div className="min-h-screen flex flex-col md:flex-row pt-16">
+    <div className="min-h-screen flex flex-col md:flex-row pt-20">
 
       {/* ── Colonne gauche — Hero ── */}
       <div className="relative hidden md:flex md:w-1/2 flex-col justify-end overflow-hidden">

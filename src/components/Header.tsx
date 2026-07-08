@@ -3,7 +3,8 @@ import { useCart } from '@/context/CartContext';
 import { useUser } from '@/context/UserContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { CircleUser, ShoppingBag } from 'lucide-react';
+import { CircleUser, ShoppingBag, Menu, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import logo from '@/assets/logo.png';
 
 export default function Header() {
@@ -12,6 +13,7 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const prevItems = useRef(totalItems);
   const [cartBump, setCartBump] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     if (totalItems > prevItems.current) {
@@ -21,12 +23,30 @@ export default function Header() {
     prevItems.current = totalItems;
   }, [totalItems]);
 
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-border/50">
-      <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2">
-          <img src={logo} alt="La Délicieuse Diète" className="h-12 w-auto" />
-          <span className="font-display text-2xl md:text-3xl font-semibold text-foreground tracking-tight">La Délicieuse Diète</span>
+    <header
+      className={cn(
+        'fixed top-0 left-0 right-0 z-50 bg-white border-b border-border/50 transition-shadow duration-500 ease-out',
+        scrolled ? 'shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : 'shadow-none'
+      )}
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img
+            src={logo}
+            alt="La Délicieuse Diète"
+            className="h-14 sm:h-16 w-auto shrink-0"
+          />
+          <span className="font-display text-xl sm:text-2xl md:text-3xl font-semibold text-foreground tracking-tight truncate">
+            La Délicieuse Diète
+          </span>
         </Link>
         
         {/* Desktop nav */}
@@ -82,11 +102,12 @@ export default function Header() {
         </nav>
 
         {/* Mobile menu button */}
-        <button 
-          onClick={() => setMenuOpen(!menuOpen)} 
-          className="md:hidden font-body text-sm uppercase tracking-widest text-foreground"
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label={menuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+          className="md:hidden flex items-center justify-center w-10 h-10 rounded-xl border border-border text-foreground"
         >
-          {menuOpen ? 'Fermer' : 'Menu'}
+          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
 
@@ -97,7 +118,7 @@ export default function Header() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="md:hidden overflow-hidden bg-background border-b border-border"
+            className="md:hidden overflow-hidden bg-white border-b border-border"
           >
             <div className="px-6 py-6 flex flex-col gap-4">
               <MobileNavItem to="/composer" label="Salades" onClick={() => setMenuOpen(false)} />

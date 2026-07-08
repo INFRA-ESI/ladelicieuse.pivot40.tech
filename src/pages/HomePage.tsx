@@ -112,7 +112,7 @@ export default function HomePage() {
             to="/composer"
             className="inline-block font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
           >
-            Commander ma salade
+            Commander
           </Link>
         </motion.div>
       </section>

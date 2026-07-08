@@ -140,7 +140,7 @@ function authHeaders(token: string) {
 
 function SuiviSkeleton() {
   return (
-    <div className="min-h-screen bg-muted/20 pb-20 pt-16">
+    <div className="min-h-screen bg-muted/20 pb-20 pt-20">
       <div className="bg-background border-b border-border">
         <div className="max-w-5xl mx-auto px-6 py-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -397,7 +397,7 @@ export default function SuiviPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20 pb-20 pt-16">
+    <div className="min-h-screen bg-muted/20 pb-20 pt-20">
 
       {/* ── Header ── */}
       <div className="bg-background border-b border-border">
