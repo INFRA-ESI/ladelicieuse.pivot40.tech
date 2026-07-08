@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, Bell, MessageCircle, Users, RefreshCw, CheckCircle, AlertCircle, Smartphone } from 'lucide-react';
+import { Bell, Users, RefreshCw, CheckCircle, AlertCircle, Smartphone, Mail, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPost } from '@/services/adminApiService';
 
@@ -37,11 +37,12 @@ export default function WhatsAppPage() {
   const [recentTxs, setRecentTxs] = useState<FideliteTx[]>([]);
   const [loading, setLoading]     = useState(true);
 
-  // Broadcast form
-  const [segment, setSegment]           = useState<Segment>('all');
-  const [broadcastMsg, setBroadcastMsg] = useState('');
-  const [sending, setSending]           = useState(false);
-  const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+  // Email broadcast form
+  const [emailSegment, setEmailSegment] = useState<Segment>('all');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult]   = useState<{ sent: number; failed: number; total: number } | null>(null);
 
   // Push form
   const [pushTitle, setPushTitle] = useState('');
@@ -69,22 +70,23 @@ export default function WhatsAppPage() {
     }
   };
 
-  const handleBroadcast = async () => {
-    if (!broadcastMsg.trim()) { toast.error('Rédigez votre message'); return; }
-    setSending(true);
-    setBroadcastResult(null);
+  const handleBroadcastEmail = async () => {
+    if (!emailSubject.trim() || !emailMessage.trim()) { toast.error('Objet et message requis'); return; }
+    setEmailSending(true);
+    setEmailResult(null);
     try {
       const res = await adminPost<{ sent: number; failed: number; total: number }>(
-        '/notifications/whatsapp/broadcast',
-        { message: broadcastMsg.trim(), segment },
+        '/notifications/email/broadcast',
+        { subject: emailSubject.trim(), message: emailMessage.trim(), segment: emailSegment },
       );
-      setBroadcastResult(res);
-      toast.success(`WhatsApp envoyé : ${res.sent} reçus`);
-      setBroadcastMsg('');
+      setEmailResult(res);
+      toast.success(`Email envoyé : ${res.sent} / ${res.total} destinataires`);
+      setEmailSubject('');
+      setEmailMessage('');
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erreur envoi');
+      toast.error(e instanceof Error ? e.message : 'Erreur envoi email');
     } finally {
-      setSending(false);
+      setEmailSending(false);
     }
   };
 
@@ -112,8 +114,8 @@ export default function WhatsAppPage() {
       {/* En-tête */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Notifications</h2>
-          <p className="font-body text-sm text-muted-foreground">WhatsApp · Push · Fidélité</p>
+          <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Communications</h2>
+          <p className="font-body text-sm text-muted-foreground">Email · Push · Fidélité</p>
         </div>
         <button
           onClick={loadData}
@@ -126,11 +128,10 @@ export default function WhatsAppPage() {
       </div>
 
       {/* KPI */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
           { label: 'Abonnés Push',        value: stats?.pushSubscriptions ?? '—',  icon: Smartphone,     color: 'text-blue-600'  },
           { label: 'Gains fidélité (24h)', value: stats?.fideliteGainsToday ?? '—', icon: CheckCircle,   color: 'text-green-600' },
-          { label: 'WhatsApp',            value: 'Meta API',                        icon: MessageCircle, color: 'text-primary'   },
           { label: 'Canal email',         value: 'Gmail',                           icon: Bell,          color: 'text-orange-500'},
         ].map(k => {
           const Icon = k.icon;
@@ -148,11 +149,11 @@ export default function WhatsAppPage() {
 
       <div className="grid md:grid-cols-2 gap-6">
 
-        {/* ── Broadcast WhatsApp ─────────────────────────────────────────────── */}
+        {/* ── Broadcast Email ────────────────────────────────────────────────── */}
         <div className="bg-background border border-border rounded-lg p-5 space-y-4">
           <div className="flex items-center gap-2 mb-1">
-            <MessageCircle className="w-4 h-4 text-green-600" />
-            <h3 className="font-display text-base text-foreground">Broadcast WhatsApp</h3>
+            <Mail className="w-4 h-4 text-orange-500" />
+            <h3 className="font-display text-base text-foreground">Broadcast Email</h3>
           </div>
 
           {/* Segment */}
@@ -163,9 +164,9 @@ export default function WhatsAppPage() {
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setSegment(s)}
+                  onClick={() => setEmailSegment(s)}
                   className={`px-3 py-1.5 rounded-md font-body text-xs transition-colors ${
-                    segment === s
+                    emailSegment === s
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground hover:bg-muted/80'
                   }`}
@@ -176,35 +177,46 @@ export default function WhatsAppPage() {
             </div>
           </div>
 
+          {/* Objet */}
+          <div>
+            <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Objet</label>
+            <input
+              value={emailSubject}
+              onChange={e => setEmailSubject(e.target.value)}
+              placeholder="Nouveauté chez La Délicieuse Diète…"
+              className="w-full h-10 px-4 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
           {/* Message */}
           <div>
             <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Message</label>
             <textarea
-              value={broadcastMsg}
-              onChange={e => setBroadcastMsg(e.target.value)}
+              value={emailMessage}
+              onChange={e => setEmailMessage(e.target.value)}
               rows={5}
-              placeholder="Rédigez votre message WhatsApp…"
+              placeholder="Rédigez votre message…"
               className="w-full px-4 py-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             />
-            <p className="font-body text-xs text-muted-foreground mt-1 text-right">{broadcastMsg.length} caractères</p>
+            <p className="font-body text-xs text-muted-foreground mt-1 text-right">{emailMessage.length} caractères</p>
           </div>
 
-          {broadcastResult && (
+          {emailResult && (
             <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
               <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
               <p className="font-body text-sm text-green-700">
-                {broadcastResult.sent} envoyés · {broadcastResult.failed} échecs · {broadcastResult.total} destinataires
+                {emailResult.sent} envoyés · {emailResult.failed} échecs · {emailResult.total} destinataires
               </p>
             </div>
           )}
 
           <button
-            onClick={handleBroadcast}
-            disabled={sending || !broadcastMsg.trim()}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-body rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+            onClick={handleBroadcastEmail}
+            disabled={emailSending || !emailSubject.trim() || !emailMessage.trim()}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-orange-500 text-white text-sm font-body rounded-md hover:bg-orange-600 disabled:opacity-50 transition-colors"
           >
-            {sending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {sending ? 'Envoi en cours…' : 'Envoyer par WhatsApp'}
+            {emailSending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {emailSending ? 'Envoi en cours…' : 'Envoyer par Email'}
           </button>
         </div>
 
@@ -316,15 +328,8 @@ export default function WhatsAppPage() {
       {/* ── Infos configuration ───────────────────────────────────────────── */}
       <div className="bg-background border border-border rounded-lg p-5">
         <h3 className="font-display text-base text-foreground mb-3">Configuration des canaux</h3>
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           {[
-            {
-              name: 'WhatsApp (Meta Cloud API)',
-              status: 'META_PHONE_NUMBER_ID configuré ?',
-              desc: 'developers.facebook.com → Créer une app → Ajouter le produit WhatsApp → récupérez META_WHATSAPP_TOKEN et META_PHONE_NUMBER_ID → ajoutez-les dans backend/.env',
-              color: 'border-green-200',
-              dot: 'bg-green-500',
-            },
             {
               name: 'Push Notifications',
               status: 'VAPID_PUBLIC_KEY configuré ?',

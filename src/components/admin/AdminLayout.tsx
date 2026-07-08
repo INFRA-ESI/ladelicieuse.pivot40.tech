@@ -50,7 +50,7 @@ const NAV_GROUPS = [
       { to: '/admin/utilisateurs', icon: Users,          label: 'Utilisateurs' },
       { to: '/admin/factures',     icon: FileText,       label: 'Factures' },
       { to: '/admin/historique',   icon: History,        label: 'Historique' },
-      { to: '/admin/whatsapp',     icon: MessageCircle,  label: 'WhatsApp IA' },
+      { to: '/admin/whatsapp',     icon: MessageCircle,  label: 'Communications' },
       { to: '/admin/parametres',   icon: Settings,       label: 'Paramètres' },
     ],
   },

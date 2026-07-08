@@ -256,6 +256,59 @@ function wrapper(rows: string, preheaderText = ''): string {
 </html>`;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── 0. Email groupé (broadcast admin) ─────────────────────────────────────────
+
+export async function sendBroadcastEmail(
+  to: string,
+  nom: string,
+  subject: string,
+  message: string,
+): Promise<void> {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+  const bodyHtml = escapeHtml(message).split(/\n{2,}/).map(
+    para => `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;
+                  line-height:1.9;color:${C.textMid};">${para.replace(/\n/g, '<br>')}</p>`
+  ).join('');
+
+  const rows = `
+    ${header('Communication')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+        <p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                  letter-spacing:2px;text-transform:uppercase;color:${C.textLight};">
+          Bonjour ${escapeHtml(nom)}
+        </p>
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                  font-weight:400;color:${C.textDark};">
+          ${escapeHtml(subject)}
+        </p>
+        ${bodyHtml}
+
+        ${btn(frontendUrl, 'Visiter le site')}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète" <${process.env.EMAIL_USER}>`,
+    to,
+    subject,
+    html:    wrapper(rows, subject),
+    text:    `${subject}\n\nBonjour ${nom},\n\n${message}\n\n${frontendUrl}\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
+  });
+}
+
 // ── 1. Email de vérification de compte ───────────────────────────────────────
 
 export async function sendVerificationEmail(to: string, nom: string, token: string): Promise<void> {

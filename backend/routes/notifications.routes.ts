@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { sendWhatsAppNotification, sendWhatsAppBroadcast } from '../services/whatsapp.service.js';
 import { sendPushBroadcast } from '../services/push.service.js';
+import { sendBroadcastEmail } from '../services/email.service.js';
 import { verifyJWT } from './auth.routes.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import PushSubscription from '../models/PushSubscription.model.js';
@@ -67,6 +68,53 @@ router.post('/whatsapp/broadcast', verifyJWT, async (req: Request, res: Response
   } catch (err: unknown) {
     logger.error('[Broadcast] WhatsApp error', { error: (err as Error).message });
     res.status(500).json({ success: false, message: 'Erreur broadcast' });
+  }
+});
+
+// ── POST /api/notifications/email/broadcast — Admin ──────────────────────────
+router.post('/email/broadcast', verifyJWT, async (req: Request, res: Response): Promise<void> => {
+  const { subject, message, segment } = req.body as {
+    subject: string; message: string; segment?: 'all' | 'bronze' | 'argent' | 'or' | 'platine';
+  };
+
+  if (!subject || !subject.trim() || !message || !message.trim()) {
+    res.status(400).json({ success: false, message: 'Objet et message requis' });
+    return;
+  }
+
+  try {
+    const filter: Record<string, unknown> = { statut: 'actif', email: { $nin: ['', null] } };
+    if (segment && segment !== 'all') filter.tier = segment;
+
+    const users = await User.find(filter).select('email nom').lean();
+
+    if (users.length === 0) {
+      res.json({ success: true, sent: 0, failed: 0, total: 0, message: 'Aucun destinataire trouvé' });
+      return;
+    }
+
+    let sent = 0;
+    let failed = 0;
+    for (const u of users) {
+      try {
+        await sendBroadcastEmail(u.email, u.nom, subject.trim(), message.trim());
+        sent++;
+      } catch (err: unknown) {
+        failed++;
+        logger.error('[Broadcast] Email send error', { to: u.email, error: (err as Error).message });
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    await logAction(
+      `Broadcast Email — segment: ${segment ?? 'all'} — ${sent} envoyés / ${failed} échecs`,
+      'notification',
+      'Admin',
+    );
+    res.json({ success: true, sent, failed, total: users.length });
+  } catch (err: unknown) {
+    logger.error('[Broadcast] Email error', { error: (err as Error).message });
+    res.status(500).json({ success: false, message: 'Erreur broadcast email' });
   }
 });
 
