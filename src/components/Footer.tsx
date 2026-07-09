@@ -83,7 +83,7 @@ export default function Footer() {
             <ul className="space-y-3">
               {[
                 { to: '/', label: 'Accueil' },
-                { to: '/composer', label: 'Commander ma salade' },
+                { to: '/composer', label: 'Commander' },
                 { to: '/jus', label: 'Jus & Détox' },
                 { to: '/repas', label: 'Repas équilibrés' },
                 { to: '/abonnement', label: 'Abonnement' },

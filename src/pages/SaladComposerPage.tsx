@@ -18,6 +18,8 @@ interface StepConfig {
   label: string;
   categories: IngredientCategory[];
   single: boolean;
+  /** Au moins un élément doit être sélectionné dans cette étape pour continuer. */
+  required?: boolean;
   hint: string;
 }
 
@@ -30,15 +32,14 @@ interface Suggestion {
 }
 
 const CRUDITES_STEPS: StepConfig[] = [
-  { key: 'base',        label: 'Base',           categories: ['base'],                            single: true,  hint: 'Choisissez votre verdure de base' },
+  { key: 'base',        label: 'Base',           categories: ['base'],                            single: false, required: true, hint: 'Choisissez une ou plusieurs bases pour votre salade' },
   { key: 'ingredients', label: 'Ingrédients',    categories: ['legume', 'proteine', 'garniture'], single: false, hint: 'Ajoutez légumes, protéines et garnitures' },
   { key: 'sauces',      label: 'Sauces & Finitions', categories: ['sauce'],                       single: false, hint: 'La touche finale qui fait la différence' },
   { key: 'recap',       label: 'Récapitulatif',  categories: [],                                  single: false, hint: 'Votre salade personnalisée' },
 ];
 
 const FRUITS_STEPS: StepConfig[] = [
-  { key: 'fruits',  label: 'Fruits',       categories: ['fruit'],  single: false, hint: 'Composez votre mélange de fruits' },
-  { key: 'sauces',  label: 'Finitions',    categories: ['sauce'],  single: false, hint: 'Une touche pour sublimer vos fruits' },
+  { key: 'fruits',  label: 'Fruits',       categories: ['fruit'],  single: false, required: true, hint: 'Composez votre mélange de fruits' },
   { key: 'recap',   label: 'Récapitulatif',categories: [],         single: false, hint: 'Votre salade de fruits' },
 ];
 
@@ -133,6 +134,21 @@ function getSuggestionCover(s: Suggestion, ingredients: Ingredient[]): string {
   return '';
 }
 
+// Petit "pop" animé à chaque changement de valeur — rend le compteur calorique vivant.
+function PulseValue({ value, className }: { value: string | number; className?: string }) {
+  return (
+    <motion.span
+      key={String(value)}
+      initial={{ scale: 1.45, y: -6 }}
+      animate={{ scale: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 14 }}
+      className={`inline-block ${className ?? ''}`}
+    >
+      {value}
+    </motion.span>
+  );
+}
+
 export default function SaladComposerPage() {
   const { type } = useParams<{ type: string }>();
   const saladType = (type === 'crudites' || type === 'fruits' ? type : null) as SaladType | null;
@@ -217,8 +233,9 @@ export default function SaladComposerPage() {
   const suggestions = apiSuggestions ?? fallbackSuggestions;
   const activeSuggestion = suggestions[Math.min(suggestionIdx, suggestions.length - 1)];
   const activeCover = getSuggestionCover(activeSuggestion, ingredients);
-  const saucesStepIndex = saladType === 'crudites' ? 2 : 1;
   const recapStepIndex = steps.length - 1;
+  // Après une suggestion : les crudités passent encore par les sauces, les fruits vont direct au récap.
+  const suggestionJumpIndex = saladType === 'crudites' ? steps.length - 2 : recapStepIndex;
   const currentStepConfig = steps[step];
 
   const removeFlyingItem = useCallback((id: string) => {
@@ -250,6 +267,16 @@ export default function SaladComposerPage() {
     });
     return price;
   }, [selected, ingredients]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fait "pulser" le panneau calorique à chaque changement de sélection, pour un retour visuel immédiat.
+  const [calorieBump, setCalorieBump] = useState(false);
+  const mountedCaloriesRef = useRef(false);
+  useEffect(() => {
+    if (!mountedCaloriesRef.current) { mountedCaloriesRef.current = true; return; }
+    setCalorieBump(true);
+    const t = setTimeout(() => setCalorieBump(false), 500);
+    return () => clearTimeout(t);
+  }, [totalCalories]);
 
   const toggleIngredient = (ingredient: Ingredient, e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -315,8 +342,10 @@ export default function SaladComposerPage() {
       if (id) next.set(id, 1);
     });
     setSelected(next);
-    setStep(saucesStepIndex);
-    toast.success(`"${suggestion.name}" chargé — choisissez votre sauce !`);
+    setStep(suggestionJumpIndex);
+    toast.success(saladType === 'crudites'
+      ? `"${suggestion.name}" chargé — choisissez votre sauce !`
+      : `"${suggestion.name}" chargé !`);
   };
 
   const addCurrentToCart = () => {
@@ -343,7 +372,7 @@ export default function SaladComposerPage() {
   const handleAddToCart  = () => { addCurrentToCart(); setSelected(new Map()); setStep(0); toast.success('Salade ajoutée au panier !'); };
 
   const canGoNext = () => {
-    if (!currentStepConfig.single) return true;
+    if (!currentStepConfig.required) return true;
     return currentStepConfig.categories.some(cat =>
       ingredients.filter(i => i.category === cat).some(i => selected.has(i.id))
     );
@@ -386,22 +415,19 @@ export default function SaladComposerPage() {
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/40 to-secondary/30" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-foreground/88 via-foreground/18 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-foreground/55 via-foreground/8 to-transparent" />
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white/[0.035]" />
-                <div className="absolute top-5 left-5 right-5 flex items-center justify-between">
-                  <span className="font-body text-[10px] uppercase tracking-[0.16em] bg-primary text-primary-foreground px-2.5 py-1 rounded-full font-medium">
-                    Suggestion du chef
-                  </span>
-                  <span className="font-body text-[10px] text-white/35 tabular-nums">{suggestionIdx + 1} / {suggestions.length}</span>
+                <div className="absolute top-5 right-5">
+                  <span className="font-body text-[10px] text-white/70 tabular-nums bg-black/20 backdrop-blur-md px-2 py-1 rounded-full">{suggestionIdx + 1} / {suggestions.length}</span>
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 p-5 md:p-7">
-                  <h3 className="font-display text-3xl md:text-4xl text-white leading-none mb-3">{activeSuggestion.name}</h3>
+                  <h3 className="font-display text-3xl md:text-4xl text-white leading-none mb-3 drop-shadow-md">{activeSuggestion.name}</h3>
                   <div className="flex flex-wrap gap-2 mb-4">
                     {activeSuggestion.description.split(', ').map(tag => (
-                      <span key={tag} className="font-body text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded-full font-medium shadow-sm">{tag}</span>
+                      <span key={tag} className="font-body text-xs px-3 py-1.5 bg-white/30 backdrop-blur-md border border-white/40 text-primary rounded-full font-semibold shadow-sm">{tag}</span>
                     ))}
                   </div>
-                  <span className="inline-flex items-center gap-2 font-body text-xs uppercase tracking-[0.14em] px-5 py-2.5 bg-primary text-primary-foreground rounded-xl group-hover:bg-primary/90 transition-colors shadow-sm">
+                  <span className="inline-flex items-center gap-2 font-body text-xs uppercase tracking-[0.14em] px-5 py-2.5 bg-white/35 backdrop-blur-md border border-white/50 text-primary group-hover:bg-white/50 rounded-xl transition-colors shadow-sm font-semibold">
                     Composer cette salade
                     <ChevronRight className="w-3.5 h-3.5" />
                   </span>
@@ -651,19 +677,42 @@ export default function SaladComposerPage() {
         </div>
       </div>
 
-      {/* Mobile floating bottom bar */}
-      <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-primary shadow-2xl">
+      {/* Desktop floating calorie summary — cible de l'effet "vol vers le calcul calorique" */}
+      <motion.div
+        id="composer-summary"
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className={`hidden lg:flex fixed bottom-6 right-6 z-50 items-center gap-5 bg-background border-2 border-primary rounded-2xl shadow-elevated px-6 py-4 transition-shadow duration-500 ${calorieBump ? 'shadow-[0_0_0_6px_hsl(var(--primary)/0.25)]' : ''}`}
+      >
+        <div className="text-center">
+          <div className="font-body text-[11px] uppercase tracking-wider text-muted-foreground">Calories</div>
+          <div className="font-display text-2xl text-foreground font-bold"><PulseValue value={totalCalories} className="text-2xl" /> <span className="text-sm font-body font-normal text-muted-foreground">cal</span></div>
+        </div>
+        <div className="h-10 w-px bg-border" />
+        <div className="text-center">
+          <div className="font-body text-[11px] uppercase tracking-wider text-muted-foreground">Total</div>
+          <div className="font-display text-2xl text-primary font-bold"><PulseValue value={formatPrice(totalPrice)} className="text-2xl" /></div>
+        </div>
+      </motion.div>
+
+      {/* Mobile floating bottom bar — cible de l'effet "vol vers le calcul calorique" */}
+      <motion.div
+        id="composer-bottom-bar"
+        initial={{ y: 100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-background border-t-2 border-primary shadow-2xl transition-shadow duration-500 ${calorieBump ? 'shadow-[0_-6px_24px_-2px_hsl(var(--primary)/0.45)]' : ''}`}
+      >
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-4">
               <div className="text-center">
                 <div className="font-body text-xs text-muted-foreground">Calories</div>
-                <div className="font-display text-lg text-foreground font-bold">{totalCalories}</div>
+                <div className="font-display text-lg text-foreground font-bold"><PulseValue value={totalCalories} /></div>
               </div>
               <div className="h-8 w-px bg-border" />
               <div className="text-center">
                 <div className="font-body text-xs text-muted-foreground">Total</div>
-                <div className="font-display text-lg text-primary font-bold">{formatPrice(totalPrice)}</div>
+                <div className="font-display text-lg text-primary font-bold"><PulseValue value={formatPrice(totalPrice)} /></div>
               </div>
             </div>
             {currentStepConfig.key === 'recap' ? (

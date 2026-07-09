@@ -1,15 +1,36 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, Play, X, Tag, Calendar, UtensilsCrossed } from 'lucide-react';
+import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, Play, X, Tag, Calendar, ShoppingCart, FileText } from 'lucide-react';
+import { toast } from 'sonner';
 import heroImage from '@/assets/hero-salad.jpg';
 import juicesImage from '@/assets/juices.jpg';
 import mealImage from '@/assets/balanced-meal.jpg';
 import prepImage from '@/assets/preparation.jpg';
 import Footer from '@/components/Footer';
+import ProductSheetModal from '@/components/ProductSheetModal';
+import { FlyingIngredient } from '@/components/FlyingIngredient';
+import { useFlyToCart } from '@/hooks/useFlyToCart';
+import { useCart } from '@/context/CartContext';
 import { publicFetch } from '@/services/publicApiService';
-import { ApiPromotion, ApiDailyMenu } from '@/types/api.types';
-import { formatPrice } from '@/data/products';
+import { ApiPromotion, ApiDailyMenu, ApiMeal } from '@/types/api.types';
+import { formatPrice, MealProduct } from '@/data/products';
+
+function toMealProduct(m: ApiMeal): MealProduct {
+  return {
+    id:                 m._id,
+    name:               m.nom,
+    description:        m.description,
+    composition:        m.ingredients.map(i => i.nom),
+    caloriesPerPortion: m.nutrition.calories,
+    portions:           m.portions,
+    price:              m.prix,
+    image:              m.image || undefined,
+    category:           m.categorie,
+  };
+}
+
+const menuCartPrefix = (id: string) => `repas-${id}-`;
 
 const ADVANTAGES = [
   { icon: Leaf,    title: 'Ingrédients frais',  desc: 'Produits locaux sélectionnés chaque matin au marché de Libreville' },
@@ -38,11 +59,36 @@ function promoLabel(p: ApiPromotion): string {
 }
 
 export default function HomePage() {
+  const { addItem, updateQuantity, items } = useCart();
+  const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [videoOpen, setVideoOpen]       = useState(false);
   const [promotions, setPromotions]     = useState<ApiPromotion[]>([]);
   const [menuDuJour, setMenuDuJour]     = useState<ApiDailyMenu | null>(null);
   const [promoBanner, setPromoBanner]   = useState(true);
   const [videoUrl, setVideoUrl]         = useState<string | null>(null);
+  const [sheetId, setSheetId]           = useState<string | null>(null);
+
+  const getMenuCartItem = (mealId: string) => items.find(item => item.id.startsWith(menuCartPrefix(mealId)));
+  const getMenuQty = (mealId: string) => getMenuCartItem(mealId)?.quantity ?? 0;
+
+  const handleMenuAdd = (meal: MealProduct, e: React.MouseEvent) => {
+    const existing = getMenuCartItem(meal.id);
+    if (!existing) {
+      addItem({
+        id:            `repas-${meal.id}`,
+        type:          'repas',
+        name:          meal.name,
+        product:       meal,
+        totalCalories: meal.caloriesPerPortion,
+        totalPrice:    meal.price,
+        quantity:      1,
+      });
+      toast.success(`${meal.name} ajouté au panier !`);
+    } else {
+      updateQuantity(existing.id, existing.quantity + 1);
+    }
+    launchFly(e, { image: meal.image });
+  };
 
   useEffect(() => {
     publicFetch<ApiPromotion[]>('/api/promotions/active').then(data => {
@@ -137,34 +183,67 @@ export default function HomePage() {
             </motion.div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {menuDuJour.repas.map((repas, i) => (
-                <motion.div
-                  key={repas._id}
-                  initial={{ opacity: 0, y: 16 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                  viewport={{ once: true }}
-                  className="border border-border bg-background rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-                >
-                  {repas.image && (
-                    <div className="relative h-40 overflow-hidden">
-                      <img src={repas.image} alt={repas.nom} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" loading="lazy" />
+              {menuDuJour.repas.map((repas, i) => {
+                const meal = toMealProduct(repas);
+                const qty = getMenuQty(meal.id);
+                const firstIngredient = repas.ingredients?.[0]?.nom;
+                return (
+                  <motion.div
+                    key={repas._id}
+                    initial={{ opacity: 0, y: 16 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.08 }}
+                    viewport={{ once: true }}
+                    className="group relative rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300 bg-muted"
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden">
+                      {repas.image ? (
+                        <img src={repas.image} alt={repas.nom} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-primary/30 to-secondary/20" />
+                      )}
+                      {/* Dégradé léger — laisse voir le plat tout en gardant le texte lisible */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-foreground/70 via-foreground/10 to-transparent" />
+
+                      <div className="absolute top-3 left-3">
+                        <span className="font-body text-[10px] uppercase tracking-wider bg-white/30 backdrop-blur-md border border-white/40 text-primary px-2.5 py-1 rounded-full font-semibold">
+                          {repas.categorie}
+                        </span>
+                      </div>
+                      <div className="absolute top-3 right-3">
+                        <span className="font-body text-[10px] text-white/85 bg-black/25 backdrop-blur-md px-2 py-1 rounded-full">{repas.nutrition.calories} cal</span>
+                      </div>
+
+                      <div className="absolute bottom-0 left-0 right-0 p-4">
+                        <h3 className="font-display text-xl text-white leading-snug mb-2 drop-shadow-md line-clamp-2">{repas.nom}</h3>
+                        {firstIngredient && (
+                          <span className="inline-block font-body text-[11px] px-2.5 py-1 mb-3 bg-white/30 backdrop-blur-md border border-white/40 text-primary rounded-full font-semibold">
+                            {firstIngredient}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); handleMenuAdd(meal, e); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 font-body text-[11px] uppercase tracking-wider px-3 py-2.5 bg-white/30 backdrop-blur-md border border-white/40 text-primary hover:bg-white/45 rounded-xl transition-colors font-semibold"
+                          >
+                            <ShoppingCart className="w-3.5 h-3.5" />
+                            {qty > 0 ? `Ajouté ×${qty}` : `Ajouter — ${formatPrice(repas.prix)}`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); setSheetId(repas._id); }}
+                            className="flex items-center justify-center gap-1.5 font-body text-[11px] uppercase tracking-wider px-3 py-2.5 bg-white/20 backdrop-blur-md border border-white/30 text-primary hover:bg-white/35 rounded-xl transition-colors font-semibold"
+                            aria-label="Voir la fiche"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  <div className="p-5">
-                    <div className="flex items-center gap-2 mb-1">
-                      <UtensilsCrossed className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <span className="font-body text-[10px] uppercase tracking-wider text-primary">{repas.categorie}</span>
-                    </div>
-                    <h3 className="font-display text-lg text-foreground mb-1">{repas.nom}</h3>
-                    <p className="font-body text-xs text-muted-foreground mb-3 line-clamp-2">{repas.description}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="font-body text-xs text-muted-foreground">{repas.nutrition.calories} cal</span>
-                      <span className="font-display text-lg text-primary">{formatPrice(repas.prix)}</span>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
 
             <div className="mt-8 text-center">
@@ -416,6 +495,11 @@ export default function HomePage() {
       </section>
 
       <Footer />
+
+      <ProductSheetModal productId={sheetId} onClose={() => setSheetId(null)} />
+      {flyingItems.map(item => (
+        <FlyingIngredient key={item.id} item={item} onComplete={removeFlyingItem} />
+      ))}
     </div>
   );
 }

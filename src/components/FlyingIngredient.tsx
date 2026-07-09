@@ -15,24 +15,29 @@ interface FlyingIngredientProps {
   onComplete: (id: string) => void;
 }
 
+// Un élément caché par CSS (display: none via une classe responsive comme lg:hidden)
+// reste dans le DOM mais retourne un rect à zéro — il ne faut pas viser ce point.
+function visibleRect(el: HTMLElement | null): DOMRect | null {
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? r : null;
+}
+
 function findTarget(): { x: number; y: number } {
-  // 1. Mobile composer bottom bar
-  const bottomBar = document.getElementById('composer-bottom-bar');
-  if (bottomBar) {
-    const r = bottomBar.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  // 1. Mobile composer bottom bar (calcul calorique en direct)
+  const bottomBarRect = visibleRect(document.getElementById('composer-bottom-bar'));
+  if (bottomBarRect) {
+    return { x: bottomBarRect.left + bottomBarRect.width / 2, y: bottomBarRect.top + bottomBarRect.height / 2 };
   }
-  // 2. Desktop composer summary panel
-  const summary = document.getElementById('composer-summary');
-  if (summary) {
-    const r = summary.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + 60 };
+  // 2. Desktop composer summary panel (calcul calorique en direct)
+  const summaryRect = visibleRect(document.getElementById('composer-summary'));
+  if (summaryRect) {
+    return { x: summaryRect.left + summaryRect.width / 2, y: summaryRect.top + 60 };
   }
   // 3. Header cart icon (global pages: juices, meals, etc.)
-  const cartIcon = document.getElementById('cart-header-icon');
-  if (cartIcon) {
-    const r = cartIcon.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  const cartIconRect = visibleRect(document.getElementById('cart-header-icon'));
+  if (cartIconRect) {
+    return { x: cartIconRect.left + cartIconRect.width / 2, y: cartIconRect.top + cartIconRect.height / 2 };
   }
   // Fallback: top-right corner
   return { x: window.innerWidth - 72, y: 28 };
