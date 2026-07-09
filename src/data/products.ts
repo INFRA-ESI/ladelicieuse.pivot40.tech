@@ -20,6 +20,13 @@ export type IngredientCategory =
   | 'sauce' 
   | 'fruit';
 
+// Format de vente optionnel (ex: "1L" à 1000 FCFA, "250ml" à 500 FCFA).
+// Un jus sans formats garde son prix unique (`price`) — comportement inchangé.
+export interface JuiceFormat {
+  label: string;
+  price: number;
+}
+
 export interface JuiceProduct {
   id: string;
   name: string;
@@ -29,6 +36,16 @@ export interface JuiceProduct {
   benefits: string[];
   type: 'detox' | 'fruit';
   image?: string;
+  formats?: JuiceFormat[];
+}
+
+// Identifiant stable pour une pastille de format côté panier/URL (sans accents, sans espaces).
+export function slugifyFormatLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 24) || 'format';
 }
 
 export interface MealProduct {

@@ -24,6 +24,14 @@ export interface IMealIngredient {
   calories?: number;
 }
 
+// Format de vente optionnel (ex: "1L" à 1000 FCFA, "250ml" à 500 FCFA).
+// Un produit sans formats conserve son prix unique existant (prix/prixPromo) — comportement inchangé.
+export interface IMealFormat {
+  label: string;
+  prix: number;
+  disponible: boolean;
+}
+
 export interface IMeal extends Document {
   // ─ Identité ─────────────────────────────────────────────────────────────
   nom: string;
@@ -36,6 +44,8 @@ export interface IMeal extends Document {
   // ─ Prix ─────────────────────────────────────────────────────────────────
   prix: number;
   prixPromo: number | null;
+  // Formats de vente optionnels (quantités avec prix propre) — vide par défaut
+  formats: IMealFormat[];
   // ─ Médias ───────────────────────────────────────────────────────────────
   image: string;
   galerie: string[];
@@ -88,6 +98,15 @@ const MealIngredientSchema = new Schema<IMealIngredient>(
   { _id: false },
 );
 
+const MealFormatSchema = new Schema<IMealFormat>(
+  {
+    label:      { type: String, required: true, trim: true, maxlength: 40 },
+    prix:       { type: Number, required: true, min: 0 },
+    disponible: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
 // ── Schéma principal ──────────────────────────────────────────────────────────
 
 const MealSchema = new Schema<IMeal>(
@@ -100,6 +119,7 @@ const MealSchema = new Schema<IMeal>(
     descriptionCourte:{ type: String, default: '' },
     prix:             { type: Number, required: true, min: 0 },
     prixPromo:        { type: Number, default: null },
+    formats:          { type: [MealFormatSchema], default: [] },
     image:            { type: String, default: '' },
     galerie:          { type: [String], default: [] },
     ingredients:      { type: [MealIngredientSchema], default: [] },

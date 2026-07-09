@@ -9,6 +9,24 @@ const router = Router();
 const escapeRegex     = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const invalidateMeals = () => invalidateCache('/api/meals');
 
+// Nettoie le tableau de formats de vente reçu du back-office avant persistance.
+// PATCH n'exécute pas les validateurs Mongoose (pas de runValidators) : on filtre donc
+// nous-mêmes les entrées invalides plutôt que de faire confiance au payload client.
+const MAX_FORMATS = 12;
+function sanitizeFormats(raw: unknown): { label: string; prix: number; disponible: boolean }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { label: string; prix: number; disponible: boolean }[] = [];
+  for (const entry of raw.slice(0, MAX_FORMATS)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { label, prix, disponible } = entry as Record<string, unknown>;
+    const cleanLabel = typeof label === 'string' ? label.trim().slice(0, 40) : '';
+    const cleanPrix  = typeof prix === 'number' && Number.isFinite(prix) ? Math.max(0, prix) : NaN;
+    if (!cleanLabel || Number.isNaN(cleanPrix)) continue;
+    out.push({ label: cleanLabel, prix: cleanPrix, disponible: disponible !== false });
+  }
+  return out;
+}
+
 // Génère un slug unique pour un repas (exclut l'id courant lors des updates)
 async function uniqueSlug(nom: string, excludeId?: string): Promise<string> {
   const base = slugify(nom);
@@ -109,6 +127,7 @@ router.post('/', verifyJWT, async (req: Request, res: Response): Promise<void> =
   try {
     const body = { ...req.body };
     if (body.nom) body.slug = await uniqueSlug(String(body.nom));
+    if (body.formats !== undefined) body.formats = sanitizeFormats(body.formats);
     const meal = new Meal(body);
     await meal.save();
     await logAction(`Repas "${meal.nom}" créé`, 'menu', 'Admin');
@@ -125,6 +144,7 @@ router.patch('/:id', verifyJWT, async (req: Request, res: Response): Promise<voi
     const body = { ...req.body };
     // Régénère le slug si le nom change
     if (body.nom) body.slug = await uniqueSlug(String(body.nom), req.params.id);
+    if (body.formats !== undefined) body.formats = sanitizeFormats(body.formats);
     const meal = await Meal.findByIdAndUpdate(req.params.id, { $set: body }, { new: true });
     if (!meal) { res.status(404).json({ success: false, message: 'Repas introuvable' }); return; }
     await logAction(`Repas "${meal.nom}" modifié`, 'menu', 'Admin');

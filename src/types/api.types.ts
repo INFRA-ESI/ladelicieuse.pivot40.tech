@@ -20,6 +20,13 @@ export interface ApiProductIngredient {
   calories?: number;
 }
 
+// Format de vente optionnel (ex: "1L" à 1000 FCFA, "250ml" à 500 FCFA)
+export interface ApiMealFormat {
+  label: string;
+  prix: number;
+  disponible?: boolean;
+}
+
 // ApiMeal — rétrocompatible + nouveaux champs fiche produit
 export interface ApiMeal {
   _id: string;
@@ -30,6 +37,7 @@ export interface ApiMeal {
   descriptionCourte?: string;
   prix: number;
   prixPromo?: number | null;
+  formats?: ApiMealFormat[];
   image: string;
   galerie?: string[];
   ingredients: ApiProductIngredient[];

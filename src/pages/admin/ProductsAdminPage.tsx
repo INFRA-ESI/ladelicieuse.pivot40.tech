@@ -32,6 +32,12 @@ interface IngForm {
   image: string; description: string; apportNutritif: string; calories: number;
 }
 
+// Format de vente optionnel (ex: "1L" à 1000 FCFA, "250ml" à 500 FCFA).
+// Laisser la liste vide conserve le comportement actuel (prix unique).
+interface FormatForm {
+  label: string; prix: number; disponible: boolean;
+}
+
 interface ProductForm {
   nom: string; categorie: string; categorieId: string;
   description: string; descriptionCourte: string;
@@ -39,11 +45,13 @@ interface ProductForm {
   image: string; galerie: string[];
   nutrition: { calories: number; proteines: number; glucides: number; lipides: number; fibres: number; sucres: number; sodium: number };
   ingredients: IngForm[];
+  formats: FormatForm[];
   bienfaits: string[]; allergenes: string[]; objectifsSante: string[]; conseilsConsommation: string[];
   popular: boolean; vedette: boolean; recommande: boolean; saisonnier: boolean; disponible: boolean;
 }
 
 const EMPTY_ING: IngForm = { nom: '', quantite: 0, unite: 'g', image: '', description: '', apportNutritif: '', calories: 0 };
+const EMPTY_FORMAT: FormatForm = { label: '', prix: 0, disponible: true };
 
 const EMPTY_FORM: ProductForm = {
   nom: '', categorie: '', categorieId: '',
@@ -52,6 +60,7 @@ const EMPTY_FORM: ProductForm = {
   image: '', galerie: [],
   nutrition: { calories: 0, proteines: 0, glucides: 0, lipides: 0, fibres: 0, sucres: 0, sodium: 0 },
   ingredients: [],
+  formats: [],
   bienfaits: [], allergenes: [], objectifsSante: [], conseilsConsommation: [],
   popular: false, vedette: false, recommande: false, saisonnier: false, disponible: true,
 };
@@ -199,6 +208,9 @@ export default function ProductsAdminPage() {
         image: i.image ?? '', description: i.description ?? '',
         apportNutritif: i.apportNutritif ?? '', calories: i.calories ?? 0,
       })),
+      formats: (p.formats ?? []).map(fmt => ({
+        label: fmt.label, prix: fmt.prix, disponible: fmt.disponible !== false,
+      })),
       bienfaits:            p.bienfaits ?? [],
       allergenes:           p.allergenes ?? [],
       objectifsSante:       p.objectifsSante ?? [],
@@ -227,6 +239,16 @@ export default function ProductsAdminPage() {
 
   function addIng() { setForm(f => ({ ...f, ingredients: [...f.ingredients, { ...EMPTY_ING }] })); }
   function removeIng(i: number) { setForm(f => ({ ...f, ingredients: f.ingredients.filter((_, j) => j !== i) })); }
+
+  function setFormat(idx: number, field: keyof FormatForm, v: string | number | boolean) {
+    setForm(f => {
+      const list = [...f.formats];
+      list[idx] = { ...list[idx], [field]: v };
+      return { ...f, formats: list };
+    });
+  }
+  function addFormat() { setForm(f => ({ ...f, formats: [...f.formats, { ...EMPTY_FORMAT }] })); }
+  function removeFormat(i: number) { setForm(f => ({ ...f, formats: f.formats.filter((_, j) => j !== i) })); }
 
   // ── Upload images ───────────────────────────────────────────────────────────
   const handleMainImage = async (file: File) => {
@@ -265,6 +287,8 @@ export default function ProductsAdminPage() {
     const payload = {
       ...form,
       prixPromo:  form.prixPromo === '' ? null : Number(form.prixPromo),
+      // Ignore les lignes de format laissées incomplètes (libellé vide ou prix nul)
+      formats:    form.formats.filter(fmt => fmt.label.trim() !== '' && fmt.prix > 0),
       date:       null, // catalogue permanent
     };
 
@@ -413,8 +437,17 @@ export default function ProductsAdminPage() {
                   <span className="font-body text-xs px-2 py-0.5 bg-muted rounded text-muted-foreground">{p.categorie}</span>
                 </td>
                 <td className="p-3">
-                  <span className="font-body text-sm font-medium text-primary">{formatPrice(p.prixPromo ?? p.prix)}</span>
-                  {p.prixPromo != null && p.prixPromo < p.prix && (
+                  {(p.formats?.length ?? 0) > 0 ? (
+                    <>
+                      <span className="font-body text-sm font-medium text-primary">
+                        Dès {formatPrice(Math.min(...p.formats!.map(f => f.prix)))}
+                      </span>
+                      <span className="font-body text-xs text-muted-foreground ml-1">({p.formats!.length} formats)</span>
+                    </>
+                  ) : (
+                    <span className="font-body text-sm font-medium text-primary">{formatPrice(p.prixPromo ?? p.prix)}</span>
+                  )}
+                  {(p.formats?.length ?? 0) === 0 && p.prixPromo != null && p.prixPromo < p.prix && (
                     <span className="font-body text-xs text-muted-foreground line-through ml-1">{formatPrice(p.prix)}</span>
                   )}
                 </td>
@@ -531,6 +564,41 @@ export default function ProductsAdminPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Préparation (min)"><NumberInput value={form.tempsPrepMin} onChange={v => setForm(f => ({ ...f, tempsPrepMin: v }))} /></Field>
+                  </div>
+
+                  {/* Formats de vente — optionnel : ex. "1L" à 1000 FCFA, "250ml" à 500 FCFA.
+                      Laissé vide, le produit garde son prix unique ci-dessus (comportement actuel). */}
+                  <div>
+                    <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+                      Formats de vente (optionnel)
+                    </label>
+                    <p className="font-body text-xs text-muted-foreground mb-3">
+                      Utile pour les jus (1L, 250ml…). Si aucun format n'est ajouté, le prix unique ci-dessus s'applique.
+                    </p>
+                    <div className="space-y-2">
+                      {form.formats.map((fmt, i) => (
+                        <div key={i} className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg p-2">
+                          <Input value={fmt.label} onChange={v => setFormat(i, 'label', v)} placeholder="1L" className="w-24" />
+                          <NumberInput value={fmt.prix} onChange={v => setFormat(i, 'prix', v)} />
+                          <label className="flex items-center gap-1.5 cursor-pointer shrink-0 px-1">
+                            <input
+                              type="checkbox"
+                              checked={fmt.disponible}
+                              onChange={e => setFormat(i, 'disponible', e.target.checked)}
+                              className="w-4 h-4 rounded accent-primary"
+                            />
+                            <span className="font-body text-xs text-muted-foreground">Actif</span>
+                          </label>
+                          <button type="button" onClick={() => removeFormat(i)} className="p-2 hover:bg-destructive/10 rounded shrink-0">
+                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addFormat}
+                        className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-lg font-body text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                        <Plus className="w-4 h-4" /> Ajouter un format
+                      </button>
+                    </div>
                   </div>
                   {/* Flags */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2">

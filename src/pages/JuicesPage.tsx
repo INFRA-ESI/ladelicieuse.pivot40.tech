@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
-import { JUICES, JuiceProduct, formatPrice } from '@/data/products';
+import { JUICES, JuiceProduct, JuiceFormat, formatPrice, slugifyFormatLabel } from '@/data/products';
 import { toast } from 'sonner';
 import juicesImage from '@/assets/juices.jpg';
 import { useFlyToCart } from '@/hooks/useFlyToCart';
@@ -18,6 +18,9 @@ function isJuice(cat: string) {
 }
 
 function toJuiceProduct(m: ApiMeal): JuiceProduct {
+  const formats = (m.formats ?? [])
+    .filter(f => f.disponible !== false)
+    .map(f => ({ label: f.label, price: f.prix }));
   return {
     id:          m._id,
     name:        m.nom,
@@ -27,6 +30,7 @@ function toJuiceProduct(m: ApiMeal): JuiceProduct {
     benefits:    m.ingredients.map(i => i.nom),
     type:        m.categorie.toLowerCase().includes('detox') || m.categorie.toLowerCase().includes('détox') ? 'detox' : 'fruit',
     image:       m.image || undefined,
+    formats:     formats.length > 0 ? formats : undefined,
   };
 }
 
@@ -47,8 +51,11 @@ const SECTION_DISPLAY = [
   },
 ];
 
-// Préfixe stable utilisé pour identifier les articles jus dans le panier
-const cartPrefix = (id: string) => `jus-${id}-`;
+// Préfixe stable utilisé pour identifier les articles jus dans le panier.
+// Avec un format choisi, le préfixe inclut le format afin que chaque format
+// (1L, 250ml…) forme sa propre ligne de panier indépendante.
+const cartPrefix = (id: string, formatLabel?: string) =>
+  formatLabel ? `jus-${id}-${slugifyFormatLabel(formatLabel)}-` : `jus-${id}-`;
 
 export default function JuicesPage() {
   const { addItem, removeItem, updateQuantity, items } = useCart();
@@ -65,38 +72,40 @@ export default function JuicesPage() {
     });
   }, []);
 
-  const getCartItem = (juice: JuiceProduct) =>
-    items.find(item => item.id.startsWith(cartPrefix(juice.id)));
+  const getCartItem = (juice: JuiceProduct, format?: JuiceFormat) =>
+    items.find(item => item.id.startsWith(cartPrefix(juice.id, format?.label)));
 
-  const getQty = (juice: JuiceProduct): number =>
-    getCartItem(juice)?.quantity ?? 0;
+  const getQty = (juice: JuiceProduct, format?: JuiceFormat): number =>
+    getCartItem(juice, format)?.quantity ?? 0;
 
-  const handleIncrement = (juice: JuiceProduct, e: React.MouseEvent) => {
-    const existing = getCartItem(juice);
+  const handleIncrement = (juice: JuiceProduct, e: React.MouseEvent, format?: JuiceFormat) => {
+    const existing = getCartItem(juice, format);
+    const displayName = format ? `${juice.name} — ${format.label}` : juice.name;
     if (!existing) {
       addItem({
-        id:            `jus-${juice.id}`,
+        id:            format ? `jus-${juice.id}-${slugifyFormatLabel(format.label)}` : `jus-${juice.id}`,
         type:          'jus',
-        name:          juice.name,
+        name:          displayName,
         product:       juice,
         totalCalories: juice.calories,
-        totalPrice:    juice.price,
+        totalPrice:    format ? format.price : juice.price,
         quantity:      1,
       });
       launchFly(e, { image: juice.image });
-      toast.success(`${juice.name} ajouté au panier !`);
+      toast.success(`${displayName} ajouté au panier !`);
     } else {
       updateQuantity(existing.id, existing.quantity + 1);
       launchFly(e, { image: juice.image });
     }
   };
 
-  const handleDecrement = (juice: JuiceProduct) => {
-    const existing = getCartItem(juice);
+  const handleDecrement = (juice: JuiceProduct, format?: JuiceFormat) => {
+    const existing = getCartItem(juice, format);
     if (!existing) return;
+    const displayName = format ? `${juice.name} — ${format.label}` : juice.name;
     if (existing.quantity <= 1) {
       removeItem(existing.id);
-      toast.info(`${juice.name} retiré du panier`);
+      toast.info(`${displayName} retiré du panier`);
     } else {
       updateQuantity(existing.id, existing.quantity - 1);
     }
@@ -166,6 +175,9 @@ export default function JuicesPage() {
                       onDecrement={() => handleDecrement(juice)}
                       onSheet={() => setSheetId(juice.id)}
                       delay={i * 0.1}
+                      getFormatQty={format => getQty(juice, format)}
+                      onFormatIncrement={(format, e) => handleIncrement(juice, e, format)}
+                      onFormatDecrement={format => handleDecrement(juice, format)}
                     />
                   ))}
                 </div>
@@ -191,6 +203,9 @@ function JuiceCard({
   onDecrement,
   onSheet,
   delay,
+  getFormatQty,
+  onFormatIncrement,
+  onFormatDecrement,
 }: {
   juice: JuiceProduct;
   qty: number;
@@ -198,8 +213,14 @@ function JuiceCard({
   onDecrement: () => void;
   onSheet: () => void;
   delay: number;
+  getFormatQty: (format: JuiceFormat) => number;
+  onFormatIncrement: (format: JuiceFormat, e: React.MouseEvent) => void;
+  onFormatDecrement: (format: JuiceFormat) => void;
 }) {
-  const selected = qty > 0;
+  const formats = juice.formats;
+  const hasFormats = !!formats && formats.length > 0;
+  const selected = hasFormats ? formats.some(f => getFormatQty(f) > 0) : qty > 0;
+  const lowestPrice = hasFormats ? Math.min(...formats.map(f => f.price)) : juice.price;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -241,7 +262,9 @@ function JuiceCard({
 
         {/* Prix + calories */}
         <div className="absolute bottom-3 left-3">
-          <span className="font-display text-xl text-white drop-shadow-md">{formatPrice(juice.price)}</span>
+          <span className="font-display text-xl text-white drop-shadow-md">
+            {hasFormats ? `Dès ${formatPrice(lowestPrice)}` : formatPrice(juice.price)}
+          </span>
         </div>
         <div className="absolute bottom-3 right-3">
           <span className="font-body text-xs text-white/80 bg-black/30 px-2 py-0.5 rounded-full">{juice.calories} cal</span>
@@ -261,47 +284,108 @@ function JuiceCard({
             ))}
           </div>
         )}
-        {/* Actions : fiche produit + contrôle quantité */}
-        <div className="flex items-center gap-2 mt-auto pt-1">
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); onSheet(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            Fiche
-          </button>
-          {qty === 0 ? (
+
+        {hasFormats ? (
+          /* Formats de vente (ex: 1L, 250ml…), chacun avec son propre prix et sa propre quantité */
+          <div className="flex flex-col gap-2 mt-auto pt-1">
+            {formats.map(format => {
+              const fQty = getFormatQty(format);
+              return (
+                <div
+                  key={format.label}
+                  className={`flex items-center justify-between gap-2 border rounded-xl px-3 py-2 transition-colors ${
+                    fQty > 0 ? 'border-green-500 bg-green-50/60' : 'border-border'
+                  }`}
+                >
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="font-body text-sm font-semibold text-foreground shrink-0">{format.label}</span>
+                    <span className="font-body text-xs text-primary font-semibold truncate">{formatPrice(format.price)}</span>
+                  </div>
+                  {fQty === 0 ? (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onFormatIncrement(format, e); }}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-lg font-body text-[11px] uppercase tracking-wider shrink-0"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Ajouter
+                    </button>
+                  ) : (
+                    <div className="flex items-center border border-primary/30 bg-primary/5 rounded-lg overflow-hidden shrink-0">
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); onFormatDecrement(format); }}
+                        className="px-2 py-1.5 text-primary hover:bg-primary/15 transition-colors"
+                        aria-label={`Diminuer ${format.label}`}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="px-2 font-body text-xs font-bold text-primary min-w-[1.25rem] text-center">{fQty}</span>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); onFormatIncrement(format, e); }}
+                        className="px-2 py-1.5 text-primary hover:bg-primary/15 transition-colors"
+                        aria-label={`Augmenter ${format.label}`}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <button
               type="button"
-              onClick={e => { e.stopPropagation(); onIncrement(e); }}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl font-body text-xs uppercase tracking-wider"
+              onClick={e => { e.stopPropagation(); onSheet(); }}
+              className="flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl mt-1"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Ajouter
+              <FileText className="w-3.5 h-3.5" />
+              Fiche
             </button>
-          ) : (
-            <div className="flex items-center border border-primary/30 bg-primary/5 rounded-xl overflow-hidden">
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onDecrement(); }}
-                className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
-                aria-label="Diminuer"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="px-2 font-body text-sm font-bold text-primary min-w-[1.5rem] text-center">{qty}</span>
+          </div>
+        ) : (
+          /* Actions : fiche produit + contrôle quantité (produit à prix unique — comportement inchangé) */
+          <div className="flex items-center gap-2 mt-auto pt-1">
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onSheet(); }}
+              className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Fiche
+            </button>
+            {qty === 0 ? (
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onIncrement(e); }}
-                className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
-                aria-label="Augmenter"
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl font-body text-xs uppercase tracking-wider"
               >
                 <Plus className="w-3.5 h-3.5" />
+                Ajouter
               </button>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="flex items-center border border-primary/30 bg-primary/5 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onDecrement(); }}
+                  className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
+                  aria-label="Diminuer"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-2 font-body text-sm font-bold text-primary min-w-[1.5rem] text-center">{qty}</span>
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onIncrement(e); }}
+                  className="px-3 py-2.5 text-primary hover:bg-primary/15 transition-colors"
+                  aria-label="Augmenter"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );

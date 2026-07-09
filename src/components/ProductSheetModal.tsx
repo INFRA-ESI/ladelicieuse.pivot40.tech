@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Flame, Clock, Users, Check, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiProduct } from '@/types/api.types';
-import { formatPrice } from '@/data/products';
+import { formatPrice, slugifyFormatLabel } from '@/data/products';
 import { useCart } from '@/context/CartContext';
 import { toast } from 'sonner';
 
@@ -41,15 +41,22 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
   const [product, setProduct]   = useState<ApiProduct | null>(null);
   const [loading, setLoading]   = useState(false);
   const [activeImg, setActiveImg] = useState(0);
+  const [formatIdx, setFormatIdx] = useState(0);
 
   useEffect(() => {
     if (!productId) { setProduct(null); return; }
     setLoading(true);
     setActiveImg(0);
+    setFormatIdx(0);
     publicFetch<ApiProduct>(`/api/meals/product/${productId}`)
       .then(data => setProduct(data))
       .finally(() => setLoading(false));
   }, [productId]);
+
+  // Formats de vente disponibles (ex: 1L, 250ml…) — absent/vide = produit à prix unique (inchangé)
+  const availableFormats = (product?.formats ?? []).filter(f => f.disponible !== false);
+  const hasFormats = availableFormats.length > 0;
+  const selectedFormat = hasFormats ? (availableFormats[formatIdx] ?? availableFormats[0]) : null;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -65,16 +72,19 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
 
   const handleAdd = () => {
     if (!product) return;
+    const unitPrice = selectedFormat ? selectedFormat.prix : (product.prixPromo ?? product.prix);
+    const displayName = selectedFormat ? `${product.nom} — ${selectedFormat.label}` : product.nom;
+    const idSuffix = selectedFormat ? `-${slugifyFormatLabel(selectedFormat.label)}` : '';
     addItem({
-      id:            `prod-${product._id}-${Date.now()}`,
+      id:            `prod-${product._id}${idSuffix}-${Date.now()}`,
       type:          'jus',
-      name:          product.nom,
-      product:       { id: product._id, name: product.nom, description: product.description, calories: product.nutrition.calories, price: product.prixPromo ?? product.prix, benefits: product.bienfaits ?? [], type: 'fruit', image: product.image },
+      name:          displayName,
+      product:       { id: product._id, name: product.nom, description: product.description, calories: product.nutrition.calories, price: unitPrice, benefits: product.bienfaits ?? [], type: 'fruit', image: product.image },
       totalCalories: product.nutrition.calories,
-      totalPrice:    product.prixPromo ?? product.prix,
+      totalPrice:    unitPrice,
       quantity:      1,
     });
-    toast.success(`${product.nom} ajouté au panier !`);
+    toast.success(`${displayName} ajouté au panier !`);
     onClose();
   };
 
@@ -198,14 +208,36 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
 
                     {/* Prix */}
                     <div className="flex items-baseline gap-2">
-                      <span className="font-display text-2xl text-primary">{formatPrice(product.prixPromo ?? product.prix)}</span>
-                      {hasPromo && (
+                      <span className="font-display text-2xl text-primary">
+                        {formatPrice(selectedFormat ? selectedFormat.prix : (product.prixPromo ?? product.prix))}
+                      </span>
+                      {!hasFormats && hasPromo && (
                         <span className="font-body text-sm text-muted-foreground line-through">{formatPrice(product.prix)}</span>
                       )}
                       {!product.disponible && (
                         <span className="font-body text-xs text-destructive ml-2">Indisponible</span>
                       )}
                     </div>
+
+                    {/* Formats de vente (ex: 1L, 250ml…) */}
+                    {hasFormats && (
+                      <div className="flex flex-wrap gap-2">
+                        {availableFormats.map((format, i) => (
+                          <button
+                            key={format.label}
+                            type="button"
+                            onClick={() => setFormatIdx(i)}
+                            className={`font-body text-xs px-3 py-1.5 rounded-full border transition-colors font-semibold ${
+                              i === formatIdx
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-muted text-foreground border-border hover:border-primary/40'
+                            }`}
+                          >
+                            {format.label} · {formatPrice(format.prix)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Méta compacte — texte pur, pas d'icônes de contenu */}
                     <div className="flex flex-wrap gap-2">

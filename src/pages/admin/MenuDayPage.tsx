@@ -26,11 +26,22 @@ interface MealIngredient {
   nom?: string;
 }
 
+// Format de vente optionnel (ex: "1L" à 1000 FCFA, "250ml" à 500 FCFA).
+// Un produit sans formats garde son prix unique (`prix`) — comportement inchangé.
+interface MealFormat {
+  label: string;
+  prix: number;
+  disponible: boolean;
+}
+
 interface Meal {
   _id: string;
   date: string | null;
   nom: string;
-  categorie: 'Salade' | 'Jus & Détox' | 'Repas équilibré';
+  // Texte libre côté backend (Meal.model.ts: `categorie: String`) — pas d'enum strict ici
+  // pour pouvoir couvrir toutes les catégories réellement affichées sur le site public
+  // (Jus Détox / Jus de Fruits Pressés / Repas Chauds / Omelettes / Soupes & Bouillons…).
+  categorie: string;
   description: string;
   descriptionCourte?: string;
   prix: number;
@@ -40,6 +51,7 @@ interface Meal {
   tempsPrepMin?: number;
   image?: string;
   ingredients: Array<{ ingredientId: string; nom: string; quantite: number; unite: string }>;
+  formats?: MealFormat[];
   disponible: boolean;
   bienfaits?: string[];
   allergenes?: string[];
@@ -48,6 +60,13 @@ interface Meal {
   vedette?: boolean;
   recommande?: boolean;
   saisonnier?: boolean;
+}
+
+// Ligne de formulaire pour un format — prix saisi en texte comme les autres champs numériques de ce formulaire
+interface FormatEntry {
+  label: string;
+  prix: string;
+  disponible: boolean;
 }
 
 interface Nutrients { cal: number; prot: number; glu: number; lip: number; fib: number }
@@ -102,11 +121,12 @@ const ALLERGENS = [
 const HEALTH_GOALS = ['Détox', 'Minceur', 'Énergie', 'Sport', 'Bien-être', 'Digestion', 'Immunité', 'Rééquilibrage'];
 
 const EMPTY_FORM = {
-  nom: '', categorie: 'Repas équilibré' as Meal['categorie'],
+  nom: '', categorie: 'Repas équilibré' as string,
   description: '', descriptionCourte: '',
   prix: '', prixPromo: '',
   portions: '1', portion: '', tempsPrepMin: '',
   image: '',
+  formats: [] as FormatEntry[],
   composition: [] as MealIngredient[],
   // Nutrition complémentaire (saisie manuelle)
   sucres: '', sodium: '',
@@ -118,13 +138,30 @@ const EMPTY_FORM = {
   vedette: false, recommande: false, saisonnier: false,
 };
 
-const CATEGORIES: Meal['categorie'][] = ['Salade', 'Jus & Détox', 'Repas équilibré'];
+// Catégories réellement affichées sur le site public (JuicesPage / MealsPage) — voir
+// isJuice()/type dans src/pages/JuicesPage.tsx et SECTION_META dans src/pages/MealsPage.tsx.
+// Sans ces entrées, impossible de créer un produit qui atterrisse dans la bonne section
+// publique (ex: "Jus de Fruits Pressés" retombait toujours dans "Jus Détox").
+const CATEGORIES: Meal['categorie'][] = [
+  'Salade',
+  'Jus & Détox',
+  'Jus de Fruits Pressés',
+  'Repas équilibré',
+  'Repas Chauds',
+  'Omelettes',
+  'Soupes & Bouillons',
+];
 
-const CAT_COLOR: Record<Meal['categorie'], string> = {
-  'Salade':          'bg-green-100 text-green-700',
-  'Jus & Détox':     'bg-blue-100 text-blue-700',
-  'Repas équilibré': 'bg-orange-100 text-orange-700',
+const CAT_COLOR: Record<string, string> = {
+  'Salade':                'bg-green-100 text-green-700',
+  'Jus & Détox':           'bg-blue-100 text-blue-700',
+  'Jus de Fruits Pressés': 'bg-sky-100 text-sky-700',
+  'Repas équilibré':       'bg-orange-100 text-orange-700',
+  'Repas Chauds':          'bg-red-100 text-red-700',
+  'Omelettes':             'bg-amber-100 text-amber-700',
+  'Soupes & Bouillons':    'bg-purple-100 text-purple-700',
 };
+const DEFAULT_CAT_COLOR = 'bg-muted text-muted-foreground';
 
 // ─── Subcomponents ────────────────────────────────────────────────────────────
 
@@ -160,7 +197,7 @@ function MealCard({ meal, libMap, onEdit, onDelete, onToggle }: {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h3 className="font-display text-lg text-foreground truncate">{meal.nom}</h3>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-body shrink-0 ${CAT_COLOR[meal.categorie]}`}>{meal.categorie}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-body shrink-0 ${CAT_COLOR[meal.categorie] ?? DEFAULT_CAT_COLOR}`}>{meal.categorie}</span>
               {!meal.disponible && <span className="px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground shrink-0">Masqué</span>}
             </div>
             {meal.description && <p className="font-body text-xs text-muted-foreground line-clamp-1">{meal.description}</p>}
@@ -204,7 +241,14 @@ function MealCard({ meal, libMap, onEdit, onDelete, onToggle }: {
 
         <div className="flex items-center justify-between font-body text-xs text-muted-foreground">
           <span>{meal.portions} portion{meal.portions > 1 ? 's' : ''} · Total : {Math.round(total.cal)} kcal</span>
-          <span className="font-medium text-foreground">{meal.prix.toLocaleString()} FCFA</span>
+          {(meal.formats?.length ?? 0) > 0 ? (
+            <span className="font-medium text-foreground">
+              Dès {Math.min(...meal.formats!.map(f => f.prix)).toLocaleString()} FCFA
+              <span className="text-muted-foreground font-normal ml-1">({meal.formats!.length} formats)</span>
+            </span>
+          ) : (
+            <span className="font-medium text-foreground">{meal.prix.toLocaleString()} FCFA</span>
+          )}
         </div>
       </div>
     </div>
@@ -222,6 +266,7 @@ interface CatalogMeal {
   portions: number;
   image?: string;
   popular: boolean;
+  formats?: MealFormat[];
   ingredients: Array<{ nom: string; quantite: number; unite: string }>;
 }
 
@@ -353,6 +398,9 @@ export default function MenuDayPage() {
       portion: meal.portion ?? '',
       tempsPrepMin: meal.tempsPrepMin != null ? String(meal.tempsPrepMin) : '',
       image: meal.image || '',
+      formats: (meal.formats ?? []).map(fmt => ({
+        label: fmt.label, prix: String(fmt.prix), disponible: fmt.disponible !== false,
+      })),
       composition: mealToComposition(meal),
       sucres: '',
       sodium: '',
@@ -413,20 +461,14 @@ export default function MenuDayPage() {
     }
     setImporting(catalogMeal._id);
     try {
-      // Détermine la catégorie compatible MenuDayPage
-      const cat = catalogMeal.categorie.toLowerCase().includes('jus') || catalogMeal.categorie.toLowerCase().includes('détox')
-        ? 'Jus & Détox' as const
-        : catalogMeal.categorie.toLowerCase().includes('salade')
-          ? 'Salade' as const
-          : 'Repas équilibré' as const;
-
       const payload = {
         nom:         catalogMeal.nom,
-        categorie:   cat,
+        categorie:   catalogMeal.categorie, // conserve la vraie catégorie (Jus Détox, Repas Chauds…) au lieu de l'écraser
         description: catalogMeal.description,
         prix:        catalogMeal.prix,
         portions:    catalogMeal.portions,
         image:       catalogMeal.image || '',
+        formats:     catalogMeal.formats ?? [],
         ingredients: catalogMeal.ingredients.map(i => ({ ingredientId: '', nom: i.nom, quantite: i.quantite, unite: i.unite })),
         date,
         disponible:  true,
@@ -468,6 +510,10 @@ export default function MenuDayPage() {
       portion: form.portion.trim(),
       tempsPrepMin: form.tempsPrepMin !== '' ? +form.tempsPrepMin : 0,
       image: form.image || '',
+      // Ignore les lignes de format laissées incomplètes (libellé vide ou prix nul)
+      formats: form.formats
+        .filter(fmt => fmt.label.trim() !== '' && +fmt.prix > 0)
+        .map(fmt => ({ label: fmt.label.trim(), prix: +fmt.prix, disponible: fmt.disponible })),
       ingredients,
       date: isCatalog ? null : date,
       disponible: true,
@@ -575,6 +621,12 @@ export default function MenuDayPage() {
 
   const removeIngredient = (idx: number) =>
     setForm(f => ({ ...f, composition: f.composition.filter((_, i) => i !== idx) }));
+
+  // ── Formats de vente (optionnel) ──────────────────────────────────────────────
+  const addFormat = () => setForm(f => ({ ...f, formats: [...f.formats, { label: '', prix: '', disponible: true }] }));
+  const removeFormat = (idx: number) => setForm(f => ({ ...f, formats: f.formats.filter((_, i) => i !== idx) }));
+  const setFormat = (idx: number, field: keyof FormatEntry, v: string | boolean) =>
+    setForm(f => ({ ...f, formats: f.formats.map((fmt, i) => i === idx ? { ...fmt, [field]: v } : fmt) }));
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -847,6 +899,39 @@ export default function MenuDayPage() {
                         <input value={form.tempsPrepMin} onChange={e => setForm(f => ({ ...f, tempsPrepMin: e.target.value }))}
                           type="number" min="0" placeholder="5"
                           className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+                        Formats de vente (optionnel)
+                      </label>
+                      <p className="font-body text-xs text-muted-foreground mb-2">
+                        Utile pour les jus (1L, 250ml…). Sans format, le prix unique ci-dessus s'applique.
+                      </p>
+                      <div className="space-y-2">
+                        {form.formats.map((fmt, i) => (
+                          <div key={i} className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg p-2">
+                            <input value={fmt.label} onChange={e => setFormat(i, 'label', e.target.value)}
+                              placeholder="1L" type="text"
+                              className="w-20 h-8 px-2 bg-background border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <input value={fmt.prix} onChange={e => setFormat(i, 'prix', e.target.value)}
+                              placeholder="1000" type="number" min="0" step="50"
+                              className="flex-1 h-8 px-2 bg-background border border-border rounded-md font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <label className="flex items-center gap-1.5 cursor-pointer shrink-0 px-1">
+                              <input type="checkbox" checked={fmt.disponible}
+                                onChange={e => setFormat(i, 'disponible', e.target.checked)}
+                                className="w-3.5 h-3.5 rounded accent-primary" />
+                              <span className="font-body text-xs text-muted-foreground">Actif</span>
+                            </label>
+                            <button type="button" onClick={() => removeFormat(i)} aria-label="Supprimer ce format" className="p-1.5 hover:bg-destructive/10 rounded shrink-0">
+                              <X className="w-3.5 h-3.5 text-destructive" />
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={addFormat}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-muted border border-dashed border-border rounded-md font-body text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                          <Plus className="w-3.5 h-3.5" /> Ajouter un format
+                        </button>
                       </div>
                     </div>
                     <div>
@@ -1189,10 +1274,7 @@ export default function MenuDayPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-0.5">
                             <p className="font-display text-base text-foreground truncate">{m.nom}</p>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-body shrink-0 ${CAT_COLOR[
-                              m.categorie.toLowerCase().includes('jus') || m.categorie.toLowerCase().includes('détox') ? 'Jus & Détox' :
-                              m.categorie.toLowerCase().includes('salade') ? 'Salade' : 'Repas équilibré'
-                            ]}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-body shrink-0 ${CAT_COLOR[m.categorie] ?? DEFAULT_CAT_COLOR}`}>
                               {m.categorie}
                             </span>
                             {m.popular && <span className="px-2 py-0.5 rounded-full text-xs font-body bg-primary/10 text-primary shrink-0">Populaire</span>}
