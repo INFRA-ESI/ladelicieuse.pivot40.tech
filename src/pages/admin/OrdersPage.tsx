@@ -37,6 +37,10 @@ interface OrderItem {
   nom: string;
   qty: number;
   prix: number;
+  // Composition détaillée pour les salades du salad bar virtuel (crudités/fruits) —
+  // ex: ["Laitue", "Poulet grillé ×2", "Vinaigrette maison"]. Vide/absent pour les
+  // produits standards (jus, repas) qui n'ont pas de composition personnalisée.
+  customizations?: string[];
 }
 
 interface Anomalie {
@@ -58,6 +62,9 @@ interface Order {
   mode: ModeCommande;
   paiement: ModePaiement;
   adresse: string;
+  // Date/heure choisie par le client — livraison ou retrait selon `mode`
+  datelivraison?: string;
+  creneauLivraison?: string;
   notes: string;
   createdAt: string;
   history: OrderEvent[];
@@ -73,6 +80,8 @@ interface RawOrder {
   statut: OrderStatus;
   modeCommande: string;
   modePaiement: string;
+  datelivraison?: string;
+  creneauLivraison?: string;
   notes: string;
   createdAt: string;
   historique: Array<{ statut: OrderStatus; date: string; note?: string; par?: string }>;
@@ -143,12 +152,14 @@ function normalizeOrder(raw: RawOrder): Order {
     client: raw.client.prenoms ? `${raw.client.prenoms} ${raw.client.nom}` : raw.client.nom,
     email: raw.client.email,
     tel: raw.client.telephone,
-    items: raw.items.map(i => ({ nom: i.nom, qty: i.qty, prix: i.prix })),
+    items: raw.items.map(i => ({ nom: i.nom, qty: i.qty, prix: i.prix, customizations: i.customizations })),
     montant: raw.total,
     statut: raw.statut,
     mode: (MODE_MAP[raw.modeCommande] ?? 'Livraison') as ModeCommande,
     paiement: (PAY_MAP[raw.modePaiement] ?? 'Espèces') as ModePaiement,
     adresse: raw.client.adresse,
+    datelivraison: raw.datelivraison,
+    creneauLivraison: raw.creneauLivraison,
     notes: raw.notes,
     createdAt: raw.createdAt,
     history: (raw.historique ?? []).map(h => ({
@@ -646,9 +657,26 @@ export default function OrdersPage() {
 
                   {selectedOrder.adresse && (
                     <div>
-                      <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">Adresse de livraison</p>
+                      <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                        {selectedOrder.mode === 'Sur place' ? 'Retrait' : 'Adresse de livraison'}
+                      </p>
                       <p className="font-body text-sm text-foreground flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 shrink-0" /> {selectedOrder.adresse}
+                      </p>
+                    </div>
+                  )}
+
+                  {(selectedOrder.datelivraison || selectedOrder.creneauLivraison) && (
+                    <div>
+                      <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                        {selectedOrder.mode === 'Sur place' ? 'Date & heure de retrait' : 'Date & heure de livraison'}
+                      </p>
+                      <p className="font-body text-sm text-foreground flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {selectedOrder.datelivraison
+                          ? new Date(`${selectedOrder.datelivraison}T00:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+                          : ''}
+                        {selectedOrder.creneauLivraison ? ` à ${selectedOrder.creneauLivraison}` : ''}
                       </p>
                     </div>
                   )}
@@ -664,12 +692,24 @@ export default function OrdersPage() {
                     <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-2">Articles commandés</p>
                     <div className="border border-border rounded-lg divide-y divide-border">
                       {selectedOrder.items.map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-3">
-                          <div>
-                            <span className="font-body text-sm text-foreground">{item.nom}</span>
-                            <span className="font-body text-xs text-muted-foreground ml-2">× {item.qty}</span>
+                        <div key={i} className="p-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-body text-sm text-foreground">{item.nom}</span>
+                              <span className="font-body text-xs text-muted-foreground ml-2">× {item.qty}</span>
+                            </div>
+                            <span className="font-body text-sm font-medium text-foreground">{fmtFCFA(item.prix * item.qty)}</span>
                           </div>
-                          <span className="font-body text-sm font-medium text-foreground">{fmtFCFA(item.prix * item.qty)}</span>
+                          {/* Composition détaillée — salades du salad bar virtuel (crudités/fruits) */}
+                          {(item.customizations?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {item.customizations!.map((c, ci) => (
+                                <span key={ci} className="font-body text-[11px] px-2 py-1 bg-muted rounded-full text-muted-foreground">
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                       <div className="flex items-center justify-between p-3 bg-muted/40">

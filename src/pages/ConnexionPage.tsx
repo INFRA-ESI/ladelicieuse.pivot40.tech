@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '@/context/UserContext';
 import { toast } from 'sonner';
@@ -44,8 +44,11 @@ function Field({
 export default function ConnexionPage() {
   const { loginWithPassword, registerAccount } = useUser();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [tab, setTab]         = useState<Tab>('connexion');
+  // Permet de tomber directement sur l'onglet inscription via /connexion?tab=inscription
+  // (utilisé par ex. par la relance "créer un compte pour les points" sur le reçu de commande)
+  const [tab, setTab]         = useState<Tab>(searchParams.get('tab') === 'inscription' ? 'inscription' : 'connexion');
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
 

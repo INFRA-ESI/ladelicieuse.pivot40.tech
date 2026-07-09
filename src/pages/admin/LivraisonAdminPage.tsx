@@ -3,10 +3,18 @@ import { Plus, Trash2, X, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminGet, adminPatch } from '@/services/adminApiService';
 
+// Les 4 cartes affichées côté client. "PK" peut contenir plusieurs zones (paliers de prix,
+// ex: PK5-PK12 moins cher que PK13+) — le tarif exact est déterminé par les mots-clés parmi
+// les zones du même groupe. Pour Libreville/Owendo/Akanda, une seule zone par groupe suffit
+// normalement (son tarif s'applique directement, sans besoin de mots-clés).
+const ZONE_GROUPS = ['Libreville', 'Owendo', 'Akanda', 'PK'] as const;
+type ZoneGroup = typeof ZONE_GROUPS[number];
+
 interface Zone {
   label: string;
   keywords: string[];
   frais: number;
+  group: ZoneGroup;
 }
 
 interface LivraisonSettings {
@@ -23,7 +31,12 @@ export default function LivraisonAdminPage() {
   useEffect(() => {
     let mounted = true;
     adminGet<{ data: LivraisonSettings }>('/settings')
-      .then(r => { if (mounted) setData({ zonesLivraison: r.data.zonesLivraison || [], creneauxLivraison: r.data.creneauxLivraison || [] }); })
+      .then(r => {
+        if (!mounted) return;
+        // Rétrocompatibilité : une zone sans groupe (ancienne donnée) est rattachée à PK par défaut
+        const zones = (r.data.zonesLivraison || []).map(z => ({ ...z, group: z.group ?? 'PK' }));
+        setData({ zonesLivraison: zones, creneauxLivraison: r.data.creneauxLivraison || [] });
+      })
       .catch(() => toast.error('Erreur chargement'))
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
@@ -48,7 +61,7 @@ export default function LivraisonAdminPage() {
   }
 
   function addZone() {
-    setData(d => ({ ...d, zonesLivraison: [...d.zonesLivraison, { label: '', keywords: [], frais: 3000 }] }));
+    setData(d => ({ ...d, zonesLivraison: [...d.zonesLivraison, { label: '', keywords: [], frais: 3000, group: 'PK' }] }));
   }
 
   function removeZone(idx: number) {
@@ -89,20 +102,26 @@ export default function LivraisonAdminPage() {
             <Plus className="w-3.5 h-3.5" /> Ajouter une zone
           </button>
         </div>
-        <div className="text-xs font-body text-muted-foreground bg-muted rounded-md px-3 py-2">
-          Les mots-clés sont recherchés dans l'adresse saisie par le client (séparés par des virgules, insensibles à la casse).
-          Si aucun mot-clé ne correspond, la commande est classée « Libreville » avec les frais de livraison standard.
+        <div className="text-xs font-body text-muted-foreground bg-muted rounded-md px-3 py-2 space-y-1">
+          <p>Le client choisit d'abord l'une des <strong>4 cartes</strong> : Libreville, Owendo, Akanda ou PK, puis décrit son lieu exact dans un champ obligatoire.</p>
+          <p>Pour Libreville/Owendo/Akanda, le tarif de la zone s'applique directement. Pour <strong>PK</strong>, vous pouvez créer plusieurs zones (ex: « PK5 à PK12 » à 2 000, « PK13 et plus » à 3 000) — le tarif exact est déterminé automatiquement à partir des mots-clés retrouvés dans le lieu décrit par le client (séparés par des virgules, insensibles à la casse). Si aucun mot-clé PK ne correspond, le tarif le plus élevé du groupe PK est appliqué par précaution.</p>
         </div>
         <div className="space-y-3">
           {data.zonesLivraison.map((z, idx) => (
-            <div key={idx} className="flex flex-col sm:grid sm:grid-cols-[1fr_2fr_120px_36px] gap-3 items-start">
+            <div key={idx} className="flex flex-col sm:grid sm:grid-cols-[110px_1fr_2fr_110px_36px] gap-3 items-start">
               <div>
-                <label className="font-body text-xs text-muted-foreground block mb-1">Label</label>
-                <input value={z.label} onChange={e => updateZone(idx, 'label', e.target.value)} placeholder="Ex : Owendo" className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <label className="font-body text-xs text-muted-foreground block mb-1">Groupe (carte)</label>
+                <select value={z.group} onChange={e => updateZone(idx, 'group', e.target.value)} aria-label="Groupe de la zone" className="w-full h-9 px-2 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                  {ZONE_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
               </div>
               <div>
-                <label className="font-body text-xs text-muted-foreground block mb-1">Mots-clés (virgule)</label>
-                <input value={z.keywords.join(', ')} onChange={e => updateKeywords(idx, e.target.value)} placeholder="owendo, owendo-village" className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <label className="font-body text-xs text-muted-foreground block mb-1">Label</label>
+                <input value={z.label} onChange={e => updateZone(idx, 'label', e.target.value)} placeholder="Ex : PK5 à PK12" className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="font-body text-xs text-muted-foreground block mb-1">Mots-clés (virgule) — utile surtout pour PK</label>
+                <input value={z.keywords.join(', ')} onChange={e => updateKeywords(idx, e.target.value)} placeholder="pk5, pk 5, pk6…" className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
               </div>
               <div>
                 <label className="font-body text-xs text-muted-foreground block mb-1">Frais (FCFA)</label>

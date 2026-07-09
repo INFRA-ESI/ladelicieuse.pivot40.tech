@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ss } from '@/lib/storage';
 import { useCart } from '@/context/CartContext';
 import { useUser } from '@/context/UserContext';
-import { formatPrice } from '@/data/products';
+import { formatPrice, type CartItem } from '@/data/products';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { STORE_WHATSAPP } from '@/lib/config';
 import {
@@ -18,44 +18,63 @@ import Footer from '@/components/Footer';
 
 const CART_HERO = 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=1920&q=80';
 
-// ─── Cartographie des zones de livraison de Libreville ────────────────────────
+// ─── Zones de livraison — 4 cartes (Libreville, Owendo, Akanda, PK) ────────────
+// Le client choisit d'abord une carte, puis décrit son lieu exact. Pour Libreville/
+// Owendo/Akanda le tarif de la zone s'applique directement. Pour "PK", l'admin peut
+// définir plusieurs paliers de prix (ex: PK5-PK12 moins cher que PK13+) — le tarif
+// exact est déterminé automatiquement à partir des mots-clés retrouvés dans le lieu
+// décrit par le client, exactement comme le faisait l'ancienne détection d'adresse.
 
-const ZONES_PERIPHERIE_DEFAULT: Array<{ keywords: string[]; label: string; frais: number }> = [
-  { keywords: ['owendo'],                                        label: 'Owendo',          frais: 3000 },
-  { keywords: ['akanda'],                                        label: 'Akanda',          frais: 3000 },
-  { keywords: ['angondje', 'angondjé'],                          label: 'Angondjé',        frais: 3000 },
-  { keywords: ['plein-ciel', 'plein ciel', 'pleinciel'],         label: 'Plein-Ciel',      frais: 3000 },
-  { keywords: ['avorbam'],                                       label: 'Avorbam',         frais: 3000 },
-  { keywords: ['bikele', 'bikélé'],                              label: 'Bikélé',          frais: 3000 },
-  { keywords: ['nzeng-ayong', 'nzeng ayong', 'nzeng'],           label: 'Nzeng-Ayong',     frais: 3000 },
-  { keywords: ['aworongane'],                                    label: 'Aworongane',      frais: 3000 },
-  { keywords: ['mindoube', 'mindoubé'],                          label: 'Mindoubé',        frais: 3000 },
-  { keywords: ['alibandeng'],                                    label: 'Alibandeng',      frais: 3000 },
-  { keywords: ['cite scientifique', 'cité scientifique'],        label: 'Cité Scientifique', frais: 3000 },
-  { keywords: ['pk5','pk 5','pk6','pk 6','pk7','pk 7','pk8','pk 8',
-               'pk9','pk 9','pk10','pk 10','pk11','pk 11','pk12','pk 12',
-               'pk13','pk 13','pk14','pk 14','pk15','pk 15'],     label: 'Zone PK5+',       frais: 3000 },
+type ZoneGroup = 'Libreville' | 'Owendo' | 'Akanda' | 'PK';
+
+interface DeliveryZone { keywords: string[]; label: string; frais: number; group: ZoneGroup }
+
+const ZONES_DEFAULT: DeliveryZone[] = [
+  { group: 'Libreville', label: 'Libreville',   keywords: [],                                                                                             frais: 2000 },
+  { group: 'Owendo',     label: 'Owendo',       keywords: ['owendo'],                                                                                     frais: 3000 },
+  { group: 'Akanda',     label: 'Akanda',       keywords: ['akanda'],                                                                                     frais: 3000 },
+  { group: 'PK',         label: 'PK5 à PK12',   keywords: ['pk5','pk 5','pk6','pk 6','pk7','pk 7','pk8','pk 8','pk9','pk 9','pk10','pk 10','pk11','pk 11','pk12','pk 12'], frais: 2000 },
+  { group: 'PK',         label: 'PK13 et plus', keywords: ['pk13','pk 13','pk14','pk 14','pk15','pk 15','pk16','pk 16','pk17','pk 17','pk18','pk 18','pk19','pk 19','pk20','pk 20'], frais: 3000 },
 ];
+
+const ZONE_CARDS: { group: ZoneGroup; label: string; hint: string }[] = [
+  { group: 'Libreville', label: 'Libreville', hint: 'Centre-ville et environs' },
+  { group: 'Owendo',     label: 'Owendo',     hint: '' },
+  { group: 'Akanda',     label: 'Akanda',     hint: '' },
+  { group: 'PK',         label: 'PK',         hint: 'PK5 et au-delà' },
+];
+
+const GROUP_FALLBACK_FEE: Record<ZoneGroup, number> = {
+  Libreville: 2000, Owendo: 3000, Akanda: 3000, PK: 3000,
+};
+
+// Tarif "vitrine" affiché sur la carte avant que le client n'ait décrit son lieu exact.
+function cardFeeLabel(group: ZoneGroup, zones: DeliveryZone[]): string {
+  const groupZones = zones.filter(z => z.group === group);
+  const fees = groupZones.length > 0 ? groupZones.map(z => z.frais) : [GROUP_FALLBACK_FEE[group]];
+  const min = Math.min(...fees);
+  const max = Math.max(...fees);
+  return min === max ? formatPrice(min) : `Dès ${formatPrice(min)}`;
+}
+
+// Tarif exact une fois la carte choisie et le lieu décrit — même logique de
+// correspondance par mots-clés qu'auparavant, appliquée uniquement aux zones du groupe.
+function getGroupFee(group: ZoneGroup, locationText: string, zones: DeliveryZone[]): number {
+  const groupZones = zones.filter(z => z.group === group);
+  if (groupZones.length === 0) return GROUP_FALLBACK_FEE[group];
+  const lower = locationText.toLowerCase();
+  const matched = groupZones.find(z => z.keywords.some(kw => lower.includes(kw)));
+  if (matched) return matched.frais;
+  // Aucun mot-clé ne correspond (ex: le client n'a pas précisé son numéro de PK) —
+  // on applique par précaution le tarif le plus élevé du groupe.
+  return Math.max(...groupZones.map(z => z.frais));
+}
 
 const DELIVERY_SLOTS_DEFAULT: string[] = [
   '09h00', '10h00', '11h00', '12h00',
   '13h00', '14h00', '15h00', '16h00',
   '17h00', '18h00', '19h00', '20h00',
 ];
-
-function getZoneInfo(
-  address: string,
-  zones: Array<{ keywords: string[]; label: string; frais: number }>,
-): { label: string; fee: number } | null {
-  if (!address.trim()) return null;
-  const lower = address.toLowerCase();
-  for (const z of zones) {
-    if (z.keywords.some((kw: string) => lower.includes(kw))) {
-      return { label: z.label, fee: z.frais };
-    }
-  }
-  return { label: 'Libreville', fee: 2000 };
-}
 
 // ─── Date / heure ─────────────────────────────────────────────────────────────
 
@@ -106,23 +125,73 @@ function calcPoints(total: number) {
   return Math.floor(total / 100);
 }
 
+// Sérialise la composition d'une salade personnalisée (crudités/fruits du salad bar
+// virtuel) en libellés lisibles ("Laitue", "Poulet grillé ×2"…) afin que le back-office
+// puisse afficher exactement ce que le client a choisi, et non un simple nom générique.
+// La quantité affichée est le TOTAL pour cette ligne de commande (quantité de l'ingrédient
+// dans une salade × nombre de salades identiques commandées) — c'est ce dont la cuisine
+// a besoin, pas seulement la composition d'une seule salade.
+function composeCustomizations(item: CartItem): string[] {
+  if (!item.items || item.items.length === 0) return [];
+  return item.items.map(({ ingredient, quantity }) => {
+    const total = quantity * item.quantity;
+    return total > 1 ? `${ingredient.name} ×${total}` : ingredient.name;
+  });
+}
+
 function buildWhatsAppMessage(
   orderId: string,
-  items: { name: string; qty: number; price: number }[],
+  items: { name: string; qty: number; price: number; customizations?: string[] }[],
   total: number,
   nom: string,
-  delivery?: { mode: 'livraison' | 'retrait'; address?: string; date?: string; time?: string; fee?: number },
+  telephone: string,
+  delivery?: {
+    mode: 'livraison' | 'retrait';
+    zoneGroup?: string | null;
+    location?: string;
+    date?: string;
+    time?: string;
+    fee?: number;
+  },
 ) {
-  const lines = items.map(i => `  • ${i.name} × ${i.qty} — ${formatPrice(i.price * i.qty)}`).join('\n');
-  const deliveryLine = delivery?.mode === 'livraison'
-    ? `\n*Livraison :* ${delivery.address} — ${formatDeliveryDate(delivery.date ?? '')} · ${delivery.time}\n*Frais de livraison :* ${formatPrice(delivery.fee ?? 0)}\n`
-    : delivery?.mode === 'retrait' ? '\n*Mode :* Récupération sur place\n' : '';
+  const ref       = orderId.slice(-8).toUpperCase();
+  const sousTotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const totalQty  = items.reduce((s, i) => s + i.qty, 0);
+
+  // Une ligne par article, avec le détail de composition en sous-lignes pour les
+  // salades personnalisées du salad bar virtuel (crudités/fruits) — exactement ce
+  // que voit l'équipe en cuisine dans le back-office.
+  const itemLines = items.map(i => {
+    const head = `*${i.qty}x* ${i.name} — ${formatPrice(i.price * i.qty)}`;
+    const sub  = (i.customizations ?? []).map(c => `└ ${c}`).join('\n');
+    return sub ? `${head}\n${sub}` : head;
+  }).join('\n\n');
+
+  const deliveryFeeLine = delivery?.mode === 'livraison' && (delivery.fee ?? 0) > 0
+    ? `Livraison : ${formatPrice(delivery.fee ?? 0)}\n`
+    : '';
+
+  const serviceBlock = delivery?.mode === 'livraison'
+    ? `\nLivraison : *Zone ${delivery.zoneGroup} — ${formatPrice(delivery.fee ?? 0)}*\n└ ${delivery.location}\n`
+    : delivery?.mode === 'retrait'
+      ? `\nRetrait : *Sur place*\n`
+      : '';
+
+  const scheduleBlock = delivery?.date
+    ? `\nRendez-vous : *${formatDeliveryDate(delivery.date)}${delivery.time ? ` à ${delivery.time}` : ''}*\n`
+    : '';
+
   return encodeURIComponent(
-    `*La Délicieuse Diète — Confirmation de commande*\n\n` +
-    `Bonjour ${nom} ! Votre commande #${orderId.slice(-8).toUpperCase()} a bien été reçue.\n\n` +
-    `*Articles :*\n${lines}\n${deliveryLine}\n` +
-    `*Total :* ${formatPrice(total)}\n\n` +
-    `Merci pour votre confiance ! Nous préparons votre commande.`,
+    `*La Délicieuse Diète*\n` +
+    `*#${ref}*\n\n` +
+    `${itemLines}\n\n` +
+    `Total d'articles : ${formatPrice(sousTotal)} (Qté : ${totalQty})\n` +
+    deliveryFeeLine +
+    `*Total : ${formatPrice(total)}*\n\n` +
+    `Client : *${nom}* ${telephone}\n` +
+    serviceBlock +
+    scheduleBlock +
+    `\nMerci pour votre confiance ! Nous préparons votre commande avec soin.`,
   );
 }
 
@@ -140,13 +209,82 @@ function getTypeCfg(type: string) {
   return TYPE_CFG[type] ?? TYPE_CFG['salade'];
 }
 
+// Sélecteur date + créneau horaire, partagé entre la livraison et le retrait sur place —
+// dans les deux cas, la date et l'heure sont obligatoires pour passer à l'étape suivante.
+function DeliverySlotPicker({
+  date, time, slots, mode, onDateChange, onTimeChange,
+}: {
+  date: string; time: string; slots: string[]; mode: 'livraison' | 'retrait';
+  onDateChange: (v: string) => void; onTimeChange: (v: string) => void;
+}) {
+  const dateLabel    = mode === 'livraison' ? 'Date de livraison' : 'Date de retrait';
+  const timeLabel    = mode === 'livraison' ? 'Heure de livraison' : 'Heure de retrait';
+  const confirmLabel = mode === 'livraison' ? 'Livraison prévue' : 'Retrait prévu';
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+            <Calendar className="w-3.5 h-3.5" /> {dateLabel}
+          </label>
+          <select
+            value={date}
+            onChange={e => onDateChange(e.target.value)}
+            aria-label={dateLabel}
+            className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
+          >
+            <option value="">Choisir</option>
+            {getNextDays().map(day => (
+              <option key={day.value} value={day.value}>{day.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+            <Clock className="w-3.5 h-3.5" /> {timeLabel}
+          </label>
+          <select
+            value={time}
+            onChange={e => onTimeChange(e.target.value)}
+            disabled={!date}
+            aria-label={timeLabel}
+            className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <option value="">Heure</option>
+            {slots.map(slot => {
+              const available = isSlotAvailable(slot, date);
+              return (
+                <option key={slot} value={slot} disabled={!available}>
+                  {slot}{!available ? ' (passé)' : ''}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      </div>
+      {date && time && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5 text-primary"
+        >
+          <Check className="w-3.5 h-3.5 shrink-0" />
+          <span className="font-body text-sm">
+            {confirmLabel} le {formatDeliveryDate(date)} à {time}
+          </span>
+        </motion.div>
+      )}
+    </>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, totalPrice, totalCalories, totalItems, clearCart } = useCart();
   const { user, addOrder } = useUser();
   const navigate = useNavigate();
-  const [zones, setZones] = useState(ZONES_PERIPHERIE_DEFAULT);
+  const [zones, setZones] = useState(ZONES_DEFAULT);
 
   // ── Confirmation snapshot ────────────────────────────────────────────────────
   const [orderConfirmed, setOrderConfirmed]     = useState(false);
@@ -156,7 +294,10 @@ export default function CartPage() {
   const [confirmedTotal, setConfirmedTotal]     = useState(0);
   const [confirmedMode, setConfirmedMode]       = useState('');
   const [confirmedAt, setConfirmedAt]           = useState('');
-  const [confirmedDelivery, setConfirmedDelivery] = useState<null | { mode: 'livraison' | 'retrait'; address?: string; date?: string; time?: string; fee?: number }>(null);
+  const [confirmedDelivery, setConfirmedDelivery] = useState<null | {
+    mode: 'livraison' | 'retrait'; address?: string; date?: string; time?: string; fee?: number;
+    zoneGroup?: ZoneGroup | null; location?: string;
+  }>(null);
 
   // ── Checkout ─────────────────────────────────────────────────────────────────
   const [checkoutOpen, setCheckoutOpen]   = useState(false);
@@ -166,12 +307,15 @@ export default function CartPage() {
   const [telephone, setTelephone]         = useState(user?.telephone ?? '');
   const [infoError, setInfoError]         = useState('');
 
-  // ── Livraison ────────────────────────────────────────────────────────────────
-  const [deliveryMode, setDeliveryMode]       = useState<'livraison' | 'retrait' | null>(null);
-  const [deliveryDate, setDeliveryDate]       = useState('');
-  const [deliveryTime, setDeliveryTime]       = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [deliverySlots, setDeliverySlots]     = useState<string[]>(DELIVERY_SLOTS_DEFAULT);
+  // ── Livraison / Retrait ────────────────────────────────────────────────────────
+  // deliveryDate/deliveryTime servent aux deux modes : date+heure de livraison, ou
+  // date+heure de retrait souhaitée par le client — les deux sont obligatoires.
+  const [deliveryMode, setDeliveryMode]           = useState<'livraison' | 'retrait' | null>(null);
+  const [deliveryDate, setDeliveryDate]           = useState('');
+  const [deliveryTime, setDeliveryTime]           = useState('');
+  const [deliveryZoneGroup, setDeliveryZoneGroup] = useState<ZoneGroup | null>(null);
+  const [deliveryLocation, setDeliveryLocation]   = useState(''); // descriptif exact du lieu (obligatoire)
+  const [deliverySlots, setDeliverySlots]         = useState<string[]>(DELIVERY_SLOTS_DEFAULT);
 
   useEffect(() => {
     const ac  = new AbortController();
@@ -208,7 +352,8 @@ export default function CartPage() {
     let ov: Partial<{
       pendingOrderId: string; nom: string; prenoms: string; telephone: string;
       deliveryMode: 'livraison' | 'retrait' | null;
-      deliveryDate: string; deliveryTime: string; deliveryAddress: string;
+      deliveryDate: string; deliveryTime: string;
+      deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
       deliveryFee: number; orderTotal: number;
     }> = {};
     const savedRaw = ss.get('pending_checkout');
@@ -224,7 +369,8 @@ export default function CartPage() {
           deliveryMode:   saved.deliveryMode,
           deliveryDate:   saved.deliveryDate,
           deliveryTime:   saved.deliveryTime,
-          deliveryAddress: saved.deliveryAddress,
+          deliveryZoneGroup: saved.deliveryZoneGroup,
+          deliveryLocation:  saved.deliveryLocation,
           deliveryFee:    saved.deliveryFee,
           orderTotal:     saved.orderTotal,
         };
@@ -260,13 +406,10 @@ export default function CartPage() {
   }, []); // runs once on mount
 
   // ── Delivery fee computation ─────────────────────────────────────────────────
-  const zoneInfo = useMemo(() => {
-    if (deliveryMode !== 'livraison') return null;
-    return getZoneInfo(deliveryAddress, zones);
-  }, [deliveryMode, deliveryAddress, zones]);
-
-  const deliveryFee  = zoneInfo?.fee   ?? 0;
-  const deliveryZone = zoneInfo?.label ?? null;
+  const deliveryFee = useMemo(() => {
+    if (deliveryMode !== 'livraison' || !deliveryZoneGroup) return 0;
+    return getGroupFee(deliveryZoneGroup, deliveryLocation, zones);
+  }, [deliveryMode, deliveryZoneGroup, deliveryLocation, zones]);
 
   const orderTotal = totalPrice + deliveryFee;
 
@@ -278,7 +421,8 @@ export default function CartPage() {
   const finishOrder = async (mode = 'En ligne', ov: Partial<{
     pendingOrderId: string; nom: string; prenoms: string; telephone: string;
     deliveryMode: 'livraison' | 'retrait' | null;
-    deliveryDate: string; deliveryTime: string; deliveryAddress: string;
+    deliveryDate: string; deliveryTime: string;
+    deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
     deliveryFee: number; orderTotal: number;
   }> = {}) => {
     // Capture snapshot immédiatement avant toute opération async
@@ -291,7 +435,11 @@ export default function CartPage() {
     const _dMode  = ('deliveryMode' in ov) ? ov.deliveryMode! : deliveryMode;
     const _dDate  = ov.deliveryDate  ?? deliveryDate;
     const _dTime  = ov.deliveryTime  ?? deliveryTime;
-    const _dAddr  = (ov.deliveryAddress ?? deliveryAddress).trim();
+    const _dZoneGroup = ('deliveryZoneGroup' in ov) ? ov.deliveryZoneGroup! : deliveryZoneGroup;
+    const _dLocation  = (ov.deliveryLocation ?? deliveryLocation).trim();
+    const _dAddr  = _dMode === 'livraison'
+      ? `${_dZoneGroup ?? ''} — ${_dLocation}`.trim()
+      : `Sur place — retrait le ${formatDeliveryDate(_dDate)} à ${_dTime}`;
     const _dFee   = ov.deliveryFee  ?? deliveryFee;
     const _total  = ov.orderTotal   ?? (totalPrice + _dFee);
     const _name   = [_pre, _nom].filter(Boolean).join(' ') || _nom;
@@ -300,7 +448,7 @@ export default function CartPage() {
     const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const pts     = calcPoints(_total);
-    const snap    = _dMode ? { mode: _dMode, address: _dAddr, date: _dDate, time: _dTime, fee: _dFee } : null;
+    const snap    = _dMode ? { mode: _dMode, address: _dAddr, date: _dDate, time: _dTime, fee: _dFee, zoneGroup: _dZoneGroup, location: _dLocation } : null;
     const sousTotal = itemsSnapshot.reduce((s, i) => s + i.totalPrice * i.quantity, 0);
 
     const modePaiementMap: Record<string, 'mobile_money' | 'carte' | 'especes'> = {
@@ -343,14 +491,14 @@ export default function CartPage() {
             prenoms: _pre,
             email: user?.email ?? '',
             telephone: _phone,
-            adresse: _dMode === 'livraison' ? _dAddr : 'Sur place',
+            adresse: _dAddr,
           },
           userId: user?.id ?? undefined,
           items: itemsSnapshot.map(i => ({
             nom: i.name,
             qty: i.quantity,
             prix: i.totalPrice,
-            customizations: [],
+            customizations: composeCustomizations(i),
           })),
           statut: 'en_attente',
           priorite: 'normale',
@@ -359,8 +507,8 @@ export default function CartPage() {
           sousTotal,
           fraisLivraison: _dFee,
           total: _total,
-          datelivraison:    _dMode === 'livraison' && _dDate ? _dDate : undefined,
-          creneauLivraison: _dMode === 'livraison' && _dTime ? _dTime : undefined,
+          datelivraison:    _dDate || undefined,
+          creneauLivraison: _dTime || undefined,
           notes: '',
         }),
       });
@@ -408,7 +556,8 @@ export default function CartPage() {
     setDeliveryMode(null);
     setDeliveryDate('');
     setDeliveryTime('');
-    setDeliveryAddress('');
+    setDeliveryZoneGroup(null);
+    setDeliveryLocation('');
     setCheckoutStep('info');
     setCheckoutOpen(true);
   };
@@ -426,9 +575,14 @@ export default function CartPage() {
       return;
     }
     if (deliveryMode === 'livraison') {
-      if (!deliveryDate)            { setInfoError('Veuillez choisir une date de livraison.'); return; }
-      if (!deliveryTime)            { setInfoError('Veuillez choisir un créneau horaire.'); return; }
-      if (!deliveryAddress.trim())  { setInfoError('Veuillez indiquer votre adresse de livraison.'); return; }
+      if (!deliveryZoneGroup)        { setInfoError('Veuillez choisir votre zone de livraison.'); return; }
+      if (!deliveryLocation.trim())  { setInfoError('Veuillez décrire précisément votre lieu de livraison.'); return; }
+      if (!deliveryDate)             { setInfoError('Veuillez choisir une date de livraison.'); return; }
+      if (!deliveryTime)             { setInfoError('Veuillez choisir un créneau horaire.'); return; }
+    }
+    if (deliveryMode === 'retrait') {
+      if (!deliveryDate)             { setInfoError('Veuillez choisir une date de retrait.'); return; }
+      if (!deliveryTime)             { setInfoError('Veuillez choisir une heure de retrait.'); return; }
     }
     // Persist checkout data before potential card redirect
     ss.set('pending_checkout', JSON.stringify({
@@ -438,7 +592,8 @@ export default function CartPage() {
       deliveryMode,
       deliveryDate,
       deliveryTime,
-      deliveryAddress,
+      deliveryZoneGroup,
+      deliveryLocation,
       deliveryFee,
       orderTotal,
       pendingOrderId,
@@ -481,9 +636,10 @@ export default function CartPage() {
     const pts   = calcPoints(confirmedTotal);
     const waMsg = buildWhatsAppMessage(
       confirmedOrderId,
-      confirmedItems.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice })),
+      confirmedItems.map(i => ({ name: i.name, qty: i.quantity, price: i.totalPrice, customizations: composeCustomizations(i) })),
       confirmedTotal,
       fullName || nom,
+      user?.telephone || telephone,
       confirmedDelivery ?? undefined,
     );
     const waUrl = `https://wa.me/${STORE_WHATSAPP}?text=${waMsg}`;
@@ -532,6 +688,26 @@ export default function CartPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="mb-8"
+          >
+            <p className="font-body text-xs text-center text-muted-foreground mb-2">
+              Dernière étape — indispensable pour que votre commande soit prise en compte
+            </p>
+            <a
+              href={waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-[#25D366] text-white hover:opacity-90 transition-opacity rounded-xl shadow-md"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Cliquez ici pour valider votre commande sur WhatsApp
+            </a>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45 }}
           >
             <div className="border border-border rounded-2xl bg-background overflow-hidden mb-6">
@@ -573,7 +749,7 @@ export default function CartPage() {
                       <p className="font-body text-sm text-foreground">
                         {confirmedDelivery.mode === 'livraison'
                           ? `${confirmedDelivery.address} · ${formatDeliveryDate(confirmedDelivery.date ?? '')} à ${confirmedDelivery.time}`
-                          : 'Récupération sur place'}
+                          : confirmedDelivery.address}
                       </p>
                     </div>
                   )}
@@ -618,26 +794,25 @@ export default function CartPage() {
                   </div>
                 )}
                 {pts > 0 && !user && (
-                  <div className="bg-muted border border-border rounded-xl px-4 py-3 flex items-center gap-2.5">
-                    <Star className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <p className="font-body text-sm text-muted-foreground">
-                      <Link to="/mon-compte" className="font-medium text-primary hover:underline">Créez un compte</Link> pour gagner <strong>{pts} points</strong> fidélité sur vos prochaines commandes.
-                    </p>
+                  <div className="bg-muted border border-border rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <Star className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <p className="font-body text-sm text-muted-foreground">
+                        Vous auriez pu gagner <strong className="text-foreground">{pts} points fidélité</strong> sur cette commande en ayant un compte — créez-en un pour en profiter dès la prochaine fois.
+                      </p>
+                    </div>
+                    <Link
+                      to="/connexion?tab=inscription"
+                      className="flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider text-primary font-semibold hover:underline mt-3"
+                    >
+                      Créer mon compte gratuitement <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
                   </div>
                 )}
               </div>
             </div>
 
             <div className="flex flex-col gap-3">
-              <a
-                href={waUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-[#25D366] text-white hover:opacity-90 transition-opacity rounded-xl"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Confirmation WhatsApp
-              </a>
               {user && (
                 <Link
                   to="/mon-compte"
@@ -998,7 +1173,7 @@ export default function CartPage() {
                 </div>
                 {deliveryMode === 'livraison' && deliveryFee > 0 && (
                   <div className="flex items-center justify-between mt-1">
-                    <span className="font-body text-xs text-muted-foreground">Livraison ({deliveryZone})</span>
+                    <span className="font-body text-xs text-muted-foreground">Livraison ({deliveryZoneGroup})</span>
                     <span className="font-body text-xs text-muted-foreground">+ {formatPrice(deliveryFee)}</span>
                   </div>
                 )}
@@ -1140,101 +1315,118 @@ export default function CartPage() {
                           transition={{ duration: 0.22 }}
                           className="flex flex-col gap-4 overflow-hidden"
                         >
-                          {/* Date + Heure côte à côte */}
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
-                                <Calendar className="w-3.5 h-3.5" /> Date
-                              </label>
-                              <select
-                                value={deliveryDate}
-                                onChange={e => { setDeliveryDate(e.target.value); setDeliveryTime(''); setInfoError(''); }}
-                                className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
-                              >
-                                <option value="">Choisir</option>
-                                {getNextDays().map(day => (
-                                  <option key={day.value} value={day.value}>{day.label}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
-                                <Clock className="w-3.5 h-3.5" /> Heure
-                              </label>
-                              <select
-                                value={deliveryTime}
-                                onChange={e => { setDeliveryTime(e.target.value); setInfoError(''); }}
-                                disabled={!deliveryDate}
-                                className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                <option value="">Heure</option>
-                                {deliverySlots.map(slot => {
-                                  const available = isSlotAvailable(slot, deliveryDate);
-                                  return (
-                                    <option key={slot} value={slot} disabled={!available}>
-                                      {slot}{!available ? ' (passé)' : ''}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-                          </div>
-                          {deliveryDate && deliveryTime && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5 text-primary"
-                            >
-                              <Check className="w-3.5 h-3.5 shrink-0" />
-                              <span className="font-body text-sm">
-                                {formatDeliveryDate(deliveryDate)} à {deliveryTime}
-                              </span>
-                            </motion.div>
-                          )}
-
-                          {/* Adresse */}
+                          {/* 4 cartes de zone */}
                           <div>
                             <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
-                              <MapPin className="w-3.5 h-3.5" /> Lieu de livraison
+                              <MapPin className="w-3.5 h-3.5" /> Zone de livraison
                             </label>
-                            <input
-                              type="text"
-                              value={deliveryAddress}
-                              onChange={e => { setDeliveryAddress(e.target.value); setInfoError(''); }}
-                              placeholder="Ex: Lalala, Batterie 4, Nkembo, PK8…"
-                              className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
-                            />
-                            <p className="font-body text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-                              Zone centre <span className="font-semibold text-foreground">(Glass, Lalala, Batterie 4, Cocotiers…)</span> — 2 000 F<br />
-                              Zone périphérie <span className="font-semibold text-foreground">(Owendo, Akanda, PK5+, Nzeng-Ayong…)</span> — 3 000 F
-                            </p>
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {ZONE_CARDS.map(card => {
+                                const active = deliveryZoneGroup === card.group;
+                                return (
+                                  <button
+                                    key={card.group}
+                                    type="button"
+                                    onClick={() => { setDeliveryZoneGroup(card.group); setInfoError(''); }}
+                                    className={`relative flex flex-col items-start gap-0.5 px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                                      active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 bg-background'
+                                    }`}
+                                  >
+                                    {active && (
+                                      <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                                        <Check className="w-2.5 h-2.5 text-white" />
+                                      </span>
+                                    )}
+                                    <span className={`font-display text-sm ${active ? 'text-primary' : 'text-foreground'}`}>{card.label}</span>
+                                    <span className="font-body text-xs text-muted-foreground">{cardFeeLabel(card.group, zones)}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
 
-                          {/* Frais affichés automatiquement */}
+                          {/* Descriptif exact du lieu — obligatoire, apparaît après le choix de la zone */}
                           <AnimatePresence>
-                            {deliveryAddress.trim() && (
+                            {deliveryZoneGroup && (
                               <motion.div
-                                initial={{ opacity: 0, scale: 0.97 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0 }}
-                                className={`flex items-center justify-between px-4 py-3 rounded-xl border ${
-                                  deliveryZone && deliveryZone !== 'Libreville'
-                                    ? 'bg-orange-50 border-orange-200'
-                                    : 'bg-primary/5 border-primary/20'
-                                }`}
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="flex flex-col gap-3 overflow-hidden"
                               >
-                                <div className="flex items-center gap-2">
-                                  <Truck className={`w-4 h-4 ${deliveryZone && deliveryZone !== 'Libreville' ? 'text-orange-500' : 'text-primary'}`} />
-                                  <span className={`font-body text-sm ${deliveryZone && deliveryZone !== 'Libreville' ? 'text-orange-800' : 'text-primary'}`}>
-                                    Zone {deliveryZone}
-                                  </span>
+                                <div>
+                                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+                                    <MapPin className="w-3.5 h-3.5" /> Décrivez précisément votre lieu *
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={deliveryLocation}
+                                    onChange={e => { setDeliveryLocation(e.target.value); setInfoError(''); }}
+                                    placeholder={deliveryZoneGroup === 'PK' ? 'Ex : PK9, non loin du carrefour…' : 'Ex : Lalala, Batterie 4, immeuble bleu…'}
+                                    className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
+                                    required
+                                  />
+                                  {deliveryZoneGroup === 'PK' && (
+                                    <p className="font-body text-[11px] text-muted-foreground mt-1.5">
+                                      Précisez votre numéro de PK (ex : PK9) pour un tarif exact.
+                                    </p>
+                                  )}
                                 </div>
-                                <span className={`font-body text-sm font-bold ${deliveryZone && deliveryZone !== 'Libreville' ? 'text-orange-700' : 'text-primary'}`}>
-                                  {formatPrice(deliveryFee)}
-                                </span>
+
+                                {/* Frais affichés automatiquement */}
+                                <AnimatePresence>
+                                  {deliveryLocation.trim() && (
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.97 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0 }}
+                                      className="flex items-center justify-between px-4 py-3 rounded-xl border bg-primary/5 border-primary/20"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Truck className="w-4 h-4 text-primary" />
+                                        <span className="font-body text-sm text-primary">Zone {deliveryZoneGroup}</span>
+                                      </div>
+                                      <span className="font-body text-sm font-bold text-primary">{formatPrice(deliveryFee)}</span>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
                               </motion.div>
                             )}
                           </AnimatePresence>
+
+                          <DeliverySlotPicker
+                            mode="livraison"
+                            date={deliveryDate}
+                            time={deliveryTime}
+                            slots={deliverySlots}
+                            onDateChange={v => { setDeliveryDate(v); setDeliveryTime(''); setInfoError(''); }}
+                            onTimeChange={v => { setDeliveryTime(v); setInfoError(''); }}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Champs retrait (révélation progressive) */}
+                    <AnimatePresence>
+                      {deliveryMode === 'retrait' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.22 }}
+                          className="flex flex-col gap-4 overflow-hidden"
+                        >
+                          <p className="font-body text-xs text-muted-foreground -mb-1">
+                            Indiquez à quelle date et heure vous passerez récupérer votre commande.
+                          </p>
+                          <DeliverySlotPicker
+                            mode="retrait"
+                            date={deliveryDate}
+                            time={deliveryTime}
+                            slots={deliverySlots}
+                            onDateChange={v => { setDeliveryDate(v); setDeliveryTime(''); setInfoError(''); }}
+                            onTimeChange={v => { setDeliveryTime(v); setInfoError(''); }}
+                          />
                         </motion.div>
                       )}
                     </AnimatePresence>

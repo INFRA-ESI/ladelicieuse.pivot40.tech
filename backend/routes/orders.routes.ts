@@ -149,7 +149,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         qty:            Number(i.qty),
         prix:           Number(i.prix),
         customizations: Array.isArray(i.customizations)
-          ? (i.customizations as unknown[]).map(String).slice(0, 20)
+          ? (i.customizations as unknown[]).map(c => String(c).trim().slice(0, 120)).slice(0, 20)
           : [],
       })),
       statut:           STATUTS_VALIDES.includes(String(body.statut)) ? String(body.statut) : 'en_attente',
