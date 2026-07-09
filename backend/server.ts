@@ -77,7 +77,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 // ── CORS — whitelist explicite ────────────────────────────────────────────────
 const allowedOrigins: string[] = [];
 if (process.env.NODE_ENV !== 'production') {
-  allowedOrigins.push('http://localhost:5100', 'http://localhost:3000');
+  // Vite bascule sur le port suivant disponible (5101, 5102…) si 5100 est occupé —
+  // on autorise donc une petite plage de ports de dev plutôt qu'un seul port fixe.
+  allowedOrigins.push(
+    'http://localhost:5100', 'http://localhost:5101', 'http://localhost:5102',
+    'http://localhost:3000',
+  );
 }
 if (process.env.FRONTEND_URL) {
   try {
