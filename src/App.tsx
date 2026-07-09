@@ -9,6 +9,7 @@ import { UserProvider } from "@/context/UserContext";
 import Header from "@/components/Header";
 import ContinuationPopup from "@/components/ContinuationPopup";
 import FloatingDietician from "@/components/FloatingDietician";
+import PWAInstall from "@/components/PWAInstall";
 import AdminPageLoader from "@/components/admin/AdminPageLoader";
 
 // Page d'accueil — chargée immédiatement (LCP critique)
@@ -123,6 +124,7 @@ const App = () => (
         <BrowserRouter>
           <ContinuationPopup />
           <FloatingDietician />
+          <PWAInstall />
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<><Header /><HomePage /></>} />
