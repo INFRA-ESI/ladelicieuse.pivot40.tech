@@ -2,7 +2,7 @@ import {
   Download, Eye, Search, X, Printer, FileText, Plus, TrendingUp, TrendingDown,
   Minus, BarChart2, ChevronUp, ChevronDown, RefreshCw, CheckCircle, Clock,
   AlertCircle, Receipt, Layers, Mail, Trash2, AlertTriangle,
-} from 'lucide-react';
+} from '@/components/icons';
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
@@ -10,6 +10,9 @@ import {
   LineChart, Line, CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
+import { formatPrixFcfa as fmt } from '@/lib/fcfa';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -60,19 +63,18 @@ interface BilanRow {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const totalCout = (inv: Invoice) => inv.items.reduce((s, it) => s + it.coutUnit * it.qty, 0);
-const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA';
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 const STATUS_CONFIG: Record<InvoiceStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  payee:      { label: 'Payée',      color: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle className="w-3 h-3" /> },
-  en_attente: { label: 'En attente', color: 'bg-amber-100 text-amber-700',     icon: <Clock       className="w-3 h-3" /> },
-  annulee:    { label: 'Annulée',    color: 'bg-red-100 text-red-700',         icon: <X           className="w-3 h-3" /> },
-  remboursee: { label: 'Remboursée', color: 'bg-purple-100 text-purple-700',   icon: <RefreshCw   className="w-3 h-3" /> },
+  payee:      { label: 'Payée',      color: 'text-primary', icon: <CheckCircle className="w-3 h-3" /> },
+  en_attente: { label: 'En attente', color: 'text-amber-700',     icon: <Clock       className="w-3 h-3" /> },
+  annulee:    { label: 'Annulée',    color: 'text-destructive',         icon: <X           className="w-3 h-3" /> },
+  remboursee: { label: 'Remboursée', color: 'text-muted-foreground',   icon: <RefreshCw   className="w-3 h-3" /> },
 };
 
 function MargeBadge({ pct }: { pct: number }) {
-  const c = pct >= 65 ? 'bg-emerald-100 text-emerald-700' : pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  const c = pct >= 65 ? 'text-primary' : pct >= 50 ? 'text-amber-700' : 'text-destructive';
   return <span className={`px-2 py-0.5 rounded-full text-xs font-body ${c}`}>{pct.toFixed(1)}%</span>;
 }
 
@@ -107,7 +109,6 @@ function Th({ label, sortKey, cur, dir, onSort }: {
 // ─── Print helper ─────────────────────────────────────────────────────────────
 
 function printInvoice(inv: Invoice) {
-  const G1 = '#1a5c28', G2 = '#277a38', GL = '#e8f5ea', GD = '#e2f0e4';
   const statusColors: Record<InvoiceStatus, string> = {
     payee:      'background:#d1fae5;color:#065f46',
     en_attente: 'background:#fef3c7;color:#92400e',
@@ -258,7 +259,7 @@ function printInvoice(inv: Invoice) {
     ${inv.notes ? `<span style="margin-left:auto;color:#7a9488;font-style:italic">${inv.notes}</span>` : ''}
   </div>` : ''}
 
-  <div class="thanks">Merci pour votre confiance et à très bientôt !</div>
+  <div class="thanks">Merci pour votre confiance et à très bientôt</div>
 </div>
 
 <div class="footer-sep"></div>
@@ -295,7 +296,7 @@ function SkeletonRow() {
   );
 }
 
-// ─── Create invoice modal ─────────────────────────────────────────────────────
+// ─── Fenêtre de création de facture ─────────────────────────────────────────────────────
 
 type NewInvoicePayload = {
   client: string; email: string; telephone: string;
@@ -543,7 +544,7 @@ export default function InvoicesPage() {
   const [rentaData, setRentaData]           = useState<IngredientRenta[]>([]);
   const [rentaLoading, setRentaLoading]     = useState(false);
 
-  // ── Fetch invoices ─────────────────────────────────────────────────────────
+  // ── Chargement des factures ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -561,7 +562,7 @@ export default function InvoicesPage() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Fetch bilan mensuel ────────────────────────────────────────────────────
+  // ── Chargement du bilan mensuel ────────────────────────────────────────────────────
   useEffect(() => {
     if (tab !== 'bilan') return;
     let mounted = true;
@@ -573,7 +574,7 @@ export default function InvoicesPage() {
     return () => { mounted = false; };
   }, [tab]);
 
-  // ── Fetch rentabilité ──────────────────────────────────────────────────────
+  // ── Chargement de la rentabilité ──────────────────────────────────────────────────────
   useEffect(() => {
     if (tab !== 'rentabilite') return;
     let mounted = true;
@@ -623,7 +624,7 @@ export default function InvoicesPage() {
     }
   };
 
-  // ── Derived state ──────────────────────────────────────────────────────────
+  // ── État dérivé ──────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => invoices.filter(inv => {
     const matchSearch = inv.client.toLowerCase().includes(search.toLowerCase())
@@ -631,6 +632,8 @@ export default function InvoicesPage() {
     const matchStatus = statusFilter === 'all' || inv.statut === statusFilter;
     return matchSearch && matchStatus;
   }), [invoices, search, statusFilter]);
+
+  const pagination = usePagination(filtered, `${search}|${statusFilter}`);
 
   const kpis = useMemo(() => {
     const paid    = invoices.filter(i => i.statut === 'payee');
@@ -676,7 +679,7 @@ export default function InvoicesPage() {
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [rentaData]);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Rendu ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -714,11 +717,11 @@ export default function InvoicesPage() {
         <div className="space-y-5">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <KpiCard label="Total factures"   value={String(kpis.total)}                                    loading={loading} />
-            <KpiCard label="Payées"           value={String(kpis.paid)}     color="border-l-4 border-l-emerald-500" loading={loading} />
-            <KpiCard label="En attente"       value={String(kpis.pending)}  color="border-l-4 border-l-amber-500"   loading={loading} />
-            <KpiCard label="Annulées/Remb."   value={String(kpis.cancelled)}color="border-l-4 border-l-red-500"     loading={loading} />
-            <KpiCard label="CA HT encaissé"   value={loading ? '—' : `${(kpis.revenue/1000).toFixed(0)}k`} sub="FCFA" color="border-l-4 border-l-primary"  loading={loading} />
-            <KpiCard label="Marge brute"      value={loading ? '—' : `${kpis.margePct.toFixed(1)}%`}       sub={loading ? '' : `${(kpis.marge/1000).toFixed(0)}k FCFA`} color="border-l-4 border-l-violet-500" loading={loading} />
+            <KpiCard label="Payées"           value={String(kpis.paid)}     color="" loading={loading} />
+            <KpiCard label="En attente"       value={String(kpis.pending)}  color=""   loading={loading} />
+            <KpiCard label="Annulées/Remb."   value={String(kpis.cancelled)}color=""     loading={loading} />
+            <KpiCard label="CA HT encaissé"   value={loading ? '—' : `${(kpis.revenue/1000).toFixed(0)}k`} sub="FCFA" color=""  loading={loading} />
+            <KpiCard label="Marge brute"      value={loading ? '—' : `${kpis.margePct.toFixed(1)}%`}       sub={loading ? '' : `${(kpis.marge/1000).toFixed(0)}k FCFA`} color="" loading={loading} />
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
@@ -766,7 +769,7 @@ export default function InvoicesPage() {
               <tbody>
                 {loading
                   ? Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
-                  : filtered.map(inv => {
+                  : pagination.pageItems.map(inv => {
                       const cout  = totalCout(inv);
                       const mp    = inv.totalHT > 0 ? ((inv.totalHT - cout) / inv.totalHT) * 100 : 0;
                       const cfg   = STATUS_CONFIG[inv.statut];
@@ -810,6 +813,7 @@ export default function InvoicesPage() {
               )}
             </table>
           </div>
+          <TablePagination {...pagination} onPageChange={pagination.setPage} />
         </div>
       )}
 
@@ -827,9 +831,9 @@ export default function InvoicesPage() {
           {!rentaLoading && rentaData.length > 0 && (<>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <KpiCard label="Articles analysés"   value={String(rentaData.length)} />
-            <KpiCard label="Coût total matières" value={`${(totalRentaCout/1000).toFixed(0)}k`}   sub="FCFA" color="border-l-4 border-l-red-500" />
-            <KpiCard label="Revenus attribués"   value={`${(totalRentaRevenu/1000).toFixed(0)}k`} sub="FCFA" color="border-l-4 border-l-primary" />
-            <KpiCard label="Marge totale"        value={totalRentaRevenu > 0 ? `${((totalRentaMarge/totalRentaRevenu)*100).toFixed(1)}%` : '—'} sub={`${(totalRentaMarge/1000).toFixed(0)}k FCFA`} color="border-l-4 border-l-emerald-500" />
+            <KpiCard label="Coût total matières" value={`${(totalRentaCout/1000).toFixed(0)}k`}   sub="FCFA" color="" />
+            <KpiCard label="Revenus attribués"   value={`${(totalRentaRevenu/1000).toFixed(0)}k`} sub="FCFA" color="" />
+            <KpiCard label="Marge totale"        value={totalRentaRevenu > 0 ? `${((totalRentaMarge/totalRentaRevenu)*100).toFixed(1)}%` : '—'} sub={`${(totalRentaMarge/1000).toFixed(0)}k FCFA`} color="" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -944,11 +948,11 @@ export default function InvoicesPage() {
             </div>
           ) : (<>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <KpiCard label={`Revenus ${latestBilan?.mois ?? '—'}`} value={latestBilan ? `${(latestBilan.revenus/1000000).toFixed(2)}M` : '—'} sub="FCFA" color="border-l-4 border-l-primary" />
-            <KpiCard label="Coût matières" value={latestBilan ? `${(latestBilan.coutMatieres/1000000).toFixed(2)}M` : '—'} sub={latestBilan && latestBilan.revenus > 0 ? `${((latestBilan.coutMatieres/latestBilan.revenus)*100).toFixed(0)}% des revenus` : ''} color="border-l-4 border-l-red-500" />
-            <KpiCard label="Factures payées" value={latestBilan ? String(latestBilan.count) : '—'} sub="ce mois" color="border-l-4 border-l-amber-500" />
+            <KpiCard label={`Revenus ${latestBilan?.mois ?? '—'}`} value={latestBilan ? `${(latestBilan.revenus/1000000).toFixed(2)}M` : '—'} sub="FCFA" color="" />
+            <KpiCard label="Coût matières" value={latestBilan ? `${(latestBilan.coutMatieres/1000000).toFixed(2)}M` : '—'} sub={latestBilan && latestBilan.revenus > 0 ? `${((latestBilan.coutMatieres/latestBilan.revenus)*100).toFixed(0)}% des revenus` : ''} color="" />
+            <KpiCard label="Factures payées" value={latestBilan ? String(latestBilan.count) : '—'} sub="ce mois" color="" />
             {latestBilan && (
-              <div className={`bg-background border rounded-lg p-4 border-l-4 ${latestBilan.benefice >= 0 ? 'border-l-emerald-500' : 'border-l-red-500'}`}>
+              <div className="bg-background border border-border rounded-lg p-4">
                 <p className="font-body text-xs text-muted-foreground uppercase tracking-wider">Bénéfice net</p>
                 <p className={`font-display text-2xl mt-1 ${latestBilan.benefice >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   {(latestBilan.benefice/1000000).toFixed(2)}M

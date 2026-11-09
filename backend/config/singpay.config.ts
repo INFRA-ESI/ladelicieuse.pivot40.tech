@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { logger } from './logger.js';
 dotenv.config();
 
 export const singpayConfig = {
@@ -27,6 +28,6 @@ export const validateConfig = (): void => {
   ];
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length > 0) {
-    console.warn(`Variables SingPay manquantes : ${missing.join(', ')} — paiements désactivés`);
+    logger.warn(`Variables SingPay manquantes : ${missing.join(', ')} — paiements désactivés`);
   }
 };

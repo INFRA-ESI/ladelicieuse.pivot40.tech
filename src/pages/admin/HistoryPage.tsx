@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Clock, ShoppingCart, User, Settings, Package, FileText, Search, Tag, UtensilsCrossed, Megaphone, ChevronDown } from 'lucide-react';
+import { Clock, ShoppingCart, User, Settings, Package, FileText, Search, Tag, UtensilsCrossed, Megaphone, ChevronDown } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -30,8 +32,8 @@ const typeColor: Record<string, string> = {
   stock:       'bg-accent/20 text-accent-foreground',
   facture:     'bg-muted text-foreground',
   parametre:   'bg-muted text-muted-foreground',
-  menu:        'bg-blue-100 text-blue-700',
-  promotion:   'bg-purple-100 text-purple-700',
+  menu:        'text-muted-foreground',
+  promotion:   'text-muted-foreground',
 };
 
 const TYPE_OPTIONS = ['Tous', 'commande', 'utilisateur', 'stock', 'facture', 'parametre', 'menu', 'promotion'];
@@ -85,6 +87,8 @@ export default function HistoryPage() {
     return matchSearch && matchType;
   });
 
+  const pagination = usePagination(filtered, `${search}|${typeFilter}`);
+
   return (
     <div className="space-y-6">
       <div>
@@ -129,8 +133,8 @@ export default function HistoryPage() {
                 <p className="font-body text-sm text-muted-foreground">Aucun événement trouvé</p>
               </div>
             )
-            : filtered.map((h, idx) => {
-                const prevDate = idx > 0 ? fmtDate(filtered[idx - 1].createdAt) : '';
+            : pagination.pageItems.map((h, idx) => {
+                const prevDate = idx > 0 ? fmtDate(pagination.pageItems[idx - 1].createdAt) : '';
                 const currentDate = fmtDate(h.createdAt);
                 const showDateHeader = currentDate !== prevDate;
                 const IconComp = TYPE_ICON[h.type] ?? Tag;
@@ -163,6 +167,7 @@ export default function HistoryPage() {
               })
         }
       </div>
+      <TablePagination {...pagination} onPageChange={pagination.setPage} />
     </div>
   );
 }

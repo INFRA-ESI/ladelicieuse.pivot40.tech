@@ -9,8 +9,8 @@ function buildCacheKey(req: Request): string {
     .filter(k => /^[\w.-]+$/.test(k))
     .map(k => `${k}=${String(req.query[k]).replace(/\0/g, '').slice(0, 100)}`)
     .join('&');
-  // Use the full path (baseUrl + path) so invalidateCache prefixes match correctly.
-  // req.path alone is relative to the router mount point (e.g. '/all' instead of '/api/categories/all').
+  // Chemin complet (baseUrl + path) pour que les préfixes d'invalidateCache correspondent.
+  // req.path seul est relatif au point de montage du routeur (ex. '/all' au lieu de '/api/categories/all').
   const fullPath = (req.baseUrl || '') + req.path;
   const raw = fullPath + (sortedQuery ? `?${sortedQuery}` : '');
   return `cache:${raw.slice(0, 200)}`;
@@ -61,5 +61,7 @@ export async function invalidateCache(...prefixes: string[]): Promise<void> {
         if (keys.length > 0) await redis.del(...keys);
       } while (cursor !== 0);
     }
-  } catch {}
+  } catch {
+    // Le cache est facultatif : une erreur Redis ne doit jamais faire échouer la requête.
+  }
 }

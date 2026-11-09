@@ -1,14 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { requireClient, ClientRequest } from '../middleware/clientAuth.js';
 import { verifyJWT } from './auth.routes.js';
+import { memoryRateLimiter } from '../middleware/rateLimiter.js';
 import ConsultationBooking from '../models/ConsultationBooking.model.js';
+import Consultation from '../models/Consultation.model.js';
 import { Types } from 'mongoose';
 
 const router = Router();
 
 // ── POST /api/consultation-bookings — Créer une réservation ──────────────────
 // Public endpoint — optionally attaches userId if client token present
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', memoryRateLimiter(10, 900, 'booking-create'), async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       userNom, userPrenoms, userEmail, userTelephone,
@@ -45,6 +47,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Le tarif dépend du mode : on le relit en base plutôt que de croire le prix envoyé par le navigateur.
+    const bookingMode = ['presentiel', 'virtuel'].includes(String(mode)) ? String(mode) : 'virtuel';
+    let bookingPrice = Number(prix);
+    if (consultationId && Types.ObjectId.isValid(String(consultationId))) {
+      const consultation = await Consultation.findById(String(consultationId)).select('prix prixPresentiel').lean();
+      if (consultation) bookingPrice = bookingMode === 'presentiel' ? consultation.prixPresentiel : consultation.prix;
+    }
+
     const booking = await ConsultationBooking.create({
       userId:         userId ? new Types.ObjectId(String(userId)) : undefined,
       userNom:        String(userNom).slice(0, 100),
@@ -53,10 +63,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       userTelephone:  String(userTelephone).slice(0, 30),
       consultationId: consultationId ? new Types.ObjectId(String(consultationId)) : undefined,
       titre:          String(titre).slice(0, 200),
-      prix:           Number(prix),
+      prix:           bookingPrice,
       date:           bookingDate,
       creneau:        String(creneau).slice(0, 20),
-      mode:           ['presentiel', 'virtuel'].includes(String(mode)) ? mode : 'virtuel',
+      mode:           bookingMode,
       notes:          notes ? String(notes).slice(0, 1000) : undefined,
     });
 

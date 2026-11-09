@@ -3,11 +3,11 @@ import {
   Star, Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight,
   Check, Clock, Ban, BarChart2, Search, ChevronDown, ChevronUp,
   UserCircle, ShieldCheck, RotateCcw, ChevronRight,
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 
-type PageType  = 'consultations' | 'abonnement';
+type PageType  = 'consultations' | 'abonnement' | 'accueil';
 type Source    = 'admin' | 'client';
 type Statut    = 'en_attente' | 'approuve' | 'refuse';
 type Tab       = 'attente' | 'publies' | 'analyse';
@@ -33,6 +33,7 @@ const EMPTY: Omit<Testimonial, '_id' | 'createdAt'> = {
 const PAGE_LABELS: Record<PageType, string> = {
   consultations: 'Consultations',
   abonnement:    'Abonnement',
+  accueil:       'Accueil',
 };
 
 const TEXT_MAX = 1000;
@@ -196,7 +197,7 @@ export default function AvisClientsAdminPage() {
   const [search,     setSearch]     = useState('');
   const [sortDir,    setSortDir]    = useState<'desc' | 'asc'>('desc');
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
+  // ── Chargement ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -461,7 +462,7 @@ export default function AvisClientsAdminPage() {
             </div>
             <div className="flex gap-2">
               <div className="flex rounded-md border border-border overflow-hidden">
-                {(['all', 'consultations', 'abonnement'] as const).map(p => (
+                {(['all', 'accueil', 'consultations', 'abonnement'] as const).map(p => (
                   <button key={p} onClick={() => setPageFilter(p)}
                     className={`px-3 h-10 font-body text-sm transition-colors ${pageFilter === p ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
                   >
@@ -511,22 +512,22 @@ export default function AvisClientsAdminPage() {
       {tab === 'analyse' && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-background border border-border rounded-lg p-4 border-l-4 border-l-amber-400">
+            <div className="bg-background border border-border rounded-lg p-4">
               <p className="font-body text-xs text-muted-foreground mb-1">Note moyenne</p>
               <p className="font-display text-2xl text-foreground">{kpis.avg || '—'}/5</p>
               <p className="font-body text-xs text-muted-foreground">{kpis.total} publiés</p>
             </div>
-            <div className="bg-background border border-border rounded-lg p-4 border-l-4 border-l-primary">
+            <div className="bg-background border border-border rounded-lg p-4">
               <p className="font-body text-xs text-muted-foreground mb-1">Consultations</p>
               <p className="font-display text-2xl text-foreground">{kpis.consultCount}</p>
               <p className="font-body text-xs text-muted-foreground">témoignages publiés</p>
             </div>
-            <div className="bg-background border border-border rounded-lg p-4 border-l-4 border-l-secondary">
+            <div className="bg-background border border-border rounded-lg p-4">
               <p className="font-body text-xs text-muted-foreground mb-1">Abonnement</p>
               <p className="font-display text-2xl text-foreground">{kpis.abonnCount}</p>
               <p className="font-body text-xs text-muted-foreground">témoignages publiés</p>
             </div>
-            <div className="bg-background border border-border rounded-lg p-4 border-l-4 border-l-emerald-500">
+            <div className="bg-background border border-border rounded-lg p-4">
               <p className="font-body text-xs text-muted-foreground mb-1">Soumis par clients</p>
               <p className="font-display text-2xl text-foreground">{kpis.clientCount}</p>
               <p className="font-body text-xs text-muted-foreground">approuvés</p>
@@ -606,7 +607,7 @@ export default function AvisClientsAdminPage() {
                     onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
                     maxLength={100}
                     className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Ex : Marie-Claire O."
+                    placeholder="Ex : Eric M."
                   />
                 </div>
                 <div>
@@ -616,6 +617,7 @@ export default function AvisClientsAdminPage() {
                     onChange={e => setForm(f => ({ ...f, page: e.target.value as PageType }))}
                     className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
+                    <option value="accueil">Accueil</option>
                     <option value="consultations">Consultations</option>
                     <option value="abonnement">Abonnement</option>
                   </select>

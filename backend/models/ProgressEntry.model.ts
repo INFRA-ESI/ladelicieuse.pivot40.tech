@@ -29,7 +29,7 @@ const progressEntrySchema = new Schema<IProgressEntry>(
   { timestamps: true }
 );
 
-// One entry per user per day
+// Une seule entrée par utilisateur et par jour
 progressEntrySchema.index({ userId: 1, date: 1 }, { unique: true });
 
 export default model<IProgressEntry>('ProgressEntry', progressEntrySchema);

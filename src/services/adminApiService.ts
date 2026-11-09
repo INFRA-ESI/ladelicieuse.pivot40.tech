@@ -1,5 +1,9 @@
 // Service API admin — ajoute automatiquement le JWT et gère les 401
 import { ls } from '@/lib/storage';
+import { cached, clearRequestCache } from '@/lib/requestCache';
+
+// Durée pendant laquelle une lecture est réutilisée quand on revient sur une page.
+const DEFAULT_TTL_MS = 60_000;
 
 function headers(): HeadersInit {
   const token = ls.get('admin_token');
@@ -10,51 +14,39 @@ function headers(): HeadersInit {
 }
 
 function handle401() {
+  clearRequestCache();
   ls.remove('admin_token');
   ls.remove('admin_user');
   ls.remove('admin_logged_in');
   window.location.href = '/admin/login';
 }
 
-export async function adminGet<T = unknown>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { headers: headers() });
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`/api${path}`, { ...init, headers: headers() });
   if (res.status === 401) { handle401(); throw new Error('Non authentifié'); }
   const json = await res.json();
   if (!json.success) throw new Error(json.message || 'Erreur serveur');
   return json as T;
 }
 
-export async function adminPost<T = unknown>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: 'POST',
-    headers: headers(),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) { handle401(); throw new Error('Non authentifié'); }
-  const json = await res.json();
-  if (!json.success) throw new Error(json.message || 'Erreur serveur');
-  return json as T;
+/**
+ * Lecture avec cache. `ttl` en ms : 0 pour toujours recharger (données en direct, comme les commandes).
+ * Le cache est lié au jeton : une autre session admin ne voit pas les données de la précédente.
+ */
+export function adminGet<T = unknown>(path: string, options: { ttl?: number } = {}): Promise<T> {
+  return cached(`admin|${ls.get('admin_token') ?? ''}|${path}`, options.ttl ?? DEFAULT_TTL_MS, () => request<T>(path));
 }
 
-export async function adminPatch<T = unknown>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) { handle401(); throw new Error('Non authentifié'); }
-  const json = await res.json();
-  if (!json.success) throw new Error(json.message || 'Erreur serveur');
-  return json as T;
+// Toute écriture réussie vide le cache : les listes déjà consultées sont rechargées à la prochaine visite.
+async function write<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  const json = await request<T>(path, { method, body: body !== undefined ? JSON.stringify(body) : undefined });
+  clearRequestCache();
+  return json;
 }
 
-export async function adminDelete<T = unknown>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: 'DELETE', headers: headers() });
-  if (res.status === 401) { handle401(); throw new Error('Non authentifié'); }
-  const json = await res.json();
-  if (!json.success) throw new Error(json.message || 'Erreur serveur');
-  return json as T;
-}
+export const adminPost = <T = unknown>(path: string, body?: unknown) => write<T>('POST', path, body);
+export const adminPatch = <T = unknown>(path: string, body?: unknown) => write<T>('PATCH', path, body);
+export const adminDelete = <T = unknown>(path: string) => write<T>('DELETE', path);
 
 export async function adminUploadImage(file: File): Promise<string> {
   const token = ls.get('admin_token');

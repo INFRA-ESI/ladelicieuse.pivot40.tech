@@ -2,6 +2,8 @@ const API = '/api/client';
 
 export interface ClientUser {
   id: string;
+  /** `/api/client/me` renvoie l'identifiant sous `_id` (document Mongo), la connexion sous `id`. */
+  _id?: string;
   nom: string;
   prenoms: string;
   email: string;

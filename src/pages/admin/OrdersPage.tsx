@@ -1,26 +1,21 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Eye, X, MapPin, Clock, Phone, ChevronRight, ChevronDown,
-  AlertTriangle, RefreshCw, Ban, RotateCcw, CheckCircle,
-  Package, Truck, UtensilsCrossed, XCircle,
-  CreditCard, Banknote, Smartphone, FileText, Filter,
-} from 'lucide-react';
+  AlertTriangle, RefreshCw, Ban, RotateCcw,
+  CreditCard, Banknote, Smartphone, Filter,
+} from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPatch, adminPost } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import { useRealtime } from '@/hooks/useRealtime';
+import TablePagination from '@/components/admin/TablePagination';
+import OrderStatusBadge from '@/components/OrderStatusBadge';
+import { ORDER_STATUS, type OrderStatus } from '@/lib/orderStatus';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type OrderStatus =
-  | 'en_attente'
-  | 'confirmee'
-  | 'en_preparation'
-  | 'prete'
-  | 'livree'
-  | 'annulee'
-  | 'remboursee';
 
 type AnomalieType = 'annulation' | 'remboursement';
 type ModePaiement = 'Mobile Money' | 'Carte bancaire' | 'Espèces';
@@ -61,6 +56,8 @@ interface Order {
   statut: OrderStatus;
   mode: ModeCommande;
   paiement: ModePaiement;
+  /** false = paiement en ligne annoncé mais non retrouvé chez SingPay ; absent = commande ancienne ou espèces. */
+  paiementVerifie?: boolean;
   adresse: string;
   // Date/heure choisie par le client — livraison ou retrait selon `mode`
   datelivraison?: string;
@@ -80,6 +77,7 @@ interface RawOrder {
   statut: OrderStatus;
   modeCommande: string;
   modePaiement: string;
+  paiementVerifie?: boolean;
   datelivraison?: string;
   creneauLivraison?: string;
   notes: string;
@@ -88,37 +86,11 @@ interface RawOrder {
   anomalie?: { type: AnomalieType; raison: string; montant: number; date: string };
 }
 
-// ─── Static config ────────────────────────────────────────────────────────────
+// ─── Configuration statique ────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  en_attente:     'En attente',
-  confirmee:      'Confirmée',
-  en_preparation: 'En préparation',
-  prete:          'Prête',
-  livree:         'Livrée',
-  annulee:        'Annulée',
-  remboursee:     'Remboursée',
-};
-
-const STATUS_COLOR: Record<OrderStatus, string> = {
-  en_attente:     'bg-yellow-100 text-yellow-800',
-  confirmee:      'bg-blue-100 text-blue-800',
-  en_preparation: 'bg-purple-100 text-purple-800',
-  prete:          'bg-green-100 text-green-800',
-  livree:         'bg-gray-100 text-gray-700',
-  annulee:        'bg-red-100 text-red-800',
-  remboursee:     'bg-orange-100 text-orange-800',
-};
-
-const STATUS_ICON: Record<OrderStatus, React.ReactNode> = {
-  en_attente:     <Clock className="w-3.5 h-3.5" />,
-  confirmee:      <CheckCircle className="w-3.5 h-3.5" />,
-  en_preparation: <UtensilsCrossed className="w-3.5 h-3.5" />,
-  prete:          <Package className="w-3.5 h-3.5" />,
-  livree:         <Truck className="w-3.5 h-3.5" />,
-  annulee:        <XCircle className="w-3.5 h-3.5" />,
-  remboursee:     <RotateCcw className="w-3.5 h-3.5" />,
-};
+const STATUS_LABEL = Object.fromEntries(
+  Object.entries(ORDER_STATUS).map(([statut, style]) => [statut, style.label]),
+) as Record<OrderStatus, string>;
 
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   en_attente:     ['confirmee', 'annulee'],
@@ -157,6 +129,7 @@ function normalizeOrder(raw: RawOrder): Order {
     statut: raw.statut,
     mode: (MODE_MAP[raw.modeCommande] ?? 'Livraison') as ModeCommande,
     paiement: (PAY_MAP[raw.modePaiement] ?? 'Espèces') as ModePaiement,
+    paiementVerifie: raw.paiementVerifie,
     adresse: raw.client.adresse,
     datelivraison: raw.datelivraison,
     creneauLivraison: raw.creneauLivraison,
@@ -191,7 +164,7 @@ const fmtTime = (iso: string) =>
 
 const fmtFCFA = (n: number) => n.toLocaleString('fr-FR') + ' FCFA';
 
-// ─── Is late: > 45 min in a non-terminal status ──────────────────────────────
+// ─── En retard : plus de 45 min dans un statut non terminal ──────────────────────────────
 
 const isLate = (order: Order): boolean => {
   if (['livree', 'annulee', 'remboursee'].includes(order.statut)) return false;
@@ -216,15 +189,6 @@ const fmtElapsed = (minutes: number): string => {
 
 // ─── Subcomponents ────────────────────────────────────────────────────────────
 
-function StatusBadge({ statut, small = false }: { statut: OrderStatus; small?: boolean }) {
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full font-body font-medium ${small ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'} ${STATUS_COLOR[statut]}`}>
-      {STATUS_ICON[statut]}
-      {STATUS_LABEL[statut]}
-    </span>
-  );
-}
-
 function Timeline({ history }: { history: OrderEvent[] }) {
   return (
     <div className="space-y-0">
@@ -238,7 +202,7 @@ function Timeline({ history }: { history: OrderEvent[] }) {
             </div>
             <div className="pb-4">
               <div className="flex items-center gap-2 flex-wrap">
-                <StatusBadge statut={evt.statut} small />
+                <OrderStatusBadge statut={evt.statut} />
                 <span className="font-body text-xs text-muted-foreground">{fmtTime(evt.date)}</span>
                 {evt.par && <span className="font-body text-xs text-muted-foreground">· {evt.par}</span>}
               </div>
@@ -282,13 +246,13 @@ export default function OrdersPage() {
 
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  // Fetch orders (real data)
+  // Chargement des commandes (données réelles)
   useEffect(() => {
     let mounted = true;
     setLoading(true);
     async function load() {
       try {
-        const res = await adminGet<{ data: RawOrder[]; total: number }>('/orders?limit=200');
+        const res = await adminGet<{ data: RawOrder[]; total: number }>('/orders?limit=200', { ttl: 0 });
         if (!mounted) return;
         setOrders(res.data.map(normalizeOrder));
         setLastRefresh(new Date());
@@ -302,11 +266,13 @@ export default function OrdersPage() {
     return () => { mounted = false; };
   }, [refreshTick]);
 
-  // Auto-refresh every 30s
+  // Temps réel : un signal recharge la liste aussitôt. Le rechargement périodique reste le filet de sécurité
+  // (30 s sans canal ouvert, 2 min avec).
+  const live = useRealtime('admin', ['order:created', 'order:status', 'order:updated'], { refresh: () => setRefreshTick(t => t + 1) });
   useEffect(() => {
-    const id = setInterval(() => setRefreshTick(t => t + 1), 30000);
+    const id = setInterval(() => setRefreshTick(t => t + 1), live ? 120_000 : 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [live]);
 
   const kpis = useMemo(() => ({
     total:       orders.length,
@@ -330,6 +296,8 @@ export default function OrdersPage() {
       return matchSearch && matchStatus;
     });
   }, [orders, search, statusFilter]);
+
+  const pagination = usePagination(filtered, `${search}|${statusFilter}`);
 
   const updateStatus = async (order: Order, next: OrderStatus, note?: string) => {
     try {
@@ -391,26 +359,30 @@ export default function OrdersPage() {
       {/* KPI bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: 'En attente',    value: kpis.attente,     color: 'text-yellow-600', dot: 'bg-yellow-400' },
-          { label: 'En prép.',      value: kpis.preparation,  color: 'text-purple-600', dot: 'bg-purple-400' },
-          { label: 'Prêtes',        value: kpis.prete,        color: 'text-green-600',  dot: 'bg-green-400'  },
-          { label: 'Livrées',       value: kpis.livree,       color: 'text-gray-600',   dot: 'bg-gray-400'   },
-          { label: 'Anomalies',     value: kpis.anomalies,    color: 'text-red-600',    dot: 'bg-red-400'    },
-          { label: 'CA livré',      value: null,              color: 'text-primary',    dot: 'bg-primary'    },
-        ].map(({ label, value, color, dot }) => (
-          <div key={label} className="bg-background border border-border rounded-lg p-3 text-center">
-            <div className="flex items-center justify-center gap-1.5 mb-1">
-              <div className={`w-2 h-2 rounded-full ${dot}`} />
-              <p className="font-body text-xs text-muted-foreground">{label}</p>
+          { label: 'En attente', value: kpis.attente,     statut: 'en_attente' as OrderStatus },
+          { label: 'En prép.',   value: kpis.preparation, statut: 'en_preparation' as OrderStatus },
+          { label: 'Prêtes',     value: kpis.prete,       statut: 'prete' as OrderStatus },
+          { label: 'Livrées',    value: kpis.livree,      statut: 'livree' as OrderStatus },
+          { label: 'Anomalies',  value: kpis.anomalies,   icone: AlertTriangle, couleur: 'text-red-600' },
+          { label: 'CA livré',   value: null,             icone: Banknote,      couleur: 'text-primary' },
+        ].map(({ label, value, statut, icone, couleur }) => {
+          const Icone = statut ? ORDER_STATUS[statut].icon : icone;
+          const teinte = statut ? ORDER_STATUS[statut].color : couleur;
+          return (
+            <div key={label} className="bg-background border border-border rounded-lg p-3 text-center">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                {Icone && <Icone className={`w-4 h-4 shrink-0 ${teinte}`} />}
+                <p className="font-body text-xs text-muted-foreground">{label}</p>
+              </div>
+              {loading
+                ? <div className="h-8 bg-muted rounded animate-pulse mx-auto w-12" />
+                : value !== null
+                  ? <p className="font-display text-2xl text-foreground">{value}</p>
+                  : <p className="font-display text-base text-foreground">{Math.round(kpis.caTotal / 1000)}k FCFA</p>
+              }
             </div>
-            {loading
-              ? <div className="h-8 bg-muted rounded animate-pulse mx-auto w-12" />
-              : value !== null
-                ? <p className={`font-display text-2xl ${color}`}>{value}</p>
-                : <p className={`font-display text-base ${color}`}>{Math.round(kpis.caTotal / 1000)}k FCFA</p>
-            }
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Late orders alert */}
@@ -448,11 +420,11 @@ export default function OrdersPage() {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-body text-xs font-semibold text-foreground shrink-0">{o.id}</span>
                       <span className="font-body text-xs text-muted-foreground truncate">{o.client}</span>
-                      <StatusBadge statut={o.statut} small />
+                      <OrderStatusBadge statut={o.statut} />
                     </div>
                     <span
                       className={`shrink-0 font-body text-xs font-medium px-2 py-0.5 rounded-full ${
-                        critical ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
+                        critical ? 'bg-red-600 text-white' : 'text-destructive'
                       }`}
                     >
                       {fmtElapsed(minutes)}
@@ -492,7 +464,7 @@ export default function OrdersPage() {
                 onClick={() => setStatusFilter(s)}
                 className={`text-xs font-body cursor-pointer ${statusFilter === s ? 'bg-primary/10 text-primary font-medium' : ''}`}
               >
-                {s === 'tous' ? 'Toutes' : STATUS_LABEL[s]}
+                {s === 'tous' ? 'Toutes' : <OrderStatusBadge statut={s} />}
                 <span className="ml-1 opacity-60">
                   ({s === 'tous' ? orders.length : orders.filter(o => o.statut === s).length})
                 </span>
@@ -520,11 +492,11 @@ export default function OrdersPage() {
           <tbody>
             {loading
               ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-              : filtered.map(o => {
+              : pagination.pageItems.map(o => {
                   const late = isLate(o);
                   return (
                     <tr key={o.dbId}
-                      className={`border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors cursor-pointer ${late ? 'bg-red-50/40' : ''}`}
+                      className={`border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors cursor-pointer ${late ? 'bg-muted' : ''}`}
                       onClick={() => { setSelectedOrder(o); setActiveTab('resume'); }}>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
@@ -541,7 +513,7 @@ export default function OrdersPage() {
                         <span className="truncate block">{o.items.map(i => `${i.nom} ×${i.qty}`).join(', ')}</span>
                       </td>
                       <td className="p-3 text-right font-body font-medium text-foreground">{fmtFCFA(o.montant)}</td>
-                      <td className="p-3"><StatusBadge statut={o.statut} /></td>
+                      <td className="p-3"><OrderStatusBadge statut={o.statut} /></td>
                       <td className="p-3 font-body text-xs text-muted-foreground hidden lg:table-cell">{o.mode}</td>
                       <td className="p-3 font-body text-xs text-muted-foreground hidden lg:table-cell">{fmtTime(o.createdAt)}</td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
@@ -563,6 +535,7 @@ export default function OrdersPage() {
           </div>
         )}
       </div>
+      <TablePagination {...pagination} onPageChange={pagination.setPage} />
 
       {/* Anomalies section */}
       {!loading && kpis.anomalies > 0 && (
@@ -575,8 +548,8 @@ export default function OrdersPage() {
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-body text-sm font-medium text-foreground">{o.id}</span>
                     <span className="font-body text-sm text-muted-foreground">— {o.client}</span>
-                    <StatusBadge statut={o.statut} small />
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-body font-medium ${o.anomalie!.type === 'remboursement' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                    <OrderStatusBadge statut={o.statut} />
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-body font-medium ${o.anomalie!.type === 'remboursement' ? 'text-amber-700' : 'text-destructive'}`}>
                       {o.anomalie!.type === 'remboursement' ? 'Remboursement' : 'Annulation'}
                     </span>
                   </div>
@@ -652,6 +625,11 @@ export default function OrdersPage() {
                       <p className="font-body text-sm text-foreground flex items-center gap-1">
                         {PAYMENT_ICON[selectedOrder.paiement]} {selectedOrder.paiement}
                       </p>
+                      {selectedOrder.paiement !== 'Espèces' && selectedOrder.paiementVerifie === false && (
+                        <p className="text-amber-700 mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-body">
+                          Paiement non retrouvé : à vérifier avant de préparer
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -722,7 +700,7 @@ export default function OrdersPage() {
                   <div>
                     <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-2">Statut actuel</p>
                     <div className="flex items-center gap-3 flex-wrap">
-                      <StatusBadge statut={selectedOrder.statut} />
+                      <OrderStatusBadge statut={selectedOrder.statut} />
                       {(NEXT_STATUS[selectedOrder.statut] ?? [])
                         .filter(ns => ns !== 'annulee' && ns !== 'remboursee')
                         .map(ns => (
@@ -764,7 +742,7 @@ export default function OrdersPage() {
                 <>
                   {selectedOrder.anomalie ? (
                     <div className="space-y-4">
-                      <div className={`rounded-lg p-4 border ${selectedOrder.anomalie.type === 'remboursement' ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className={`rounded-lg p-4 border ${selectedOrder.anomalie.type === 'remboursement' ? 'text-amber-700' : 'text-destructive'}`}>
                         <div className="flex items-center gap-2 mb-3">
                           {selectedOrder.anomalie.type === 'remboursement'
                             ? <RotateCcw className="w-5 h-5 text-orange-600" />

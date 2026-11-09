@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { cachedJson } from '@/services/publicApiService';
 import { loginClient, registerClient, fetchMe, getClientOrders, updateClientProfile, changePassword as apiChangePassword } from '@/services/clientService';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { ls } from '@/lib/storage';
@@ -30,7 +31,7 @@ export interface UserOrder {
 export interface Subscription {
   planId: 'essentiel' | 'vitalite' | 'premium';
   planName: string;
-  billing: 'monthly' | 'annual';
+  billing: 'weekly' | 'monthly' | 'annual'; // 'annual' : abonnements historiques
   startDate: string;
   nextRenewal: string;
   status: 'active' | 'paused' | 'cancelled';
@@ -50,10 +51,10 @@ export interface User {
 }
 
 const TIER_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  bronze:  { label: 'Bronze',  color: 'text-amber-700',  bg: 'bg-amber-100'  },
-  argent:  { label: 'Argent',  color: 'text-slate-600',  bg: 'bg-slate-100'  },
-  or:      { label: 'Or',      color: 'text-yellow-600', bg: 'bg-yellow-100' },
-  platine: { label: 'Platine', color: 'text-violet-700', bg: 'bg-violet-100' },
+  bronze:  { label: 'Bronze',  color: 'text-amber-700',  bg: 'bg-muted'  },
+  argent:  { label: 'Argent',  color: 'text-slate-600',  bg: 'bg-muted'  },
+  or:      { label: 'Or',      color: 'text-yellow-600', bg: 'bg-muted' },
+  platine: { label: 'Platine', color: 'text-primary', bg: 'bg-primary/10' },
 };
 
 export function getTier(points: number, tiers?: TierDef[]): LoyaltyTier {
@@ -74,17 +75,17 @@ export function buildTierConfig(tiers: TierDef[]): TierConfig {
   const sorted = [...tiers].sort((a, b) => a.pointsMin - b.pointsMin);
   const config: TierConfig = {};
   sorted.forEach((t, i) => {
-    const style = TIER_STYLE[t.slug] ?? { label: t.nom, color: 'text-gray-600', bg: 'bg-gray-100' };
+    const style = TIER_STYLE[t.slug] ?? { label: t.nom, color: 'text-gray-600', bg: 'bg-muted' };
     config[t.slug] = { ...style, min: t.pointsMin, next: sorted[i + 1]?.pointsMin ?? null };
   });
   return config;
 }
 
 export const TIER_CONFIG: TierConfig = {
-  bronze:  { label: 'Bronze',  color: 'text-amber-700',  bg: 'bg-amber-100',  min: 0,    next: 500  },
-  argent:  { label: 'Argent',  color: 'text-slate-600',  bg: 'bg-slate-100',  min: 500,  next: 1500 },
-  or:      { label: 'Or',      color: 'text-yellow-600', bg: 'bg-yellow-100', min: 1500, next: 3500 },
-  platine: { label: 'Platine', color: 'text-violet-700', bg: 'bg-violet-100', min: 3500, next: null },
+  bronze:  { label: 'Bronze',  color: 'text-amber-700',  bg: 'bg-muted',  min: 0,    next: 500  },
+  argent:  { label: 'Argent',  color: 'text-slate-600',  bg: 'bg-muted',  min: 500,  next: 1500 },
+  or:      { label: 'Or',      color: 'text-yellow-600', bg: 'bg-muted', min: 1500, next: 3500 },
+  platine: { label: 'Platine', color: 'text-primary', bg: 'bg-primary/10', min: 3500, next: null },
 };
 
 const STORAGE_KEY = 'ladelicieuse_user';
@@ -136,8 +137,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [tiers, setTiers] = useState<TierDef[]>([]);
 
   useEffect(() => {
-    fetch('/api/fidelite/tiers/public')
-      .then(r => r.json())
+    cachedJson('/api/fidelite/tiers/public')
       .then(d => { if (d.success && Array.isArray(d.data)) setTiers(d.data); })
       .catch(() => {});
   }, []);
@@ -146,7 +146,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const persist = (u: User | null) => { setUser(u); saveUser(u); };
 
-  // Restore real session from stored token on mount
+  // Restaure la session réelle depuis le jeton stocké, au montage
   useEffect(() => {
     const token = ls.get(TOKEN_KEY);
     if (!token) return;
@@ -155,7 +155,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       .then(apiUser => {
         const existing = loadStoredUser();
         const merged: User = {
-          id: apiUser.id,
+          // /me renvoie `_id`, la connexion `id` : sans ce repli, `user.id` devenait indéfini après chaque rechargement
+          // de la page (liste de commandes vide, push et temps réel désactivés).
+          id: apiUser.id ?? apiUser._id ?? existing?.id ?? '',
           nom: apiUser.nom,
           prenoms: apiUser.prenoms || '',
           email: apiUser.email,

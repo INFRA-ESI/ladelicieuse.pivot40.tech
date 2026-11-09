@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle, ShoppingBag, Home, MessageCircle } from 'lucide-react';
+import { CheckCircle, ShoppingBag, Home, MessageCircle } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { formatFCFA } from '@/lib/utils';
@@ -54,11 +54,11 @@ export default function PaymentSuccessPage() {
   };
 
   const whatsappMsg = encodeURIComponent(
-    `Bonjour ! Mon paiement a été confirmé pour la commande #${orderId?.slice(-8).toUpperCase() || 'N/A'}. Merci !`
+    `Bonjour, mon paiement a été confirmé pour la commande #${orderId?.slice(-8).toUpperCase() || 'N/A'}. Merci`
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -69,10 +69,10 @@ export default function PaymentSuccessPage() {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          transition={{ delay: 0.15, type: 'spring', stiffness: 200, damping: 12 }}
+          transition={{ delay: 0.15, duration: 0.2, ease: 'easeOut' }}
           className="flex justify-center mb-6"
         >
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
         </motion.div>
@@ -82,7 +82,7 @@ export default function PaymentSuccessPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Paiement confirmé !</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 mb-2">Paiement confirmé</h1>
           <p className="text-gray-500 mb-6">
             Votre commande a bien été reçue et est en cours de préparation.
           </p>
@@ -108,7 +108,7 @@ export default function PaymentSuccessPage() {
               </div>
             )}
             {txnStatus === 'loading' && (
-              <div className="text-xs text-gray-400 animate-pulse">Vérification du paiement…</div>
+              <div className="text-xs text-gray-400">Vérification du paiement…</div>
             )}
           </div>
 

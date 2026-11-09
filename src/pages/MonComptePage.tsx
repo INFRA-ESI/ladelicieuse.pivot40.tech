@@ -5,18 +5,22 @@ import { useUser, getTier, TIER_CONFIG, buildTierConfig, type UserOrder } from '
 import { useCart } from '@/context/CartContext';
 import { TOKEN_KEY } from '@/context/UserContext';
 import { ls } from '@/lib/storage';
+import { passwordError } from '@/lib/password';
+import { useRealtime } from '@/hooks/useRealtime';
+import OrderStatusBadge from '@/components/OrderStatusBadge';
+import { ORDER_STATUS } from '@/lib/orderStatus';
 import { getClientFidelite, redeemPoints, type FideliteEntry } from '@/services/clientService';
 import { formatPrice } from '@/data/products';
 import { toast } from 'sonner';
 import {
   LogOut, ShoppingBag, Star, ChevronDown, Medal,
-  Clock, CheckCircle, ChefHat, Package, Bike,
+  CheckCircle,
   Leaf, Zap, Crown, CalendarDays, PauseCircle, XCircle, PlayCircle,
   Edit3, Check, X, ArrowRight, RefreshCcw, AlertTriangle, Stethoscope,
   TrendingUp, Lock, Eye, EyeOff, Gift, Loader2,
-  BadgeCheck, Sparkles, Plus, Minus, Ban, RotateCcw, Home, ArrowLeft,
+  BadgeCheck, SlidersHorizontal, Plus, Minus, Home,
   UtensilsCrossed,
-} from 'lucide-react';
+} from '@/components/icons';
 
 const HERO_IMG = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1920&q=80';
 
@@ -32,7 +36,7 @@ const TIER_RING: Record<string, string> = {
   bronze:  'ring-amber-400',
   argent:  'ring-slate-300',
   or:      'ring-yellow-400',
-  platine: 'ring-violet-400',
+  platine: 'ring-primary',
 };
 
 const TIER_BENEFITS: Record<string, string[]> = {
@@ -40,19 +44,6 @@ const TIER_BENEFITS: Record<string, string[]> = {
   argent:  ['Avantages Bronze inclus', 'Livraison offerte dès 5 000 FCFA', 'Points × 1,5 sur abonnements'],
   or:      ['Avantages Argent inclus', 'Livraison toujours offerte', '−10 % sur les commandes', 'Accès prioritaire aux nouveautés'],
   platine: ['Avantages Or inclus', 'Consultation diététicien offerte / trimestre', '−15 % sur toutes les commandes', 'Service VIP · Réponse sous 2 h'],
-};
-
-const STATUS_CFG: Record<UserOrder['statut'], {
-  label: string; icon: React.ElementType;
-  text: string; bg: string; dot: string;
-}> = {
-  en_attente:     { label: 'En attente',     icon: Clock,        text: 'text-amber-600',  bg: 'bg-amber-50',   dot: 'bg-amber-400'  },
-  confirmee:      { label: 'Confirmée',      icon: CheckCircle,  text: 'text-blue-600',   bg: 'bg-blue-50',    dot: 'bg-blue-500'   },
-  en_preparation: { label: 'En préparation', icon: ChefHat,      text: 'text-violet-600', bg: 'bg-violet-50',  dot: 'bg-violet-500' },
-  prete:          { label: 'Prête',          icon: Package,      text: 'text-green-600',  bg: 'bg-green-50',   dot: 'bg-green-500'  },
-  livree:         { label: 'Livrée',         icon: Bike,         text: 'text-primary',    bg: 'bg-primary/10', dot: 'bg-primary'    },
-  annulee:        { label: 'Annulée',        icon: Ban,          text: 'text-red-600',    bg: 'bg-red-50',     dot: 'bg-red-400'    },
-  remboursee:     { label: 'Remboursée',     icon: RotateCcw,    text: 'text-sky-600',    bg: 'bg-sky-50',     dot: 'bg-sky-400'    },
 };
 
 const ACTIVE_STATUSES: UserOrder['statut'][] = ['en_attente', 'confirmee', 'en_preparation', 'prete', 'livree'];
@@ -70,15 +61,15 @@ const MODE_LABELS: Record<string, string> = {
 };
 
 const SUB_STATUS = {
-  active:    { label: 'Actif',    cls: 'text-green-600 bg-green-50 border-green-200' },
-  paused:    { label: 'En pause', cls: 'text-amber-600 bg-amber-50 border-amber-200' },
-  cancelled: { label: 'Annulé',   cls: 'text-red-500   bg-red-50   border-red-200'   },
+  active:    { label: 'Actif',    cls: 'text-primary' },
+  paused:    { label: 'En pause', cls: 'text-amber-700' },
+  cancelled: { label: 'Annulé',   cls: 'text-destructive'   },
 };
 
 const TXTYPE_CFG = {
   gain:        { label: 'Gain',        icon: Plus,      color: 'text-green-600' },
-  rachat:      { label: 'Rachat',      icon: Gift,      color: 'text-violet-600' },
-  ajustement:  { label: 'Ajustement',  icon: Sparkles,  color: 'text-sky-600' },
+  rachat:      { label: 'Rachat',      icon: Gift,      color: 'text-primary' },
+  ajustement:  { label: 'Ajustement',  icon: SlidersHorizontal,  color: 'text-muted-foreground' },
 };
 
 const PREF_OPTIONS = [
@@ -106,14 +97,6 @@ async function savePreferences(token: string, prefs: PrefKey[]): Promise<void> {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ preferences: prefs }),
   });
-}
-
-function validatePassword(pwd: string): string | null {
-  if (pwd.length < 8)             return 'Au moins 8 caractères.';
-  if (!/[A-Z]/.test(pwd))        return 'Au moins une majuscule.';
-  if (!/[0-9]/.test(pwd))        return 'Au moins un chiffre.';
-  if (!/[^a-zA-Z0-9]/.test(pwd)) return 'Au moins un caractère spécial.';
-  return null;
 }
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────────
@@ -150,25 +133,20 @@ interface OrderCardProps {
 }
 
 function OrderCard({ order, isExpanded, onToggle, onRecommander }: OrderCardProps) {
-  const cfg        = STATUS_CFG[order.statut];
-  const StatusIcon = cfg.icon;
   const statusIdx  = ACTIVE_STATUSES.indexOf(order.statut as typeof ACTIVE_STATUSES[number]);
   const isActive   = statusIdx !== -1;
 
   return (
     <div className="relative">
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${cfg.dot}`} />
       <button
         onClick={onToggle}
-        className="w-full text-left pl-7 pr-6 py-4 hover:bg-muted/20 transition-colors"
+        className="w-full text-left px-6 py-4 hover:bg-muted/20 transition-colors"
       >
         <div className="flex items-center gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-body text-xs border ${cfg.text} ${cfg.bg}`}>
-                <StatusIcon className="w-3 h-3" />{cfg.label}
-              </span>
-              <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">
+              <OrderStatusBadge statut={order.statut} />
+              <span className="font-body text-xs text-muted-foreground">
                 {order.numero ?? `#${order.id.slice(-8).toUpperCase()}`}
               </span>
             </div>
@@ -213,23 +191,20 @@ function OrderCard({ order, isExpanded, onToggle, onRecommander }: OrderCardProp
                   {ACTIVE_STATUSES.map((s, i) => {
                     const done    = i <= statusIdx;
                     const current = i === statusIdx;
-                    const sCfg    = STATUS_CFG[s];
-                    const SIcon   = sCfg.icon;
+                    const SIcon   = ORDER_STATUS[s].icon;
                     return (
                       <div key={s} className="relative flex flex-col items-center gap-1.5 z-10 flex-1">
-                        <motion.div
-                          initial={current ? { scale: 0.7 } : false}
-                          animate={current ? { scale: [1, 1.12, 1] } : {}}
-                          transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 2 }}
-                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all
-                            ${done ? `${sCfg.dot} border-transparent` : 'bg-background border-border'}
-                            ${current ? 'shadow-md' : ''}`}
+                        {/* Une seule couleur pour la progression ; l'étape en cours est cerclée, sans animation qui boucle */}
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors
+                            ${done ? 'bg-primary border-transparent' : 'bg-background border-border'}
+                            ${current ? 'ring-4 ring-primary/20' : ''}`}
                         >
                           <SIcon className={`w-3 h-3 ${done ? 'text-white' : 'text-border'}`} />
-                        </motion.div>
-                        <span className={`font-body text-[9px] uppercase tracking-wide text-center leading-tight max-w-[52px]
-                          ${done ? sCfg.text : 'text-muted-foreground/35'}`}>
-                          {sCfg.label}
+                        </div>
+                        <span className={`font-body text-xs text-center leading-tight max-w-[52px]
+                          ${current ? 'text-foreground font-medium' : done ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+                          {ORDER_STATUS[s].label}
                         </span>
                       </div>
                     );
@@ -270,7 +245,7 @@ function OrderCard({ order, isExpanded, onToggle, onRecommander }: OrderCardProp
                 {order.statut === 'livree' && (
                   <button
                     onClick={() => onRecommander(order)}
-                    className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2 border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                    className="flex items-center gap-1.5 font-body text-xs px-3 py-2 border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors"
                   >
                     <RefreshCcw className="w-3.5 h-3.5" />Recommander
                   </button>
@@ -289,7 +264,7 @@ export default function MonComptePage() {
   const { user, logout, tiers, updateProfile, cancelSubscription, pauseSubscription, resumeSubscription, refreshOrders, changePassword } = useUser();
   const { addItem } = useCart();
 
-  // ── Tab & UI state ──
+  // ── Onglet et état de l'interface ──
   const [activeTab, setActiveTab]           = useState<'commandes' | 'fidelite' | 'abonnement' | 'preferences'>('commandes');
   const [expandedOrder, setExpandedOrder]   = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm]   = useState(false);
@@ -309,7 +284,7 @@ export default function MonComptePage() {
   const [pwdLoading, setPwdLoading]         = useState(false);
   const [profileSaving, setProfileSaving]   = useState(false);
 
-  // ── Fidelity data ──
+  // ── Données de fidélité ──
   const [fideliteLoading, setFideliteLoading] = useState(false);
   const [fideliteHist, setFideliteHist]       = useState<FideliteEntry[]>([]);
   const [redeemQty, setRedeemQty]             = useState(100);
@@ -333,15 +308,26 @@ export default function MonComptePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user?.id, refreshOrders]);
 
-  // Actualisation silencieuse toutes les 30s pour les mises à jour de statut en temps réel
+  // Temps réel : le serveur prévient du changement de statut d'UNE DE SES commandes, puis on recharge via l'API.
+  const live = useRealtime('client', ['order:status'], {
+    enabled: !!user?.id,
+    refresh: () => { refreshOrders().catch(() => {}); },
+    onSignal: (_event, payload) => {
+      const { numero, statut } = payload as { numero?: string; statut?: string };
+      const label = ORDER_STATUS[statut as keyof typeof ORDER_STATUS]?.label;
+      if (numero && label) toast.info(`Commande ${numero} : ${label}`);
+    },
+  });
+
+  // Filet de sécurité : rechargement silencieux toutes les 30 s sans canal ouvert, toutes les 2 min avec.
   useEffect(() => {
     if (!user?.id || activeTab !== 'commandes') return;
     const id = setInterval(() => {
       refreshOrders().catch(() => {});
-    }, 30000);
+    }, live ? 120_000 : 30_000);
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, user?.id, refreshOrders]);
+  }, [activeTab, user?.id, refreshOrders, live]);
 
   useEffect(() => {
     if (!user?.id || activeTab !== 'fidelite') return;
@@ -430,7 +416,7 @@ export default function MonComptePage() {
     if (showPwdSection && pwdForm.current) {
       const pErr = { current: '', next: '', confirm: '' };
       if (!pwdForm.next) { pErr.next = 'Requis'; setPwdErrors(pErr); return; }
-      const vErr = validatePassword(pwdForm.next);
+      const vErr = passwordError(pwdForm.next);
       if (vErr) { pErr.next = vErr; setPwdErrors(pErr); return; }
       if (pwdForm.next !== pwdForm.confirm) { pErr.confirm = 'Les mots de passe ne correspondent pas.'; setPwdErrors(pErr); return; }
     }
@@ -521,19 +507,19 @@ export default function MonComptePage() {
           transition={{ duration: 1, delay: 0.3 }}
           className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
         >
-          <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">Mon espace</span>
+          <span className="font-body text-xs text-primary mb-4 block">Mon espace</span>
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
-            Bonjour,<br /><span className="italic">{firstName}</span>
+            Bonjour,<br /><span>{firstName}</span>
           </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 italic max-w-xl mb-10">
+          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
             {tierCfg.label} · {user.points.toLocaleString('fr-FR')} points fidélité
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            <a href="#compte" className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
+            <a href="#compte" className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
               Voir mon compte
             </a>
             {commandes.length > 0 && (
-              <a href="#compte" className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl">
+              <a href="#compte" className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl">
                 {commandes.length} commande{commandes.length > 1 ? 's' : ''}
               </a>
             )}
@@ -557,7 +543,7 @@ export default function MonComptePage() {
                   tier === 'bronze' ? 'bg-amber-400' :
                   tier === 'argent' ? 'bg-slate-400' :
                   tier === 'or'     ? 'bg-yellow-400' :
-                                      'bg-violet-500'
+                                      'bg-primary'
                 }`} />
                 <div className="p-6">
 
@@ -566,7 +552,7 @@ export default function MonComptePage() {
                     <motion.div
                       initial={{ scale: 0.8, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
                       className={`w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center ring-4 ring-offset-2 ring-offset-background ${TIER_RING[tier]}`}
                     >
                       <span className={`font-display text-xl ${tierCfg.color}`}>{initials}</span>
@@ -584,7 +570,7 @@ export default function MonComptePage() {
                         <h2 className="font-display text-xl text-foreground">{user.prenoms} {user.nom}</h2>
                         <p className="font-body text-sm text-muted-foreground mt-0.5">{user.telephone}</p>
                         <p className="font-body text-sm text-muted-foreground">{user.email}</p>
-                        <p className="font-body text-xs text-muted-foreground/50 mt-2 uppercase tracking-wider">
+                        <p className="font-body text-xs text-muted-foreground/50 mt-2">
                           Client depuis le {user.dateInscription}
                         </p>
                       </motion.div>
@@ -631,7 +617,7 @@ export default function MonComptePage() {
                         <button
                           type="button"
                           onClick={() => setShowPwdSection(v => !v)}
-                          className={`w-full flex items-center justify-center gap-2 font-body text-xs uppercase tracking-[0.15em] px-3 py-2.5 border rounded-xl transition-colors
+                          className={`w-full flex items-center justify-center gap-2 font-body text-xs px-3 py-2.5 border rounded-xl transition-colors
                             ${showPwdSection
                               ? 'border-primary/40 bg-primary/8 text-primary'
                               : 'border-border text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5'
@@ -684,7 +670,7 @@ export default function MonComptePage() {
                           <button
                             type="submit"
                             disabled={pwdLoading || profileSaving}
-                            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors rounded-xl"
+                            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors rounded-xl"
                           >
                             {(pwdLoading || profileSaving) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                             Enregistrer
@@ -692,7 +678,7 @@ export default function MonComptePage() {
                           <button
                             type="button"
                             onClick={() => setIsEditing(false)}
-                            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider py-2.5 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
+                            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs py-2.5 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
                           >
                             <X className="w-3.5 h-3.5" />Annuler
                           </button>
@@ -708,7 +694,7 @@ export default function MonComptePage() {
                         <Medal className={`w-4 h-4 ${tierCfg.color}`} />
                         <span className={`font-display text-base ${tierCfg.color}`}>{tierCfg.label}</span>
                       </div>
-                      <span className={`font-body text-xs font-bold ${tierCfg.color}`}>
+                      <span className={`font-body text-xs font-semibold ${tierCfg.color}`}>
                         {user.points.toLocaleString('fr-FR')} pts
                       </span>
                     </div>
@@ -722,21 +708,21 @@ export default function MonComptePage() {
                             className={`h-full rounded-full ${tierCfg.color.replace('text-', 'bg-')}`}
                           />
                         </div>
-                        <p className={`font-body text-[11px] ${tierCfg.color} opacity-70`}>
+                        <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>
                           {(nextTier.min - user.points).toLocaleString('fr-FR')} pts pour {nextTier.label}
                         </p>
                       </>
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <Star className={`w-3.5 h-3.5 fill-current ${tierCfg.color}`} />
-                        <p className={`font-body text-[11px] ${tierCfg.color} opacity-70`}>Niveau maximum !</p>
+                        <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>Niveau maximum</p>
                       </div>
                     )}
                   </div>
 
                   <button
                     onClick={logout}
-                    className="mt-2 w-full flex items-center justify-center gap-2 font-body text-xs uppercase tracking-[0.15em] px-3 py-2.5 border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors rounded-xl"
+                    className="mt-2 w-full flex items-center justify-center gap-2 font-body text-xs px-3 py-2.5 border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors rounded-xl"
                   >
                     <LogOut className="w-3.5 h-3.5" />Se déconnecter
                   </button>
@@ -748,11 +734,11 @@ export default function MonComptePage() {
                 <div className="grid grid-cols-3 text-center divide-x divide-border">
                   <div className="pr-3">
                     <p className="font-display text-2xl text-foreground">{(user.commandes ?? []).length}</p>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Commandes</p>
+                    <p className="font-body text-xs text-muted-foreground mt-0.5">Commandes</p>
                   </div>
                   <div className="px-3">
                     <p className={`font-display text-2xl ${tierCfg.color}`}>{user.points.toLocaleString('fr-FR')}</p>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Points</p>
+                    <p className="font-body text-xs text-muted-foreground mt-0.5">Points</p>
                   </div>
                   <div className="pl-3">
                     <p className="font-display text-2xl text-foreground">
@@ -760,30 +746,30 @@ export default function MonComptePage() {
                         ? ((user.commandes ?? []).reduce((s, o) => s + (o.total ?? 0), 0) / 1000).toFixed(0) + 'k'
                         : '0'}
                     </p>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">FCFA dépensés</p>
+                    <p className="font-body text-xs text-muted-foreground mt-0.5">FCFA dépensés</p>
                   </div>
                 </div>
               </div>
 
               {/* ── Quick actions ── */}
               <div className="bg-background border border-border rounded-2xl p-4">
-                <p className="font-body text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3 px-1">Accès rapide</p>
+                <p className="font-body text-xs text-muted-foreground mb-3 px-1">Accès rapide</p>
                 <div className="flex flex-col gap-1">
                   {[
                     { to: '/composer',    icon: ShoppingBag, label: 'À Commander',  sub: 'Salades, jus, repas',        bg: 'bg-primary/10', text: 'text-primary'  },
-                    { to: '/abonnement',  icon: Zap,         label: 'Abonnements',  sub: 'Plans hebdomadaires',        bg: 'bg-amber-100',  text: 'text-amber-600' },
-                    { to: '/suivi',       icon: TrendingUp,  label: 'Mon suivi',    sub: 'Poids, calories, objectifs', bg: 'bg-green-100',  text: 'text-green-600' },
-                    { to: '/dieteticien', icon: Stethoscope, label: 'Diététicien',  sub: 'Conseil nutritionnel',       bg: 'bg-violet-100', text: 'text-violet-600' },
+                    { to: '/abonnement',  icon: Zap,         label: 'Abonnements',  sub: 'Plans hebdomadaires',        bg: 'bg-muted',  text: 'text-amber-600' },
+                    { to: '/suivi',       icon: TrendingUp,  label: 'Mon suivi',    sub: 'Poids, calories, objectifs', bg: 'bg-muted',  text: 'text-green-600' },
+                    { to: '/dieteticien', icon: Stethoscope, label: 'Diététicien',  sub: 'Conseil nutritionnel',       bg: 'bg-primary/10', text: 'text-primary' },
                   ].map(({ to, icon: Icon, label, sub, bg, text }) => (
                     <Link key={to} to={to} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/50 transition-colors">
-                      <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0 transition-transform group-hover:scale-110`}>
+                      <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
                         <Icon className={`w-4 h-4 ${text}`} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-body text-sm text-foreground leading-tight">{label}</p>
-                        <p className="font-body text-[11px] text-muted-foreground">{sub}</p>
+                        <p className="font-body text-xs text-muted-foreground">{sub}</p>
                       </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" />
                     </Link>
                   ))}
                 </div>
@@ -797,7 +783,7 @@ export default function MonComptePage() {
 
               <div className="flex items-baseline justify-between">
                 <h2 className="font-display text-3xl md:text-4xl text-foreground">Mon espace</h2>
-                <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">
+                <span className="font-body text-xs text-muted-foreground">
                   Client depuis le {user.dateInscription}
                 </span>
               </div>
@@ -809,7 +795,7 @@ export default function MonComptePage() {
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`relative shrink-0 flex items-center justify-center gap-2 px-4 py-4 font-body text-sm uppercase tracking-wider transition-colors
+                      className={`relative shrink-0 flex items-center justify-center gap-2 px-4 py-4 font-body text-sm transition-colors
                         ${activeTab === tab ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                     >
                       {tab === 'commandes'   && 'Commandes'}
@@ -817,7 +803,7 @@ export default function MonComptePage() {
                       {tab === 'abonnement'  && 'Abonnement'}
                       {tab === 'preferences' && 'Préférences'}
                       {tab === 'commandes' && commandes.length > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-body text-[10px] flex items-center justify-center">
+                        <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-body text-xs flex items-center justify-center">
                           {commandes.length}
                         </span>
                       )}
@@ -843,7 +829,7 @@ export default function MonComptePage() {
                         <OrderSkeleton />
                       ) : ordersError ? (
                         <div className="p-10 flex flex-col items-center gap-3 text-center">
-                          <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
                             <AlertTriangle className="w-6 h-6 text-red-400" />
                           </div>
                           <p className="font-body text-sm text-red-500 max-w-xs">{ordersError}</p>
@@ -865,7 +851,7 @@ export default function MonComptePage() {
                           </p>
                           <Link
                             to="/composer"
-                            className="inline-flex items-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-8 py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+                            className="inline-flex items-center gap-2 font-body text-sm px-8 py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
                           >
                             <ArrowRight className="w-4 h-4" />
                             Passer ma première commande
@@ -875,8 +861,8 @@ export default function MonComptePage() {
                         <div>
                           {activeOrders.length > 0 && (
                             <div className="px-6 py-2.5 bg-amber-50/60 border-b border-border flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-                              <p className="font-body text-[11px] uppercase tracking-[0.18em] text-amber-700">
+                              <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                              <p className="font-body text-xs text-amber-700">
                                 {activeOrders.length} commande{activeOrders.length > 1 ? 's' : ''} en cours
                               </p>
                             </div>
@@ -896,7 +882,7 @@ export default function MonComptePage() {
                           )}
                           {historyOrders.length > 0 && (
                             <div className={`px-6 py-2.5 bg-muted/30 border-border flex items-center ${activeOrders.length > 0 ? 'border-t border-b' : 'border-b'}`}>
-                              <p className="font-body text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                              <p className="font-body text-xs text-muted-foreground">
                                 Historique · {historyOrders.length} commande{historyOrders.length > 1 ? 's' : ''}
                               </p>
                             </div>
@@ -942,7 +928,7 @@ export default function MonComptePage() {
                           <span className={`font-display text-2xl ${tierCfg.color}`}>{tierCfg.label}</span>
                         </div>
                         <div className="flex-1 text-center md:text-left">
-                          <p className={`font-body text-sm ${tierCfg.color} opacity-70 uppercase tracking-wider mb-1`}>Solde actuel</p>
+                          <p className={`font-body text-sm ${tierCfg.color} opacity-70 mb-1`}>Solde actuel</p>
                           <p className={`font-display text-4xl ${tierCfg.color} mb-3`}>{user.points.toLocaleString('fr-FR')} <span className="text-xl">pts</span></p>
                           {nextTier ? (
                             <>
@@ -969,7 +955,7 @@ export default function MonComptePage() {
 
                       {/* ── Avantages du tier ── */}
                       <div>
-                        <p className="font-body text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Vos avantages {tierCfg.label}</p>
+                        <p className="font-body text-xs text-muted-foreground mb-3">Vos avantages {tierCfg.label}</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {benefits.map((b, i) => (
                             <div key={i} className="flex items-start gap-2.5 p-3 bg-muted/50 rounded-xl">
@@ -982,16 +968,16 @@ export default function MonComptePage() {
 
                       {/* ── Tous les niveaux ── */}
                       <div>
-                        <p className="font-body text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Les 4 niveaux</p>
+                        <p className="font-body text-xs text-muted-foreground mb-3">Les 4 niveaux</p>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {['bronze', 'argent', 'or', 'platine'].map(slug => {
                             const cfg = tierConfig[slug] ?? TIER_CONFIG[slug as keyof typeof TIER_CONFIG];
                             const isCurrent = slug === tier;
                             return (
-                              <div key={slug} className={`rounded-xl p-3 text-center border transition-all ${isCurrent ? `${cfg.bg} border-current/20` : 'bg-muted/30 border-transparent'}`}>
+                              <div key={slug} className={`rounded-xl p-3 text-center border transition-[color,background-color,border-color,box-shadow,opacity,transform] ${isCurrent ? `${cfg.bg} border-current/20` : 'bg-muted/30 border-transparent'}`}>
                                 <Medal className={`w-5 h-5 mx-auto mb-1.5 ${cfg.color} ${!isCurrent && 'opacity-40'}`} />
                                 <p className={`font-display text-sm ${cfg.color} ${!isCurrent && 'opacity-40'}`}>{cfg.label}</p>
-                                <p className="font-body text-[10px] text-muted-foreground mt-0.5">{cfg.min.toLocaleString('fr-FR')} pts</p>
+                                <p className="font-body text-xs text-muted-foreground mt-0.5">{cfg.min.toLocaleString('fr-FR')} pts</p>
                                 {isCurrent && <div className={`mt-1.5 h-1 w-8 mx-auto rounded-full ${cfg.color.replace('text-', 'bg-')}`} />}
                               </div>
                             );
@@ -1015,12 +1001,12 @@ export default function MonComptePage() {
                             animate={{ opacity: 1, scale: 1 }}
                             className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl"
                           >
-                            <p className="font-body text-xs text-green-700 mb-1">Code généré avec succès !</p>
+                            <p className="font-body text-xs text-green-700 mb-1">Code généré</p>
                             <div className="flex items-center justify-between gap-3">
-                              <code className="font-mono text-lg font-bold text-green-800 tracking-wider">{lastCode.code}</code>
+                              <code className="font-mono text-lg font-semibold text-green-800">{lastCode.code}</code>
                               <span className="font-display text-sm text-green-700">−{lastCode.valeurFCFA.toLocaleString('fr-FR')} FCFA</span>
                             </div>
-                            <button onClick={() => { navigator.clipboard?.writeText(lastCode.code); toast.success('Code copié !'); }} className="mt-2 font-body text-xs text-green-600 hover:underline">
+                            <button onClick={() => { navigator.clipboard?.writeText(lastCode.code); toast.success('Code copié'); }} className="mt-2 font-body text-xs text-green-600 hover:underline">
                               Copier le code
                             </button>
                           </motion.div>
@@ -1050,7 +1036,7 @@ export default function MonComptePage() {
                         <button
                           onClick={handleRedeem}
                           disabled={redeemLoading || user.points < 100}
-                          className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] py-3 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
+                          className="w-full flex items-center justify-center gap-2 font-body text-sm py-3 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
                         >
                           {redeemLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
                           {user.points < 100 ? 'Solde insuffisant (min. 100 pts)' : `Générer un code de ${redeemValue.toLocaleString('fr-FR')} FCFA`}
@@ -1059,13 +1045,13 @@ export default function MonComptePage() {
 
                       {/* ── Historique des points ── */}
                       <div>
-                        <p className="font-body text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Historique des points</p>
+                        <p className="font-body text-xs text-muted-foreground mb-3">Historique des points</p>
                         {fideliteLoading ? (
                           <div className="flex items-center justify-center py-8">
                             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                           </div>
                         ) : fideliteHist.length === 0 ? (
-                          <p className="font-body text-sm text-muted-foreground text-center py-6 italic">Aucune transaction pour l'instant.</p>
+                          <p className="font-body text-sm text-muted-foreground text-center py-6">Aucune transaction pour l'instant.</p>
                         ) : (
                           <div className="border border-border rounded-2xl overflow-hidden divide-y divide-border">
                             {fideliteHist.map(tx => {
@@ -1079,7 +1065,7 @@ export default function MonComptePage() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="font-body text-sm text-foreground truncate">{tx.description}</p>
-                                    <p className="font-body text-[11px] text-muted-foreground">
+                                    <p className="font-body text-xs text-muted-foreground">
                                       {new Date(tx.createdAt).toLocaleDateString('fr-FR')}
                                       {' · '}Solde après : {tx.soldeApres.toLocaleString('fr-FR')} pts
                                     </p>
@@ -1112,10 +1098,10 @@ export default function MonComptePage() {
                             <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                             <div className="absolute bottom-0 left-0 p-5">
                               <p className="font-display text-2xl text-white">Abonnements La Délicieuse Diète</p>
-                              <p className="font-body text-white/70 text-sm">Livraisons hebdomadaires · −20 % annuel · Points ×2</p>
+                              <p className="font-body text-white/70 text-sm">Hebdomadaire ou mensuel · Réduction sur le mensuel · Points ×2</p>
                             </div>
                           </div>
-                          <Link to="/abonnement" className="flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl">
+                          <Link to="/abonnement" className="flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl">
                             Découvrir les formules <ArrowRight className="w-4 h-4" />
                           </Link>
                         </div>
@@ -1130,7 +1116,7 @@ export default function MonComptePage() {
                                 <div>
                                   <p className="font-display text-2xl text-foreground">{user.subscription.planName}</p>
                                   <p className="font-body text-xs text-muted-foreground mt-0.5">
-                                    {user.subscription.billing === 'annual' ? 'Facturation annuelle · −20 %' : 'Facturation mensuelle'}
+                                    {{ weekly: 'Facturation hebdomadaire', monthly: 'Facturation mensuelle', annual: 'Facturation annuelle' }[user.subscription.billing]}
                                   </p>
                                 </div>
                               </div>
@@ -1142,13 +1128,13 @@ export default function MonComptePage() {
 
                           <div className="grid grid-cols-2 gap-3 px-6">
                             <div className="bg-muted rounded-xl px-4 py-3">
-                              <p className="font-body text-xs text-muted-foreground uppercase tracking-wider mb-1">Montant / mois</p>
-                              <p className="font-display text-xl text-primary">{new Intl.NumberFormat('fr-FR').format(user.subscription.price)} FCFA</p>
+                              <p className="font-body text-xs text-muted-foreground mb-1">Montant / mois</p>
+                              <p className="font-display text-xl text-primary">{formatPrice(user.subscription.price)}</p>
                             </div>
                             <div className="bg-muted rounded-xl px-4 py-3">
                               <div className="flex items-center gap-1.5 mb-1">
                                 <CalendarDays className="w-3 h-3 text-muted-foreground" />
-                                <p className="font-body text-xs text-muted-foreground uppercase tracking-wider">Renouvellement</p>
+                                <p className="font-body text-xs text-muted-foreground">Renouvellement</p>
                               </div>
                               <p className="font-body text-sm text-foreground">{user.subscription.nextRenewal}</p>
                             </div>
@@ -1158,19 +1144,19 @@ export default function MonComptePage() {
                             {!cancelConfirm ? (
                               <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-wrap gap-2 px-6 pb-6">
                                 {user.subscription.status === 'active' && (
-                                  <button onClick={pauseSubscription} className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
+                                  <button onClick={pauseSubscription} className="flex items-center gap-1.5 font-body text-xs px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
                                     <PauseCircle className="w-3.5 h-3.5" />Mettre en pause
                                   </button>
                                 )}
                                 {user.subscription.status === 'paused' && (
-                                  <button onClick={resumeSubscription} className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-primary hover:bg-primary/20 transition-colors">
+                                  <button onClick={resumeSubscription} className="flex items-center gap-1.5 font-body text-xs px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-primary hover:bg-primary/20 transition-colors">
                                     <PlayCircle className="w-3.5 h-3.5" />Reprendre
                                   </button>
                                 )}
-                                <Link to="/abonnement" className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
+                                <Link to="/abonnement" className="flex items-center gap-1.5 font-body text-xs px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
                                   Changer de formule
                                 </Link>
-                                <button onClick={() => setCancelConfirm(true)} className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors">
+                                <button onClick={() => setCancelConfirm(true)} className="flex items-center gap-1.5 font-body text-xs px-4 py-2.5 border border-border rounded-xl text-muted-foreground hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors">
                                   <XCircle className="w-3.5 h-3.5" />Annuler l'abonnement
                                 </button>
                               </motion.div>
@@ -1184,8 +1170,8 @@ export default function MonComptePage() {
                                   </div>
                                 </div>
                                 <div className="flex gap-2">
-                                  <button onClick={handleCancelSub} className="flex-1 font-body text-xs uppercase tracking-wider py-2.5 bg-red-500 text-white hover:bg-red-600 transition-colors rounded-xl">Oui, annuler</button>
-                                  <button onClick={() => setCancelConfirm(false)} className="flex-1 font-body text-xs uppercase tracking-wider py-2.5 border border-border bg-white text-foreground hover:bg-muted transition-colors rounded-xl">Non, garder</button>
+                                  <button onClick={handleCancelSub} className="flex-1 font-body text-xs py-2.5 bg-red-500 text-white hover:bg-red-600 transition-colors rounded-xl">Oui, annuler</button>
+                                  <button onClick={() => setCancelConfirm(false)} className="flex-1 font-body text-xs py-2.5 border border-border bg-white text-foreground hover:bg-muted transition-colors rounded-xl">Non, garder</button>
                                 </div>
                               </motion.div>
                             )}
@@ -1229,7 +1215,7 @@ export default function MonComptePage() {
                                 key={opt.key}
                                 type="button"
                                 onClick={() => togglePref(opt.key)}
-                                className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-all
+                                className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform]
                                   ${active
                                     ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                                     : 'border-border hover:border-primary/40 bg-background'
@@ -1253,7 +1239,7 @@ export default function MonComptePage() {
                       <button
                         onClick={handleSavePreferences}
                         disabled={prefSaving || prefLoading}
-                        className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
+                        className="w-full flex items-center justify-center gap-2 font-body text-sm py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
                       >
                         {prefSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                         Enregistrer mes préférences
@@ -1267,7 +1253,7 @@ export default function MonComptePage() {
               <div className="flex justify-center pt-2">
                 <Link
                   to="/"
-                  className="inline-flex items-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-8 py-3 border border-border text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors rounded-xl"
+                  className="inline-flex items-center gap-2 font-body text-sm px-8 py-3 border border-border text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors rounded-xl"
                 >
                   <Home className="w-4 h-4" />
                   Retour à l'accueil

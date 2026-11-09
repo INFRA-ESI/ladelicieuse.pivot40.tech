@@ -54,7 +54,7 @@ const InvoiceSchema = new Schema<IInvoice>(
   { timestamps: true }
 );
 
-// Auto-generate invoice number before save
+// Génération automatique du numéro de facture avant sauvegarde
 InvoiceSchema.pre('save', async function (this: IInvoice, next) {
   if (!this.numero) {
     const count = await mongoose.model('Invoice').countDocuments();

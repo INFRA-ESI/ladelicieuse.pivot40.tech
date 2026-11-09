@@ -1,5 +1,5 @@
 import express from 'express';
-import { createServer } from 'http';
+import { createServer, type IncomingHttpHeaders } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import { connectDB } from './config/database.js';
 import { connectRedis, getRedis } from './config/redis.js';
 import { validateConfig } from './config/singpay.config.js';
+import { assertProductionConfig } from './config/production.config.js';
 import { swaggerDocument, swaggerUiOptions } from './config/swagger.config.js';
 import { logger } from './config/logger.js';
 
@@ -45,6 +46,10 @@ import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import Settings from './models/Settings.model.js';
+import { initRealtime, closeRealtime } from './services/realtime.service.js';
+import { migratePlansToWeekly, migrateConsultationsPresentielPrice, migrateOrderNumbersToLdd, backfillMealNutrition } from './services/migrations.service.js';
+import { memoryRateLimiter } from './middleware/rateLimiter.js';
+import { hideInternalErrors } from './middleware/hideInternalErrors.js';
 
 dotenv.config();
 
@@ -54,16 +59,20 @@ const app        = express();
 const httpServer = createServer(app);
 const PORT       = process.env.PORT || 3000;
 
+// Derrière nginx : `req.ip` doit être l'adresse du client (en-tête posé par nginx), pas celle du proxy.
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
 // ── Middlewares ───────────────────────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc:  ["'self'"],
       scriptSrc:   ["'self'"],
-      styleSrc:    ["'self'", "'unsafe-inline'"],
+      // Les polices de la marque viennent de Google Fonts : la feuille de style (googleapis) et les fichiers (gstatic).
+      styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc:      ["'self'", "data:", "blob:", "https:"],
-      connectSrc:  ["'self'", "https:"],
-      fontSrc:     ["'self'", "data:"],
+      connectSrc:  ["'self'", "https:", "wss:"],
+      fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
       frameSrc:    ["'none'"],
       objectSrc:   ["'none'"],
     },
@@ -99,18 +108,28 @@ if (process.env.FRONTEND_URL) {
   logger.error('[CORS] FRONTEND_URL non défini en production — aucune origine externe autorisée !');
 }
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) { callback(null, true); return; } // server-to-server / outils CLI
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      logger.warn(`[CORS] Origine refusée: ${origin}`);
-      callback(new Error(`Origine CORS non autorisée`));
-    }
-  },
-  credentials: true,
-}));
+// Un navigateur envoie l'en-tête Origin sur tout POST, même vers le site qui l'a servi.
+// Une requête same-origin ne doit donc jamais être refusée, même si FRONTEND_URL est absent
+// ou mal renseigné : sinon tous les POST du site (dont la connexion admin) tombent en erreur.
+const isSameOrigin = (headers: IncomingHttpHeaders, origin: string): boolean => {
+  const host = (headers['x-forwarded-host'] as string | undefined)?.split(',')[0].trim() ?? headers.host;
+  try { return !!host && new URL(origin).host === host; } catch { return false; }
+};
+// Sans en-tête Origin (client non navigateur), la requête passe : le jeton reste exigé là où il le faut.
+const isOriginAllowed = (origin: string | undefined, headers: IncomingHttpHeaders): boolean =>
+  !origin || allowedOrigins.includes(origin) || isSameOrigin(headers, origin);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!isOriginAllowed(origin, req.headers)) {
+    logger.warn(`[CORS] Origine refusée: ${origin}`);
+    res.status(403).json({ success: false, message: 'Origine non autorisée' });
+    return;
+  }
+  next();
+});
+// Seules les origines autorisées par le filtre ci-dessus arrivent ici : on peut les refléter.
+app.use(cors({ origin: true, credentials: true }));
 
 // ── Documentation Swagger (dev uniquement) ────────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {
@@ -118,6 +137,13 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+// En production, les messages techniques (`error`) ne sortent plus vers le client : ils sont journalisés.
+app.use('/api', hideInternalErrors);
+
+// Filet global anti-flood : 600 requêtes/min par IP, très au-dessus d'une navigation normale
+// (une page en émet une dizaine), mais large pour ne pas bloquer les IP partagées (réseaux mobiles).
+app.use('/api', memoryRateLimiter(600, 60, 'api-global'));
+
 app.use('/api/payments',      paymentRoutes);
 app.use('/api/auth',          authRoutes);
 app.use('/api/client',        clientRoutes);
@@ -190,9 +216,20 @@ app.get('/health', (_req, res) => {
 });
 
 // ── Frontend statique (production) ────────────────────────────────────────────
-const FRONTEND_DIST = path.join(__dirname, '..', 'dist');
+// Le dossier du site se trouve à un niveau différent selon qu'on lance le TypeScript (backend/server.ts) ou le fichier
+// compilé (backend/dist/server.js) : on prend le premier qui contient réellement un index.html.
+const FRONTEND_DIST_CANDIDATES = [path.join(__dirname, '..', 'dist'), path.join(__dirname, '..', '..', 'dist')];
+const FRONTEND_DIST = FRONTEND_DIST_CANDIDATES.find(dir => fs.existsSync(path.join(dir, 'index.html'))) ?? FRONTEND_DIST_CANDIDATES[0];
 if (fs.existsSync(FRONTEND_DIST)) {
-  app.use(express.static(FRONTEND_DIST));
+  app.use(express.static(FRONTEND_DIST, {
+    // Les fichiers de /assets portent un hash dans leur nom : leur contenu ne change jamais sous un même nom,
+    // le navigateur peut les garder un an sans revalider (une revalidation coûte un aller-retour réseau par fichier).
+    setHeaders: (res, filePath) => {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
 }
 
 // ── 404 API — uniquement pour les routes /api/* non trouvées ──────────────────
@@ -243,10 +280,16 @@ async function seedAdminPasswordHash(): Promise<void> {
 }
 
 async function start() {
+  assertProductionConfig();
   await connectDB();
   await connectRedis();
   validateConfig();
   await seedAdminPasswordHash();
+  await migratePlansToWeekly();
+  await migrateConsultationsPresentielPrice();
+  await migrateOrderNumbersToLdd();
+  await backfillMealNutrition();
+  initRealtime(httpServer, { isOriginAllowed: (origin, req) => isOriginAllowed(origin, req.headers) });
   httpServer.listen(PORT, () => {
     logger.info(`Serveur lancé sur http://localhost:${PORT}`);
     logger.info(`CORS activé pour ${process.env.FRONTEND_URL || 'http://localhost:5100'}`);
@@ -255,6 +298,7 @@ async function start() {
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`[shutdown] Signal ${signal} reçu — arrêt gracieux en cours…`);
+  closeRealtime();
   httpServer.close(async () => {
     try {
       await mongoose.connection.close();

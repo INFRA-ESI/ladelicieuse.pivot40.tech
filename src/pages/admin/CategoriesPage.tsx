@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, Merge } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 
@@ -11,7 +11,17 @@ interface Category {
   ordre: number;
 }
 
+// Même règle que le serveur : accents, casse et « s » final ignorés ("Sauce et pain" = "Sauces et Pains").
+const similarKey = (nom: string) =>
+  nom.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .split(/[^a-z0-9]+/).filter(Boolean)
+    .map(w => (w.length > 3 ? w.replace(/s$/, '') : w))
+    .join(' ');
+
 export default function CategoriesPage() {
+  const [mergeSource, setMergeSource] = useState<Category | null>(null);
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [merging, setMerging]         = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading]       = useState(true);
   const [showForm, setShowForm]     = useState(false);
@@ -70,6 +80,22 @@ export default function CategoriesPage() {
       setDeleteConfirm(null);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erreur suppression');
+    }
+  };
+
+  const handleMerge = async () => {
+    if (!mergeSource || !mergeTarget) return;
+    setMerging(true);
+    try {
+      await adminPost(`/categories/${mergeSource._id}/merge`, { intoId: mergeTarget });
+      setCategories(prev => prev.filter(c => c._id !== mergeSource._id));
+      toast.success(`« ${mergeSource.nom} » fusionnée`);
+      setMergeSource(null);
+      setMergeTarget('');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erreur fusion');
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -148,6 +174,34 @@ export default function CategoriesPage() {
         </div>
       )}
 
+      {/* Fusion */}
+      {mergeSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 px-4" onClick={() => setMergeSource(null)}>
+          <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display text-lg text-foreground mb-2">Fusionner « {mergeSource.nom} »</h3>
+            <p className="font-body text-sm text-muted-foreground mb-4">
+              Ses ingrédients et plats passent dans la catégorie choisie, puis « {mergeSource.nom} » est supprimée. Action irréversible.
+            </p>
+            <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Garder la catégorie</label>
+            <select
+              value={mergeTarget}
+              onChange={e => setMergeTarget(e.target.value)}
+              className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Choisir…</option>
+              {categories.filter(c => c._id !== mergeSource._id).map(c => <option key={c._id} value={c._id}>{c.nom}</option>)}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={handleMerge} disabled={!mergeTarget || merging}
+                className="flex-1 py-2.5 bg-primary text-primary-foreground text-sm font-body rounded-md hover:bg-primary/90 disabled:opacity-60">
+                {merging ? 'Fusion…' : 'Fusionner'}
+              </button>
+              <button onClick={() => setMergeSource(null)} className="px-4 py-2.5 bg-muted text-muted-foreground text-sm font-body rounded-md">Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 px-4" onClick={() => setDeleteConfirm(null)}>
@@ -186,6 +240,9 @@ export default function CategoriesPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-display text-base text-foreground">{c.nom}</h3>
+                  {categories.some(o => o._id !== c._id && similarKey(o.nom) === similarKey(c.nom)) && (
+                    <span className="text-amber-700 inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-body">Doublon probable</span>
+                  )}
                   {c.description && (
                     <p className="font-body text-xs text-muted-foreground mt-0.5 line-clamp-2">{c.description}</p>
                   )}
@@ -201,6 +258,14 @@ export default function CategoriesPage() {
                 >
                   <Edit2 className="w-3 h-3" /> Modifier
                 </button>
+                {categories.length > 1 && (
+                  <button
+                    onClick={() => { setMergeSource(c); setMergeTarget(''); }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-body bg-muted rounded-md hover:bg-muted/80 text-foreground"
+                  >
+                    <Merge className="w-3 h-3" /> Fusionner
+                  </button>
+                )}
                 <button
                   onClick={() => setDeleteConfirm(c._id)}
                   className="flex items-center gap-1 px-3 py-1.5 text-xs font-body bg-destructive/10 rounded-md hover:bg-destructive/20 text-destructive"

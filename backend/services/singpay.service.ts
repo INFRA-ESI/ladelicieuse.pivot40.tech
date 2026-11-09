@@ -1,8 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { singpayConfig } from '../config/singpay.config';
-import TransactionModel, { type TransactionProvider } from '../models/Transaction.model';
+import { singpayConfig } from '../config/singpay.config.js';
+import TransactionModel, { type TransactionProvider } from '../models/Transaction.model.js';
 import { logger } from '../config/logger.js';
 import {
   SingPayMobileMoneyRequest,
@@ -16,7 +16,7 @@ import {
   SingPayRawTransaction,
   SingPayRawResponse,
   PaymentStatus,
-} from '../types/payment.types';
+} from '../types/payment.types.js';
 
 export const normalizeGabonPhone = (phone: string): string => {
   const cleaned = phone.replace(/[\s\-().]/g, '');

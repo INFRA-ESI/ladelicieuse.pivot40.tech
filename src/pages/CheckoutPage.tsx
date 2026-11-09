@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   ShoppingBag, ChevronRight, Loader2, Lock, ArrowLeft,
-} from 'lucide-react';
+} from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { PaymentMethods } from '@/components/payment/PaymentMethods';
 import { useCart } from '@/context/CartContext';
@@ -48,7 +48,7 @@ export default function CheckoutPage() {
   const handleSuccess = () => {
     // Appelé uniquement après confirmation réelle de SingPay (polling success)
     // ou pour les paiements espèces (confirmation immédiate volontaire).
-    toast.success('Paiement confirmé !', {
+    toast.success('Paiement confirmé', {
       description: 'Votre commande est en cours de traitement.',
     });
     setIsProcessing(false);
@@ -99,7 +99,7 @@ export default function CheckoutPage() {
                     <Lock className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold text-gray-900">Paiement sécurisé</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">Paiement sécurisé</h1>
                     <p className="text-sm text-gray-500">Choisissez votre méthode de paiement</p>
                   </div>
                 </div>
@@ -185,7 +185,7 @@ export default function CheckoutPage() {
                       <span>{formatFCFA(deliveryFee)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-bold text-base pt-1 border-t border-gray-100">
+                  <div className="flex justify-between font-semibold text-base pt-1 border-t border-gray-100">
                     <span>Total</span>
                     <span className="text-primary">{formatFCFA(total)}</span>
                   </div>

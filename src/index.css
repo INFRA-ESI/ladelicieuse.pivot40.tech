@@ -102,3 +102,30 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--sepia));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Back-office : coins droits (identité carrée du portfolio New Era Hub).
+   Seules les formes changent : couleurs, boutons, polices et ombres gardent ceux de
+   La Délicieuse Diète. Activé par la classe admin-square sur <body> (hook useAdminTheme) ;
+   sur <body> et non sur un conteneur pour que menus et fenêtres rendus hors de la page
+   (portails) soient carrés eux aussi. Le site public n'est pas touché.
+   ══════════════════════════════════════════════════════════════════════════════ */
+body.admin-square {
+  --radius: 0px;
+}
+
+/* Les pastilles et avatars en rounded-full restent ronds (interrupteurs, badges, spinners). */
+body.admin-square .rounded,
+body.admin-square [class*="rounded-sm"],
+body.admin-square [class*="rounded-md"],
+body.admin-square [class*="rounded-lg"],
+body.admin-square [class*="rounded-xl"],
+body.admin-square [class*="rounded-2xl"],
+body.admin-square [class*="rounded-3xl"],
+body.admin-square [class*="rounded-t-"],
+body.admin-square [class*="rounded-b-"],
+body.admin-square [class*="rounded-l-"],
+body.admin-square [class*="rounded-r-"],
+body.admin-square [class*="rounded-["] {
+  border-radius: 0 !important;
+}

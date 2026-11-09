@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { PaymentStatus } from '../types/payment.types';
+import type { PaymentStatus } from '../types/payment.types.js';
 
 export type TransactionProvider = 'airtel' | 'moov' | 'paypal' | 'card' | 'cash';
 
@@ -50,7 +50,7 @@ const TransactionSchema = new Schema<ITransaction>(
   { timestamps: true }
 );
 
-// Compound indexes for anti-double payment queries
+// Index composés pour les requêtes anti-double paiement
 TransactionSchema.index({ orderId: 1, status: 1 });
 TransactionSchema.index({ createdAt: -1 });
 

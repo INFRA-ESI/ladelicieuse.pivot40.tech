@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, ArrowRight, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Mail, ArrowRight, CheckCircle, ArrowLeft } from '@/components/icons';
 import Footer from '@/components/Footer';
 
 export default function ForgotPasswordPage() {
@@ -43,7 +43,7 @@ export default function ForgotPasswordPage() {
       >
         <Link
           to="/connexion"
-          className="inline-flex items-center gap-1.5 font-body text-xs uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors mb-10"
+          className="inline-flex items-center gap-1.5 font-body text-xs text-muted-foreground hover:text-primary transition-colors mb-10"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Retour à la connexion
@@ -71,18 +71,18 @@ export default function ForgotPasswordPage() {
             </div>
             <Link
               to="/connexion"
-              className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+              className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
             >
               Retour à la connexion <ArrowRight className="w-4 h-4" />
             </Link>
           </motion.div>
         ) : (
           <>
-            <span className="font-body text-xs uppercase tracking-[0.3em] text-primary block mb-3">
+            <span className="font-body text-xs text-primary block mb-3">
               Récupération
             </span>
             <h1 className="font-display text-4xl md:text-5xl text-foreground leading-[0.95] mb-3">
-              Mot de passe<br /><span className="italic">oublié ?</span>
+              Mot de passe<br /><span>oublié ?</span>
             </h1>
             <p className="font-body text-sm text-muted-foreground mb-8 leading-relaxed">
               Entrez votre adresse email et nous vous enverrons un lien pour créer un nouveau mot de passe.
@@ -90,7 +90,7 @@ export default function ForgotPasswordPage() {
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               <div>
-                <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+                <label className="font-body text-xs text-muted-foreground block mb-2">
                   Adresse email
                 </label>
                 <input
@@ -112,7 +112,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
+                className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
               >
                 {loading ? 'Envoi…' : <><span>Envoyer le lien</span><ArrowRight className="w-4 h-4" /></>}
               </button>

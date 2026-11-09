@@ -1,13 +1,17 @@
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import AdminErrorBoundary from './AdminErrorBoundary';
+import { useAdminTheme } from '@/hooks/useAdminTheme';
+import { useRealtime } from '@/hooks/useRealtime';
+import { toast } from 'sonner';
 import { useState } from 'react';
 import { logout as logoutAdmin } from '@/services/authService';
+import logo from '@/assets/logo.png';
 import {
   LayoutDashboard, ShoppingCart, FolderTree, Carrot, Users, FileText,
   History, Settings, MessageCircle, LogOut, Menu, X, ChefHat, Utensils,
-  Warehouse, BarChart3, Ticket, Sparkles, Stethoscope, Layers,
+  Warehouse, BarChart3, Ticket, Stethoscope, Layers, Repeat,
   HelpCircle, MessageSquare, Truck, Home,
-} from 'lucide-react';
+} from '@/components/icons';
 
 const NAV_GROUPS = [
   {
@@ -31,9 +35,10 @@ const NAV_GROUPS = [
     label: 'Marketing',
     items: [
       { to: '/admin/promotions',    icon: Ticket,      label: 'Promotions' },
-      { to: '/admin/suggestions',   icon: Sparkles,    label: 'Suggestions chef' },
+      { to: '/admin/suggestions',   icon: ChefHat,     label: 'Suggestions chef' },
       { to: '/admin/consultations', icon: Stethoscope, label: 'Consultations' },
       { to: '/admin/plans',         icon: Layers,      label: 'Plans abonnement' },
+      { to: '/admin/abonnements',   icon: Repeat,      label: 'Abonnements' },
     ],
   },
   {
@@ -57,8 +62,15 @@ const NAV_GROUPS = [
 ];
 
 export default function AdminLayout() {
+  useAdminTheme();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useRealtime('admin', ['order:created', 'subscription:created'], {
+    onSignal: (event, payload) => {
+      const numero = (payload as { numero?: string }).numero;
+      toast.info(event === 'order:created' ? `Nouvelle commande${numero ? ` ${numero}` : ''}` : "Nouvelle demande d'abonnement");
+    },
+  });
 
   return (
     <div className="min-h-screen bg-muted flex">
@@ -69,8 +81,9 @@ export default function AdminLayout() {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex items-center justify-between px-6 py-5 border-b border-primary-foreground/10 shrink-0">
-          <Link to="/admin" className="flex items-center gap-2">
-            <ChefHat className="w-6 h-6 text-primary" />
+          <Link to="/admin" className="flex items-center gap-3">
+            {/* Le logo a un fond blanc : on le garde dans une tuile blanche plutôt que de le détourer */}
+            <img src={logo} alt="" className="w-10 h-10 bg-white object-contain p-0.5 shrink-0" />
             <span className="font-display text-xl">La Délicieuse Diète</span>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden">

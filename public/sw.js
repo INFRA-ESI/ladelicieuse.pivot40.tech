@@ -4,7 +4,7 @@
 //   2. Installabilité PWA + cache minimal de l'app shell pour un chargement plus rapide
 //      et une tolérance basique au hors-ligne (nécessaire aux critères d'installation).
 
-const CACHE_VERSION = 'ld-pwa-v1';
+const CACHE_VERSION = 'ld-pwa-v2';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/favicon.png'];
 
 // ── Installation : met en cache l'app shell minimal ────────────────────────────
@@ -35,6 +35,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // laisse passer les requêtes tierces (API, images externes…)
   if (url.pathname.startsWith('/api/')) return; // jamais de cache sur les données dynamiques
+  if (url.pathname.startsWith('/socket.io/')) return; // temps réel : requêtes de longue durée, jamais interceptées ni mises en cache
 
   event.respondWith(
     fetch(request)

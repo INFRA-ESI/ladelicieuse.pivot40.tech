@@ -5,14 +5,16 @@ import {
   Stethoscope, MessageCircle, ChevronDown, X, ArrowRight,
   CheckCircle2, Star, Award, Users, Clock, CalendarDays,
   Loader2, ShoppingCart,
-} from 'lucide-react';
+} from '@/components/icons';
 import { useCart } from '@/context/CartContext';
 import { useUser, TOKEN_KEY } from '@/context/UserContext';
 import { ls } from '@/lib/storage';
+import { formatPrixFcfa as fmt } from '@/lib/fcfa';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
 import balancedMealImg from '@/assets/balanced-meal.jpg';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
+import { cachedJson } from '@/services/publicApiService';
 import { STORE_WHATSAPP } from '@/lib/config';
 import bilanSuiviImg from '@/assets/consultations/bilan-suivi.jpg';
 import pertePoids from '@/assets/consultations/perte-poids.jpg';
@@ -23,7 +25,10 @@ import expressImg from '@/assets/consultations/express.jpg';
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const CONSULTATIONS = [
+// `price` = tarif téléconsultation ; le présentiel est facturé 25 000 FCFA (valeur de repli hors API).
+const PRESENTIEL_PRICE = 25000;
+
+const CONSULTATIONS_BASE = [
   {
     id: 'consult-perte-poids',
     title: 'Perte de poids équilibrée',
@@ -80,6 +85,12 @@ const CONSULTATIONS = [
   },
 ];
 
+const CONSULTATIONS = CONSULTATIONS_BASE.map(c => ({ ...c, presentielPrice: PRESENTIEL_PRICE }));
+
+type BookingMode = 'virtuel' | 'presentiel';
+const priceFor = (c: { price: number; presentielPrice: number }, mode: string) =>
+  mode === 'presentiel' ? c.presentielPrice : c.price;
+
 const STATS = [
   { value: '500+', label: 'patients accompagnés', icon: Users },
   { value: '10 ans', label: "d'expérience clinique", icon: Award },
@@ -122,10 +133,6 @@ const FAQS = [
 const TIME_SLOTS = ['08h00', '09h00', '10h00', '11h00', '14h00', '15h00', '16h00', '17h00'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
-}
 
 // ─── FaqItem ──────────────────────────────────────────────────────────────────
 
@@ -185,19 +192,15 @@ export default function ConsultationsPage() {
   const [pageLoading, setPageLoading]     = useState(true);
 
   useEffect(() => {
-    const ac  = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 5000);
-    const sig = ac.signal;
-
-    const p1 = fetch('/api/consultations', { signal: sig })
-      .then(r => r.json())
+    const p1 = cachedJson('/api/consultations')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          setConsultations(json.data.map((c: { _id: string; titre: string; description: string; prix: number; duree: string; tag?: string; image?: string }) => ({
+          setConsultations(json.data.map((c: { _id: string; titre: string; description: string; prix: number; prixPresentiel?: number; duree: string; tag?: string; image?: string }) => ({
             id:          c._id,
             title:       c.titre,
             description: c.description,
             price:       c.prix,
+            presentielPrice: c.prixPresentiel ?? PRESENTIEL_PRICE,
             duration:    c.duree,
             tag:         c.tag || null,
             image:       c.image || balancedMealImg,
@@ -206,8 +209,7 @@ export default function ConsultationsPage() {
       })
       .catch(() => {});
 
-    const p2 = fetch('/api/faqs?page=consultations', { signal: sig })
-      .then(r => r.json())
+    const p2 = cachedJson('/api/faqs?page=consultations')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setFaqs(json.data.map((f: { question: string; reponse: string }) => ({ q: f.question, a: f.reponse })));
@@ -215,8 +217,7 @@ export default function ConsultationsPage() {
       })
       .catch(() => {});
 
-    const p3 = fetch('/api/testimonials?page=consultations', { signal: sig })
-      .then(r => r.json())
+    const p3 = cachedJson('/api/testimonials?page=consultations')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setTestimonials(json.data.map((t: { nom: string; texte: string; note: number }) => ({ name: t.nom, text: t.texte, rating: t.note })));
@@ -224,8 +225,7 @@ export default function ConsultationsPage() {
       })
       .catch(() => {});
 
-    const p4 = fetch('/api/settings/public', { signal: sig })
-      .then(r => r.json())
+    const p4 = cachedJson('/api/settings/public')
       .then(json => {
         if (!json.success || !json.data) return;
         const d = json.data;
@@ -247,8 +247,6 @@ export default function ConsultationsPage() {
       .catch(() => {});
 
     Promise.allSettled([p1, p2, p3, p4]).then(() => setPageLoading(false));
-
-    return () => { clearTimeout(tid); ac.abort(); };
   }, []);
 
   const [selectedConsult, setSelectedConsult] = useState<typeof CONSULTATIONS[0] | null>(null);
@@ -280,7 +278,7 @@ export default function ConsultationsPage() {
 
     setBookingStep('processing');
 
-    // Persist booking to DB (fire-and-forget, does not block UX)
+    // Enregistre la réservation en base (sans attendre, ne bloque pas l'interface)
     if (selectedConsult) {
       const token = user ? (ls.get(TOKEN_KEY) ?? '') : '';
       fetch('/api/consultation-bookings', {
@@ -293,7 +291,7 @@ export default function ConsultationsPage() {
           userTelephone: bookingForm.telephone.trim(),
           consultationId: selectedConsult.id.startsWith('consult-') ? undefined : selectedConsult.id,
           titre:         selectedConsult.title,
-          prix:          selectedConsult.price,
+          prix:          priceFor(selectedConsult, bookingForm.mode),
           date:          new Date(bookingForm.date).toISOString(),
           creneau:       bookingForm.time,
           mode:          bookingForm.mode,
@@ -307,8 +305,9 @@ export default function ConsultationsPage() {
       addItem({
         id: selectedConsult.id,
         type: 'consultation',
+        meta: { consultationId: selectedConsult.id, mode: bookingForm.mode as 'virtuel' | 'presentiel' },
         name: `${selectedConsult.title} — ${bookingForm.date} à ${bookingForm.time}`,
-        totalPrice: selectedConsult.price,
+        totalPrice: priceFor(selectedConsult, bookingForm.mode),
         totalCalories: 0,
         quantity: 1,
       });
@@ -340,26 +339,26 @@ export default function ConsultationsPage() {
           ) : (
             <div className="inline-flex items-center gap-2 bg-primary/20 backdrop-blur-sm border border-primary/30 text-primary px-4 py-2 rounded-full mb-6">
               <Stethoscope className="w-4 h-4" />
-              <span className="font-body text-sm uppercase tracking-wider">{doctor.nom} · {doctor.titre}</span>
+              <span className="font-body text-sm">{doctor.nom} · {doctor.titre}</span>
             </div>
           )}
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
             Nutrition<br />
-            <span className="italic">personnalisée</span>
+            <span>personnalisée</span>
           </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 italic max-w-xl mb-10">
+          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
             Spécialisé en sécurité alimentaire — des conseils sur mesure pour votre santé à Libreville.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <a
               href="#consultations"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
             >
               Prendre rendez-vous
             </a>
             <a
               href="#profil"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
             >
               En savoir plus
             </a>
@@ -417,14 +416,14 @@ export default function ConsultationsPage() {
                 className="absolute bottom-2 md:-bottom-4 right-2 md:-right-4 bg-primary text-primary-foreground rounded-2xl px-5 py-4 shadow-warm"
               >
                 <p className="font-display text-2xl leading-none">{doctor.experience}</p>
-                <p className="font-body text-xs uppercase tracking-wider opacity-75 mt-1">ans d'expérience</p>
+                <p className="font-body text-xs opacity-75 mt-1">ans d'expérience</p>
               </motion.div>
             </div>
 
             {/* Texte */}
             <div className="md:col-span-7 flex flex-col gap-6">
               <div>
-                <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block">Votre spécialiste</span>
+                <span className="font-body text-xs text-primary mb-3 block">Votre spécialiste</span>
                 <h2 className="font-display text-3xl md:text-5xl text-foreground leading-tight">
                   {doctor.nom}
                 </h2>
@@ -453,7 +452,7 @@ export default function ConsultationsPage() {
                 href={`https://wa.me/${STORE_WHATSAPP}?text=${encodeURIComponent(`Bonjour ${doctor.nom}, je souhaite prendre un rendez-vous pour une consultation nutritionnelle.`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl w-fit"
+                className="inline-flex items-center gap-2 font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl w-fit"
               >
                 <MessageCircle className="w-4 h-4" />
                 Contacter via WhatsApp
@@ -485,7 +484,7 @@ export default function ConsultationsPage() {
                     <Icon className="w-6 h-6 text-primary" />
                   </div>
                   <span className="font-display text-5xl md:text-6xl text-primary leading-none mb-3">{s.value}</span>
-                  <p className="font-body text-sm text-muted-foreground uppercase tracking-wider">{s.label}</p>
+                  <p className="font-body text-sm text-muted-foreground">{s.label}</p>
                 </motion.div>
               );
             })}
@@ -503,7 +502,7 @@ export default function ConsultationsPage() {
               initial={{ opacity: 0 }}
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
-              className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block"
+              className="font-body text-xs text-primary mb-3 block"
             >
               Déroulement
             </motion.span>
@@ -560,7 +559,7 @@ export default function ConsultationsPage() {
               initial={{ opacity: 0 }}
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
-              className="font-body text-xs uppercase tracking-[0.25em] text-primary"
+              className="font-body text-xs text-primary"
             >
               Nos prestations
             </motion.span>
@@ -610,7 +609,6 @@ export default function ConsultationsPage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
                 viewport={{ once: true }}
-                whileHover={{ y: -4, transition: { duration: 0.2 } }}
                 className="group bg-background border border-border rounded-2xl overflow-hidden flex flex-col shadow-soft hover:shadow-elevated transition-shadow duration-300"
               >
                 {/* Image */}
@@ -618,11 +616,11 @@ export default function ConsultationsPage() {
                   <img
                     src={c.image}
                     alt={c.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    className="w-full h-full object-cover"
                   />
                   {/* Tag */}
                   {c.tag && (
-                    <div className="absolute top-3 left-3 font-body text-[10px] uppercase tracking-[0.2em] bg-primary text-primary-foreground px-3 py-1.5 rounded-full">
+                    <div className="absolute top-3 left-3 font-body text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-full">
                       {c.tag}
                     </div>
                   )}
@@ -640,10 +638,17 @@ export default function ConsultationsPage() {
                     {c.description}
                   </p>
                   <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
-                    <span className="font-display text-xl text-primary font-semibold">{fmt(c.price)}</span>
+                    <div className="flex flex-col leading-tight">
+                      <span className="font-display text-lg text-primary font-semibold">
+                        {fmt(c.price)} <span className="font-body text-xs font-normal text-muted-foreground">en ligne</span>
+                      </span>
+                      <span className="font-body text-xs text-muted-foreground mt-0.5">
+                        {fmt(c.presentielPrice)} en présentiel
+                      </span>
+                    </div>
                     <button
                       onClick={() => openBooking(c)}
-                      className="flex items-center gap-2 font-body text-xs uppercase tracking-wider px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+                      className="flex items-center gap-2 font-body text-xs px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
                     >
                       <CalendarDays className="w-3.5 h-3.5" />
                       Réserver
@@ -667,7 +672,7 @@ export default function ConsultationsPage() {
               initial={{ opacity: 0 }}
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
-              className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block"
+              className="font-body text-xs text-primary mb-3 block"
             >
               Avis patients
             </motion.span>
@@ -714,7 +719,7 @@ export default function ConsultationsPage() {
                     <Star key={j} className="w-4 h-4 fill-primary text-primary" />
                   ))}
                 </div>
-                <p className="font-body text-sm text-muted-foreground leading-relaxed italic flex-1">
+                <p className="font-body text-sm text-muted-foreground leading-relaxed flex-1">
                   "{t.text}"
                 </p>
                 <p className="font-display text-base text-foreground">{t.name}</p>
@@ -736,7 +741,7 @@ export default function ConsultationsPage() {
             viewport={{ once: true }}
             className="text-center mb-8"
           >
-            <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block">
+            <span className="font-body text-xs text-primary mb-3 block">
               Votre expérience
             </span>
             <h2 className="font-display text-3xl text-foreground mb-2">
@@ -762,7 +767,7 @@ export default function ConsultationsPage() {
               initial={{ opacity: 0 }}
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
-              className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block"
+              className="font-body text-xs text-primary mb-3 block"
             >
               Questions fréquentes
             </motion.span>
@@ -805,10 +810,10 @@ export default function ConsultationsPage() {
             viewport={{ once: true }}
             className="flex flex-col items-center gap-4"
           >
-            <span className="font-body text-xs uppercase tracking-[0.25em] text-primary">Prenez soin de vous</span>
+            <span className="font-body text-xs text-primary">Prenez soin de vous</span>
             <h2 className="font-display text-4xl md:text-6xl text-primary-foreground leading-tight">
               Commencez votre<br />
-              <span className="text-primary italic">transformation</span>
+              <span className="text-primary">transformation</span>
             </h2>
             <p className="font-body text-lg text-primary-foreground/60 max-w-lg">
               Une consultation suffit pour poser les bases d'une alimentation saine. {doctor.nom || 'Dr. BATTY'} vous accompagne à chaque étape.
@@ -824,7 +829,7 @@ export default function ConsultationsPage() {
           >
             <a
               href="#consultations"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl inline-flex items-center gap-2"
+              className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl inline-flex items-center gap-2"
             >
               Réserver une consultation <ArrowRight className="w-4 h-4" />
             </a>
@@ -832,7 +837,7 @@ export default function ConsultationsPage() {
               href={`https://wa.me/${STORE_WHATSAPP}?text=${encodeURIComponent(`Bonjour ${doctor.nom || 'Dr. BATTY'}, je souhaite prendre un rendez-vous.`)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 transition-colors rounded-xl inline-flex items-center gap-2"
+              className="font-body text-sm px-8 py-4 border border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 transition-colors rounded-xl inline-flex items-center gap-2"
             >
               <MessageCircle className="w-4 h-4" />
               WhatsApp
@@ -844,7 +849,7 @@ export default function ConsultationsPage() {
             whileInView={{ opacity: 1 }}
             transition={{ delay: 0.25 }}
             viewport={{ once: true }}
-            className="font-body text-xs text-primary-foreground/30 uppercase tracking-wider"
+            className="font-body text-xs text-primary-foreground/30"
           >
             Consultations disponibles du lundi au samedi · Libreville, Gabon
           </motion.p>
@@ -869,7 +874,7 @@ export default function ConsultationsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="bg-background rounded-2xl shadow-elevated w-full max-w-md relative overflow-hidden"
             >
               {/* Close */}
@@ -885,11 +890,11 @@ export default function ConsultationsPage() {
               {/* Header */}
               {bookingStep !== 'success' && (
                 <div className="px-7 pt-7 pb-5 border-b border-border">
-                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary mb-1">Réservation</p>
+                  <p className="font-body text-xs text-primary mb-1">Réservation</p>
                   <div className="flex items-start justify-between gap-4 pr-8">
                     <h2 className="font-display text-2xl text-foreground leading-snug">{selectedConsult.title}</h2>
                     <div className="text-right shrink-0">
-                      <p className="font-display text-xl text-primary">{fmt(selectedConsult.price)}</p>
+                      <p className="font-display text-xl text-primary">{fmt(priceFor(selectedConsult, bookingForm.mode))}</p>
                       <div className="flex items-center gap-1 justify-end mt-0.5">
                         <Clock className="w-3 h-3 text-muted-foreground" />
                         <span className="font-body text-xs text-muted-foreground">{selectedConsult.duration}</span>
@@ -909,7 +914,7 @@ export default function ConsultationsPage() {
 
                   {/* Nom */}
                   <div>
-                    <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Nom complet</label>
+                    <label className="font-body text-xs text-muted-foreground block mb-1.5">Nom complet</label>
                     <input
                       type="text"
                       value={bookingForm.nom}
@@ -922,7 +927,7 @@ export default function ConsultationsPage() {
 
                   {/* Téléphone */}
                   <div>
-                    <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Téléphone</label>
+                    <label className="font-body text-xs text-muted-foreground block mb-1.5">Téléphone</label>
                     <input
                       type="tel"
                       value={bookingForm.telephone}
@@ -935,17 +940,18 @@ export default function ConsultationsPage() {
 
                   {/* Mode */}
                   <div>
-                    <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Mode</label>
+                    <label className="font-body text-xs text-muted-foreground block mb-1.5">Mode</label>
                     <div className="flex gap-2">
-                      {(['virtuel', 'presentiel'] as const).map(m => (
+                      {(['virtuel', 'presentiel'] as BookingMode[]).map(m => (
                         <button
                           key={m} type="button"
                           onClick={() => setBookingForm(f => ({ ...f, mode: m }))}
-                          className={`flex-1 font-body text-sm py-3 border rounded-xl transition-colors capitalize ${
+                          className={`flex-1 font-body text-sm py-3 border rounded-xl transition-colors ${
                             bookingForm.mode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-primary/50'
                           }`}
                         >
                           {m === 'virtuel' ? 'Téléconsultation' : 'Présentiel'}
+                          <span className="block text-xs opacity-80">{fmt(priceFor(selectedConsult, m))}</span>
                         </button>
                       ))}
                     </div>
@@ -954,7 +960,7 @@ export default function ConsultationsPage() {
                   {/* Date + Time */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Date souhaitée</label>
+                      <label className="font-body text-xs text-muted-foreground block mb-1.5">Date souhaitée</label>
                       <input
                         type="date"
                         value={bookingForm.date}
@@ -965,7 +971,7 @@ export default function ConsultationsPage() {
                       {formErrors.date && <p className="font-body text-xs text-red-500 mt-1">{formErrors.date}</p>}
                     </div>
                     <div>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Créneau</label>
+                      <label className="font-body text-xs text-muted-foreground block mb-1.5">Créneau</label>
                       <select
                         value={bookingForm.time}
                         onChange={e => setBookingForm(f => ({ ...f, time: e.target.value }))}
@@ -980,7 +986,7 @@ export default function ConsultationsPage() {
 
                   <button
                     type="submit"
-                    className="w-full font-body text-sm uppercase tracking-[0.15em] px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl flex items-center justify-center gap-2 mt-1"
+                    className="w-full font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl flex items-center justify-center gap-2 mt-1"
                   >
                     <ShoppingCart className="w-4 h-4" />
                     Ajouter au panier
@@ -1002,14 +1008,14 @@ export default function ConsultationsPage() {
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 20, delay: 0.1 }}
+                    transition={{ duration: 0.2, ease: 'easeOut', delay: 0.1 }}
                     className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center"
                   >
                     <CheckCircle2 className="w-8 h-8 text-primary" />
                   </motion.div>
 
                   <div>
-                    <h3 className="font-display text-3xl text-foreground mb-2">Ajouté au panier !</h3>
+                    <h3 className="font-display text-3xl text-foreground mb-2">Ajouté au panier</h3>
                     <p className="font-body text-sm text-muted-foreground">
                       Votre consultation <span className="text-foreground font-semibold">{selectedConsult.title}</span> est prête à être confirmée.
                     </p>
@@ -1017,18 +1023,18 @@ export default function ConsultationsPage() {
 
                   <div className="w-full bg-muted rounded-xl p-5 text-left flex flex-col gap-3">
                     <div className="flex justify-between">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Consultation</span>
+                      <span className="font-body text-xs text-muted-foreground">Consultation</span>
                       <span className="font-body text-sm text-foreground">{selectedConsult.title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Date souhaitée</span>
+                      <span className="font-body text-xs text-muted-foreground">Date souhaitée</span>
                       <span className="font-body text-sm text-foreground">
                         {new Date(bookingForm.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} à {bookingForm.time}
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-border pt-3">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Tarif</span>
-                      <span className="font-display text-base text-primary">{fmt(selectedConsult.price)}</span>
+                      <span className="font-body text-xs text-muted-foreground">Tarif</span>
+                      <span className="font-display text-base text-primary">{fmt(priceFor(selectedConsult, bookingForm.mode))}</span>
                     </div>
                   </div>
 
@@ -1039,14 +1045,14 @@ export default function ConsultationsPage() {
                   <div className="flex flex-col sm:flex-row gap-3 w-full">
                     <button
                       onClick={closeBooking}
-                      className="flex-1 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
+                      className="flex-1 font-body text-sm px-6 py-3 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
                     >
                       Continuer
                     </button>
                     <Link
                       to="/panier"
                       onClick={closeBooking}
-                      className="flex-1 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl text-center"
+                      className="flex-1 font-body text-sm px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl text-center"
                     >
                       Voir mon panier
                     </Link>

@@ -151,7 +151,8 @@ const MealSchema = new Schema<IMeal>(
 
 // ── Index ─────────────────────────────────────────────────────────────────────
 
-MealSchema.index({ slug: 1 });
+// `slug` a déjà son index (unique, sparse) déclaré sur le champ : le redéclarer ici en créait un second
+// de même nom, aux options différentes, que MongoDB refuse (« index with the same name »).
 MealSchema.index({ categorieId: 1 });
 MealSchema.index({ disponible: 1 });
 MealSchema.index({ popular: -1 });

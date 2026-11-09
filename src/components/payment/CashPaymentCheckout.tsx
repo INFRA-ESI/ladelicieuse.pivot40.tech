@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Loader2, CheckCircle, Banknote, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle, Banknote, AlertCircle } from '@/components/icons';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { formatFCFA } from '../../lib/utils';

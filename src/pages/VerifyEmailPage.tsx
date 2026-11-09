@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, XCircle, Loader2, Leaf } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Leaf } from '@/components/icons';
 import logo from '@/assets/logo.png';
 
 type State = 'loading' | 'success' | 'error';
@@ -62,17 +62,13 @@ export default function VerifyEmailPage() {
               fontSize: 26,
               fontWeight: 400,
               color: '#ffffff',
-              letterSpacing: 4,
-              textTransform: 'uppercase',
             }}>
               La Délicieuse Diète
             </p>
             <p style={{
               margin: 0,
               fontFamily: 'Lato, Arial, sans-serif',
-              fontSize: 10,
-              letterSpacing: 3,
-              textTransform: 'uppercase',
+              fontSize: 12,
               color: '#267340',
             }}>
               Activation de compte
@@ -127,13 +123,11 @@ export default function VerifyEmailPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  {/* Petit label uppercase — style email */}
+                  {/* Petit label — style email */}
                   <p style={{
                     margin: '0 0 4px',
                     fontFamily: 'Lato, Arial, sans-serif',
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: 'uppercase',
+                    fontSize: 12,
                     color: '#7a9488',
                   }}>
                     Compte activé
@@ -147,7 +141,7 @@ export default function VerifyEmailPage() {
                     fontWeight: 400,
                     color: '#1c4028',
                   }}>
-                    Bienvenue chez nous !
+                    Bienvenue chez nous
                   </p>
 
                   {/* Icône succès */}
@@ -188,9 +182,7 @@ export default function VerifyEmailPage() {
                     <p style={{
                       margin: '0 0 4px',
                       fontFamily: 'Lato, Arial, sans-serif',
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      textTransform: 'uppercase',
+                      fontSize: 12,
                       color: '#7a9488',
                     }}>
                       Votre statut
@@ -225,9 +217,7 @@ export default function VerifyEmailPage() {
                         padding: '16px 44px',
                         fontFamily: 'Lato, Arial, sans-serif',
                         fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: 2,
-                        textTransform: 'uppercase',
+                        fontWeight: 600,
                         borderRadius: 4,
                       }}
                     >
@@ -248,9 +238,7 @@ export default function VerifyEmailPage() {
                   <p style={{
                     margin: '0 0 4px',
                     fontFamily: 'Lato, Arial, sans-serif',
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: 'uppercase',
+                    fontSize: 12,
                     color: '#7a9488',
                   }}>
                     Échec de la vérification
@@ -290,10 +278,9 @@ export default function VerifyEmailPage() {
                     {message}
                   </p>
 
-                  {/* Bloc alerte — style email (bordure rouge côté) */}
+                  {/* Bloc alerte — style email */}
                   <div style={{
                     backgroundColor: '#f4f7f2',
-                    borderLeft: '3px solid #e6352a',
                     padding: '14px 18px',
                     marginBottom: 32,
                   }}>
@@ -320,9 +307,7 @@ export default function VerifyEmailPage() {
                         padding: '16px 44px',
                         fontFamily: 'Lato, Arial, sans-serif',
                         fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: 2,
-                        textTransform: 'uppercase',
+                        fontWeight: 600,
                         borderRadius: 4,
                       }}
                     >
@@ -351,8 +336,6 @@ export default function VerifyEmailPage() {
                   fontSize: 14,
                   fontWeight: 400,
                   color: '#267340',
-                  letterSpacing: 2,
-                  textTransform: 'uppercase',
                 }}>
                   La Délicieuse Diète
                 </p>
@@ -369,7 +352,7 @@ export default function VerifyEmailPage() {
               <p style={{
                 margin: 0,
                 fontFamily: 'Lato, Arial, sans-serif',
-                fontSize: 10,
+                fontSize: 12,
                 color: '#d0dccb',
               }}>
                 © {new Date().getFullYear()} La Délicieuse · Tous droits réservés

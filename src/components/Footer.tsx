@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Phone, Mail, MapPin, Clock, Instagram, Facebook } from 'lucide-react';
+import { cachedJson } from '@/services/publicApiService';
+import { Phone, Mail, MapPin, Clock, Instagram, Facebook } from '@/components/icons';
 import logo from '@/assets/logo.png';
 
 interface PublicSettings {
@@ -21,10 +22,6 @@ const FALLBACK: PublicSettings = {
   fermeture: '21:00',
 };
 
-function toWaMe(tel: string) {
-  return tel.replace(/[\s+]/g, '');
-}
-
 function toDisplay(time: string) {
   return time.replace(':', 'h');
 }
@@ -33,23 +30,16 @@ export default function Footer() {
   const [info, setInfo] = useState<PublicSettings>(FALLBACK);
 
   useEffect(() => {
-    const ac  = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 8000);
-
-    fetch('/api/settings/public', { signal: ac.signal })
-      .then(r => r.json())
+    cachedJson('/api/settings/public')
       .then(json => {
         if (json.success && json.data) {
           setInfo(prev => ({ ...prev, ...json.data }));
         }
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[Footer] /api/settings :', err); });
-
-    return () => { clearTimeout(tid); ac.abort(); };
   }, []);
 
   const telHref    = `tel:${info.tel.replace(/\s/g, '')}`;
-  const waHref     = `https://wa.me/${toWaMe(info.tel)}`;
   const emailHref  = info.email ? `mailto:${info.email}` : '#';
   const heures     = `${toDisplay(info.ouverture)} – ${toDisplay(info.fermeture)}`;
 

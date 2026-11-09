@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Loader2, ChevronRight, Phone, CreditCard, Smartphone, Banknote, ExternalLink } from 'lucide-react';
+import { Check, Loader2, ChevronRight, Phone, CreditCard, Smartphone, Banknote, ExternalLink } from '@/components/icons';
 import { formatFCFA, normalizeGabonPhoneNumber, validateGabonPhoneNumber } from '../../lib/utils';
 
 // ── Options paiement ──────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ const PAYMENT_OPTIONS = [
   },
 ] as const;
 
-type PaymentValue = typeof PAYMENT_OPTIONS[number]['value'];
+export type PaymentValue = typeof PAYMENT_OPTIONS[number]['value'];
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_MAX         = 72;
@@ -42,6 +42,18 @@ const POLL_MAX         = 72;
 interface PaymentMethodsProps {
   amount:     number;
   orderId?:   string;
+  /** Devis signé par le serveur : c'est lui, et non `amount`, qui fixe la somme réellement débitée. */
+  quote?:     string;
+  /** Modes proposés (tous par défaut). */
+  methods?:   readonly PaymentValue[];
+  /** Texte sous « Paiement en espèces », quand « à régler au retrait » ne convient pas (abonnement, par exemple). */
+  cashHint?:  string;
+  /**
+   * Page de la boutique où la banque ramène le client après un paiement par carte (ex. « /panier »).
+   * Elle y reçoit `?payment=success` et doit enregistrer la commande ; sans cela, la banque renvoie vers
+   * la page générique « Paiement confirmé », qui ne crée rien.
+   */
+  returnPath?: string;
   onSuccess?: (mode?: string) => void;
   onError?:   (error: string) => void;
 }
@@ -71,9 +83,14 @@ async function pollStatus(transactionId: string) {
 export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
   amount,
   orderId = `ORDER-${Date.now()}`,
+  quote,
+  methods,
+  cashHint,
+  returnPath,
   onSuccess,
   onError,
 }) => {
+  const options = methods ? PAYMENT_OPTIONS.filter(o => methods.includes(o.value)) : PAYMENT_OPTIONS;
   const [method, setMethod]   = useState<PaymentValue | ''>('');
   const [phone, setPhone]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -116,7 +133,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
           stopPolling(); setAwaitingPin(false);
           if (data.status === 'success') {
             const modeName = method === 'airtel' ? 'Airtel Money' : method === 'moov' ? 'Moov Money' : 'Carte bancaire';
-            setDoneMsg('Paiement confirmé !'); setDone(true); onSuccess?.(modeName);
+            setDoneMsg('Paiement confirmé'); setDone(true); onSuccess?.(modeName);
           } else {
             const msg = data.message || `Paiement ${data.status}. Réessayez.`;
             setError(msg); onError?.(msg);
@@ -137,7 +154,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
     setLoading(true); setError('');
     try {
       const data = await callSingPay({
-        amount, orderId, method: 'mobile_money', provider,
+        amount, orderId, quote, method: 'mobile_money', provider,
         phone: normalizeGabonPhoneNumber(phone),
         description: `Commande La Délicieuse Diète #${orderId}`,
       });
@@ -164,7 +181,10 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
         body: JSON.stringify({
           amount,
           orderId,
-          successUrl: `${window.location.origin}/paiement/succes?order=${orderId}&provider=card`,
+          quote,
+          successUrl: returnPath
+            ? `${window.location.origin}${returnPath}?payment=success`
+            : `${window.location.origin}/paiement/succes?order=${orderId}&provider=card`,
           cancelUrl:  `${window.location.origin}/paiement/echec?order=${orderId}&provider=card`,
         }),
       });
@@ -221,7 +241,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
         className="flex flex-col items-center gap-5 py-10 text-center"
       >
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-          <Phone className="w-7 h-7 text-primary animate-pulse" />
+          <Phone className="w-7 h-7 text-primary" />
         </div>
         <div>
           <p className="font-body text-base font-semibold text-foreground">Confirmez sur votre téléphone</p>
@@ -251,18 +271,18 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-2.5">
-      <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-0.5">
+      <p className="font-body text-xs text-muted-foreground mb-0.5">
         Moyen de paiement
       </p>
 
-      {PAYMENT_OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const Icon     = opt.icon;
         const selected = method === opt.value;
 
         return (
           <div
             key={opt.value}
-            className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+            className={`rounded-2xl border transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 overflow-hidden ${
               selected
                 ? 'border-primary ring-2 ring-primary ring-offset-1 bg-white'
                 : 'border-border bg-background hover:border-primary/50 cursor-pointer'
@@ -286,10 +306,10 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
                 }`}>
                   {opt.label}
                 </p>
-                <p className="font-body text-xs text-muted-foreground mt-0.5">{opt.sub}</p>
+                <p className="font-body text-xs text-muted-foreground mt-0.5">{opt.value === 'cash' && cashHint ? cashHint : opt.sub}</p>
               </div>
 
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                 selected ? 'border-primary bg-primary' : 'border-border bg-transparent'
               }`}>
                 {selected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
@@ -324,7 +344,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
                           type="button"
                           disabled={loading}
                           onClick={handleCard}
-                          className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.12em] px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {loading
                             ? <><Loader2 className="w-4 h-4 animate-spin" /> Chargement…</>
@@ -372,7 +392,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
                         <button
                           type="button"
                           onClick={handleCash}
-                          className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.12em] px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all"
+                          className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform]"
                         >
                           Confirmer la commande <ChevronRight className="w-4 h-4" />
                         </button>
@@ -400,7 +420,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+      <label className="font-body text-xs text-muted-foreground block mb-1.5">
         {label}
       </label>
       <input
@@ -425,7 +445,7 @@ function PayButton({
       type="button"
       disabled={loading || disabled}
       onClick={onClick}
-      className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.12em] px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-3.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {loading
         ? <><Loader2 className="w-4 h-4 animate-spin" /> Chargement…</>

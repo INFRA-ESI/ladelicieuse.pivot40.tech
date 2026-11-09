@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link, useSearchParams } from 'react-router-dom';
-import { XCircle, RotateCcw, Home, MessageCircle, AlertTriangle } from 'lucide-react';
+import { XCircle, RotateCcw, Home, MessageCircle, AlertTriangle } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { STORE_WHATSAPP } from '@/lib/config';
 
@@ -51,7 +51,7 @@ export default function PaymentFailurePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -62,10 +62,10 @@ export default function PaymentFailurePage() {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          transition={{ delay: 0.15, type: 'spring', stiffness: 200, damping: 12 }}
+          transition={{ delay: 0.15, duration: 0.2, ease: 'easeOut' }}
           className="flex justify-center mb-6"
         >
-          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
             <XCircle className="w-10 h-10 text-red-500" />
           </div>
         </motion.div>
@@ -75,7 +75,7 @@ export default function PaymentFailurePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Paiement échoué</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 mb-2">Paiement échoué</h1>
           <p className="text-gray-500 mb-6">{reasonLabel}</p>
 
           {/* Détails */}

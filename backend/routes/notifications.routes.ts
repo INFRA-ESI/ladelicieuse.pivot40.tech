@@ -3,7 +3,8 @@ import { sendWhatsAppNotification, sendWhatsAppBroadcast } from '../services/wha
 import { sendPushBroadcast } from '../services/push.service.js';
 import { sendBroadcastEmail } from '../services/email.service.js';
 import { verifyJWT } from './auth.routes.js';
-import { rateLimiter } from '../middleware/rateLimiter.js';
+import { rateLimiter, memoryRateLimiter } from '../middleware/rateLimiter.js';
+import { mapWithConcurrency } from '../utils/concurrency.js';
 import PushSubscription from '../models/PushSubscription.model.js';
 import User from '../models/User.model.js';
 import FideliteTransaction from '../models/FideliteTransaction.model.js';
@@ -93,18 +94,21 @@ router.post('/email/broadcast', verifyJWT, async (req: Request, res: Response): 
       return;
     }
 
-    let sent = 0;
-    let failed = 0;
-    for (const u of users) {
+    // 3 envois à la fois, comme le pool SMTP (maxConnections: 3), avec 200 ms entre deux envois d'un même
+    // fil : on va ~3 fois plus vite sans dépasser le débit que Gmail tolère.
+    const results = await mapWithConcurrency(users, 3, async u => {
       try {
         await sendBroadcastEmail(u.email, u.nom, subject.trim(), message.trim());
-        sent++;
+        return true;
       } catch (err: unknown) {
-        failed++;
         logger.error('[Broadcast] Email send error', { to: u.email, error: (err as Error).message });
+        return false;
+      } finally {
+        await new Promise(r => setTimeout(r, 200));
       }
-      await new Promise(r => setTimeout(r, 200));
-    }
+    });
+    const sent   = results.filter(r => r.status === 'fulfilled' && r.value).length;
+    const failed = users.length - sent;
 
     await logAction(
       `Broadcast Email — segment: ${segment ?? 'all'} — ${sent} envoyés / ${failed} échecs`,
@@ -132,7 +136,7 @@ router.get('/stats', verifyJWT, async (_req: Request, res: Response): Promise<vo
 });
 
 // ── POST /api/notifications/push/subscribe ────────────────────────────────────
-router.post('/push/subscribe', async (req: Request, res: Response): Promise<void> => {
+router.post('/push/subscribe', memoryRateLimiter(20, 900, 'push-subscribe'), async (req: Request, res: Response): Promise<void> => {
   const { subscription, userId, userAgent } = req.body as {
     subscription: { endpoint: string; keys: { p256dh: string; auth: string } };
     userId?: string;
@@ -158,7 +162,7 @@ router.post('/push/subscribe', async (req: Request, res: Response): Promise<void
 });
 
 // ── DELETE /api/notifications/push/unsubscribe ────────────────────────────────
-router.delete('/push/unsubscribe', async (req: Request, res: Response): Promise<void> => {
+router.delete('/push/unsubscribe', memoryRateLimiter(20, 900, 'push-subscribe'), async (req: Request, res: Response): Promise<void> => {
   const { endpoint } = req.body as { endpoint: string };
   try {
     await PushSubscription.deleteOne({ endpoint });

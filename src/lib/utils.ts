@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { formatPrixFcfa } from "./fcfa";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -8,9 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * Formate un montant en FCFA avec séparateurs de milliers
  */
-export const formatFCFA = (amount: number): string => {
-  return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
-};
+export const formatFCFA = (amount: number): string => formatPrixFcfa(amount);
 
 export const normalizeGabonPhoneNumber = (phoneNumber: string): string => {
   const cleaned = phoneNumber.replace(/\D/g, '');

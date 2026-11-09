@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Share, SquarePlus, X } from 'lucide-react';
+import { Share, SquarePlus, X } from '@/components/icons';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { PWA_IOS_CARD_DISMISSED_KEY } from '@/lib/pwa';
 
@@ -56,7 +56,7 @@ export default function IOSInstallCard() {
           <ol className="space-y-3 mb-4">
             {STEPS.map((step, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary font-body text-xs font-bold flex items-center justify-center mt-0.5">
+                <span className="shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary font-body text-xs font-semibold flex items-center justify-center mt-0.5">
                   {i + 1}
                 </span>
                 <span className="font-body text-sm text-foreground leading-relaxed flex items-center gap-1.5 flex-wrap">
@@ -70,7 +70,7 @@ export default function IOSInstallCard() {
           <button
             type="button"
             onClick={dismiss}
-            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-body text-sm font-semibold hover:bg-primary/90 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-body text-sm font-semibold hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             J'ai compris
           </button>

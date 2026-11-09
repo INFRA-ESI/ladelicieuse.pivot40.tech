@@ -1,7 +1,14 @@
 import { Router, Request, Response } from 'express';
 import Order from '../models/Order.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
+import { notifyOrderCreated, notifyOrderStatus, notifyOrderUpdated } from '../services/realtime.service.js';
 import { verifyJWT } from './auth.routes.js';
+import { memoryRateLimiter } from '../middleware/rateLimiter.js';
+import { optionalClient, ClientRequest } from '../middleware/clientAuth.js';
+import { validate } from '../middleware/validate.js';
+import { z } from 'zod';
+import Transaction from '../models/Transaction.model.js';
+import { buildQuote, signQuote, verifyQuote, QuoteError, type QuotePayload, type RawLine } from '../services/quote.service.js';
 import { attributerPoints } from '../services/fidelite.service.js';
 import { sendStatusNotification, sendFideliteNotification } from '../services/whatsapp.service.js';
 import { sendPushToUser } from '../services/push.service.js';
@@ -9,6 +16,28 @@ import { sendOrderConfirmationEmail } from '../services/email.service.js';
 import { logger } from '../config/logger.js';
 
 const router = Router();
+
+const LineRefSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.enum(['repas', 'jus']), id: z.string().length(24) }),
+  z.object({
+    type: z.literal('salade'),
+    composition: z.array(z.object({ id: z.string().length(24), quantity: z.number().int().min(1).max(20) })).min(1).max(60),
+  }),
+  z.object({ type: z.literal('consultation'), id: z.string().length(24), mode: z.enum(['virtuel', 'presentiel']) }),
+]);
+
+const QuoteRequestSchema = z.object({
+  orderId: z.string().min(1).max(128),
+  modeCommande: z.enum(['livraison', 'sur_place', 'emporter']),
+  fraisLivraison: z.number().min(0).max(10_000),
+  items: z.array(z.object({
+    nom: z.string().min(1).max(200),
+    qty: z.number().int().min(1).max(100),
+    prix: z.number().min(0),
+    customizations: z.array(z.string().max(120)).max(20).optional(),
+    ref: LineRefSchema,
+  })).min(1).max(60),
+});
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const parsePage    = (v: string) => Math.max(1, parseInt(v) || 1);
@@ -82,8 +111,49 @@ router.get('/:id', verifyJWT, async (req: Request, res: Response): Promise<void>
   }
 });
 
+// Chemin transitoire (ALLOW_UNQUOTED_ORDERS=true), à n'activer que le temps d'un déploiement :
+// prix du navigateur, vérifiés seulement dans leur forme. À désactiver ensuite, sans quoi les prix ne sont pas contrôlés.
+function legacyPricing(body: Record<string, unknown>): Omit<QuotePayload, 'orderId'> | string {
+  const rawItems = body.items as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(rawItems) || rawItems.length === 0) return 'La commande doit contenir au moins un article.';
+  for (const item of rawItems) {
+    if (!item.nom || typeof item.nom !== 'string') return 'Chaque article doit avoir un nom.';
+    if (!Number.isFinite(Number(item.qty)) || Number(item.qty) < 1) return 'Quantité invalide sur un article.';
+    if (!Number.isFinite(Number(item.prix)) || Number(item.prix) < 0) return 'Prix invalide sur un article.';
+  }
+  const items = rawItems.map(i => ({
+    nom:            String(i.nom).trim().slice(0, 200),
+    qty:            Number(i.qty),
+    prix:           Number(i.prix),
+    customizations: Array.isArray(i.customizations)
+      ? (i.customizations as unknown[]).map(c => String(c).trim().slice(0, 120)).slice(0, 20)
+      : [],
+  }));
+  const sousTotal      = items.reduce((s, i) => s + i.prix * i.qty, 0);
+  const fraisLivraison = Math.min(Math.max(0, Number(body.fraisLivraison) || 0), 10_000);
+  const modeCommande   = (['livraison', 'sur_place', 'emporter'] as const).find(m => m === body.modeCommande) ?? 'livraison';
+  return { items, sousTotal, fraisLivraison, total: sousTotal + fraisLivraison, modeCommande };
+}
+
+// ── POST /api/orders/quote — Devis : vérifie le panier contre le catalogue et le signe ─────────
+// Appelé avant le paiement. Refus (400) = le panier est périmé ; rien n'a encore été payé.
+router.post('/quote', memoryRateLimiter(60, 900, 'order-quote'), validate(QuoteRequestSchema), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { orderId, items, fraisLivraison, modeCommande } = req.body as z.infer<typeof QuoteRequestSchema>;
+    const payload = await buildQuote({ orderId, items: items as RawLine[], fraisLivraison, modeCommande });
+    res.json({
+      success: true,
+      data: { quote: signQuote(payload), total: payload.total, sousTotal: payload.sousTotal, fraisLivraison: payload.fraisLivraison },
+    });
+  } catch (error) {
+    if (error instanceof QuoteError) { res.status(400).json({ success: false, message: error.message }); return; }
+    logger.error('Erreur devis commande', { message: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ success: false, message: 'Impossible de vérifier votre panier pour le moment. Réessayez.' });
+  }
+});
+
 // ── POST /api/orders — Créer une commande ─────────────────────────────────────
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as Record<string, unknown>;
 
@@ -99,35 +169,33 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ success: false, message: 'Téléphone du client requis.' }); return;
     }
 
-    // Validate items
-    const rawItems = body.items as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      res.status(400).json({ success: false, message: 'La commande doit contenir au moins un article.' }); return;
-    }
-    for (const item of rawItems) {
-      const qty  = Number(item.qty);
-      const prix = Number(item.prix);
-      if (!item.nom || typeof item.nom !== 'string') {
-        res.status(400).json({ success: false, message: 'Chaque article doit avoir un nom.' }); return;
-      }
-      if (!Number.isFinite(qty) || qty < 1) {
-        res.status(400).json({ success: false, message: 'Quantité invalide sur un article.' }); return;
-      }
-      if (!Number.isFinite(prix) || prix < 0) {
-        res.status(400).json({ success: false, message: 'Prix invalide sur un article.' }); return;
-      }
+    // Prix : ceux du devis signé par le serveur (vérifiés contre le catalogue AVANT le paiement),
+    // jamais ceux du navigateur. Un devis donne une seule commande : un renvoi retourne la même.
+    // Un devis d'abonnement n'est pas un devis de commande : même signature, mais il ne sert qu'aux abonnements.
+    const signed = verifyQuote(body.quote);
+    const quote = signed?.kind === 'abonnement' ? null : signed;
+    if (quote) {
+      const already = await Order.findOne({ refPaiement: quote.orderId });
+      if (already) { res.status(200).json({ success: true, data: already }); return; }
+    } else if (process.env.ALLOW_UNQUOTED_ORDERS !== 'true') {
+      res.status(400).json({ success: false, message: 'Votre panier doit être revalidé. Actualisez la page puis recommencez.' });
+      return;
     }
 
-    // Server-side recalculation — never trust client-sent totals
-    const sousTotal      = rawItems.reduce((s, i) => s + Number(i.prix) * Number(i.qty), 0);
-    const fraisLivraison = Math.min(Math.max(0, Number(body.fraisLivraison) || 0), 10_000);
-    const total          = sousTotal + fraisLivraison;
+    const pricing = quote ?? legacyPricing(body);
+    if (typeof pricing === 'string') { res.status(400).json({ success: false, message: pricing }); return; }
+    const { items: lines, sousTotal, fraisLivraison, total, modeCommande } = pricing;
 
-    const MODES_COMMANDE  = ['livraison', 'sur_place', 'emporter'];
-    const MODES_PAIEMENT  = ['mobile_money', 'carte', 'especes'];
-    const STATUTS_VALIDES = ['en_attente', 'confirmee'];
+    const MODES_PAIEMENT = ['mobile_money', 'carte', 'especes'];
+    const modePaiement   = MODES_PAIEMENT.includes(String(body.modePaiement)) ? String(body.modePaiement) : 'especes';
 
-    // Validate datelivraison format (YYYY-MM-DD) if provided
+    // Un paiement en ligne réussi, du bon montant, existe-t-il pour ce devis ? (les espèces ne comptent pas :
+    // l'enregistrement « cash » est public). Simple indicateur pour l'équipe : il ne bloque jamais une commande.
+    const paiementVerifie = !!quote && modePaiement !== 'especes' && !!(await Transaction.exists({
+      orderId: quote.orderId, provider: { $in: ['airtel', 'moov', 'card'] }, status: 'success', amount: { $gte: total },
+    }));
+
+    // Valide le format de datelivraison (AAAA-MM-JJ) si fourni
     let datelivraison: string | undefined;
     if (body.datelivraison && typeof body.datelivraison === 'string') {
       if (/^\d{4}-\d{2}-\d{2}$/.test(body.datelivraison)) {
@@ -139,23 +207,22 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       client: {
         nom:       String(client.nom).trim().slice(0, 100),
         prenoms:   client.prenoms ? String(client.prenoms).trim().slice(0, 100) : '',
-        email:     String(client.email).toLowerCase().trim().slice(0, 200),
+        // Sans cette garde, un email absent était enregistré sous la forme de la chaîne « undefined ».
+        email:     client.email ? String(client.email).toLowerCase().trim().slice(0, 200) : '',
         telephone: String(client.telephone).trim().slice(0, 30),
         adresse:   client.adresse ? String(client.adresse).trim().slice(0, 300) : 'Sur place',
       },
-      userId: body.userId ?? undefined,
-      items: rawItems.map(i => ({
-        nom:            String(i.nom).trim().slice(0, 200),
-        qty:            Number(i.qty),
-        prix:           Number(i.prix),
-        customizations: Array.isArray(i.customizations)
-          ? (i.customizations as unknown[]).map(c => String(c).trim().slice(0, 120)).slice(0, 20)
-          : [],
-      })),
-      statut:           STATUTS_VALIDES.includes(String(body.statut)) ? String(body.statut) : 'en_attente',
+      // Le compte vient du jeton, jamais du corps : sinon n'importe qui pourrait rattacher une commande
+      // (et ses points de fidélité) au compte d'un autre. Sans jeton valide, c'est une commande d'invité.
+      userId: (req as ClientRequest).clientId ?? undefined,
+      items: lines,
+      // Une commande naît toujours « en attente » : seule l'équipe la confirme (avant : le client pouvait choisir).
+      statut:           'en_attente',
       priorite:         'normale',
-      modeCommande:     MODES_COMMANDE.includes(String(body.modeCommande)) ? String(body.modeCommande) : 'livraison',
-      modePaiement:     MODES_PAIEMENT.includes(String(body.modePaiement)) ? String(body.modePaiement) : 'especes',
+      modeCommande,
+      modePaiement,
+      refPaiement:      quote?.orderId,
+      paiementVerifie,
       sousTotal,
       fraisLivraison,
       total,
@@ -163,10 +230,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       creneauLivraison: body.creneauLivraison ? String(body.creneauLivraison).trim().slice(0, 10) : null,
       notes:            body.notes ? String(body.notes).trim().slice(0, 500) : '',
     });
-    await order.save();
+    try {
+      await order.save();
+    } catch (saveError) {
+      // Deux envois simultanés du même devis : l'index unique en laisse passer un, on renvoie la commande créée.
+      if (quote && (saveError as { code?: number }).code === 11000) {
+        const existing = await Order.findOne({ refPaiement: quote.orderId });
+        if (existing) { res.status(200).json({ success: true, data: existing }); return; }
+      }
+      throw saveError;
+    }
     await logAction(`Commande ${order.numero} créée`, 'commande', String(client.nom).trim());
 
-    // Confirmation email — fire-and-forget (n'impacte pas la réponse)
+    // Confirmation email — sans attendre la fin (n'impacte pas la réponse)
     if (client.email) {
       sendOrderConfirmationEmail(String(client.email), {
         numero:        order.numero,
@@ -183,6 +259,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }).catch(err => logger.warn('Email confirmation commande échoué', { message: (err as Error).message }));
     }
 
+    notifyOrderCreated(order);
     res.status(201).json({ success: true, data: order });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur création commande', error: (error as Error).message });
@@ -202,7 +279,7 @@ router.patch('/:id/status', verifyJWT, async (req: Request, res: Response): Prom
     await order.save();
     await logAction(`Commande ${order.numero} : ${prev} → ${statut}`, 'commande', par || 'Admin');
 
-    // ── Notifications asynchrones (fire-and-forget) ─────────────────────────
+    // ── Notifications asynchrones (sans attendre la fin) ─────────────────────────
     const phone  = order.client.telephone;
     const name   = order.client.nom;
     const userId = order.userId ? String(order.userId) : null;
@@ -250,6 +327,7 @@ router.patch('/:id/status', verifyJWT, async (req: Request, res: Response): Prom
         .catch(e => logger.error('[Fidelite] attribution failed', { error: (e as Error).message }));
     }
 
+    notifyOrderStatus(order);
     res.json({ success: true, data: order });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur mise à jour statut', error: (error as Error).message });
@@ -265,6 +343,7 @@ router.patch('/:id/priority', verifyJWT, async (req: Request, res: Response): Pr
       { new: true }
     );
     if (!order) { res.status(404).json({ success: false, message: 'Commande introuvable' }); return; }
+    notifyOrderUpdated(order);
     res.json({ success: true, data: order });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur', error: (error as Error).message });
@@ -284,6 +363,7 @@ router.post('/:id/anomalie', verifyJWT, async (req: Request, res: Response): Pro
     order.historique.push({ statut, date: new Date(), note: raison, par: 'Admin' });
     await order.save();
     await logAction(`Anomalie sur commande ${order.numero} : ${type}`, 'commande', 'Admin', { raison, montant });
+    notifyOrderStatus(order);
     res.json({ success: true, data: order });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur', error: (error as Error).message });

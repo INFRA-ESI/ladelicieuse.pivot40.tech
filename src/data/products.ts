@@ -1,8 +1,14 @@
+import juicesImage from '@/assets/juices.jpg';
+import balancedMealImage from '@/assets/balanced-meal.jpg';
+import { formatPrixFcfa } from '@/lib/fcfa';
+
 // Données des ingrédients pour la personnalisation de salades
 export interface Ingredient {
   id: string;
   name: string;
   category: IngredientCategory;
+  /** Nom de la catégorie tel que défini dans l'admin ; absent pour les données statiques. */
+  categoryLabel?: string;
   caloriesPer100g: number;
   portionGrams: number;
   caloriesPerPortion: number;
@@ -66,6 +72,8 @@ export interface CartItem {
   name: string;
   items?: { ingredient: Ingredient; quantity: number }[];
   product?: JuiceProduct | MealProduct;
+  /** Consultation : identifiant du type et mode choisi, nécessaires au serveur pour vérifier le tarif. */
+  meta?: { consultationId: string; mode: 'virtuel' | 'presentiel' };
   totalCalories: number;
   totalPrice: number;
   quantity: number;
@@ -116,14 +124,14 @@ export const JUICES: JuiceProduct[] = [
   // Jus détox
   { id: 'detox-vert',             name: 'Détox Verte',              description: 'Concombre, épinard, citron vert, gingembre, menthe',                       calories: 85,  price: 2500, benefits: ['Détoxification', 'Énergie naturelle', 'Anti-inflammatoire'],  type: 'detox', image: 'https://images.unsplash.com/photo-1610970881699-44a5587cabec?auto=format&fit=crop&w=600&q=80' },
   { id: 'detox-citron-gingembre', name: 'Élixir Citron-Gingembre',  description: 'Citron, gingembre frais, curcuma, miel',                                  calories: 95,  price: 2500, benefits: ['Boost immunitaire', 'Anti-inflammatoire', 'Digestion'],         type: 'detox', image: 'https://images.unsplash.com/photo-1587614382346-4ec70e388b28?auto=format&fit=crop&w=600&q=80' },
-  { id: 'detox-betterave',        name: 'Rouge Vitalité',           description: 'Betterave, carotte, pomme, gingembre',                                     calories: 120, price: 2500, benefits: ['Circulation sanguine', 'Énergie', 'Antioxydants'],               type: 'detox', image: 'https://images.unsplash.com/photo-1596568894591-36ef3185df2e?auto=format&fit=crop&w=600&q=80' },
+  { id: 'detox-betterave',        name: 'Rouge Vitalité',           description: 'Betterave, carotte, pomme, gingembre',                                     calories: 120, price: 2500, benefits: ['Circulation sanguine', 'Énergie', 'Antioxydants'],               type: 'detox', image: juicesImage },
   { id: 'detox-papaye',           name: 'Détox Papaye-Menthe',      description: 'Papaye fraîche, menthe, citron vert, gingembre',                           calories: 90,  price: 2500, benefits: ['Digestion', 'Détoxification', 'Vitamines A et C'],               type: 'detox', image: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=600&q=80' },
   { id: 'detox-celeri',           name: 'Vert Intense',             description: 'Céleri, concombre, pomme verte, citron, persil',                           calories: 70,  price: 2500, benefits: ['Alcalinisant', 'Drainage', 'Clarté mentale'],                    type: 'detox', image: 'https://images.unsplash.com/photo-1622597467836-f3285f2131b8?auto=format&fit=crop&w=600&q=80' },
   // Jus de fruits pressés
   { id: 'jus-pastèque',          name: 'Pastèque Fraîcheur',        description: 'Pastèque pressée, menthe fraîche, citron vert',                           calories: 75,  price: 2000, benefits: ['Hydratation', 'Vitamines A et C', 'Rafraîchissant'],            type: 'fruit', image: 'https://images.unsplash.com/photo-1563227812-0ea4c22e6cc8?auto=format&fit=crop&w=600&q=80' },
   { id: 'jus-orange',             name: 'Oranges Pressées du Jour', description: 'Oranges fraîches pressées minute',                                         calories: 110, price: 1500, benefits: ['Vitamine C', 'Énergie matinale', 'Immunité'],                    type: 'fruit', image: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=crop&w=600&q=80' },
-  { id: 'jus-ananas-coco',        name: 'Tropical Ananas-Coco',     description: 'Ananas frais, lait de coco, citron vert',                                  calories: 140, price: 2500, benefits: ['Digestion', 'Hydratation', 'Énergie tropicale'],                 type: 'fruit', image: 'https://images.unsplash.com/photo-1498511952655-6ef5b0066e1c?auto=format&fit=crop&w=600&q=80' },
-  { id: 'jus-mangue',             name: 'Mangue Pressée',           description: 'Mangue fraîche pressée, zeste de citron vert',                             calories: 130, price: 2000, benefits: ['Vitamine A', 'Énergie', 'Antioxydants'],                         type: 'fruit', image: 'https://images.unsplash.com/photo-1622825439750-b5b02f3c51d7?auto=format&fit=crop&w=600&q=80' },
+  { id: 'jus-ananas-coco',        name: 'Tropical Ananas-Coco',     description: 'Ananas frais, lait de coco, citron vert',                                  calories: 140, price: 2500, benefits: ['Digestion', 'Hydratation', 'Énergie tropicale'],                 type: 'fruit', image: juicesImage },
+  { id: 'jus-mangue',             name: 'Mangue Pressée',           description: 'Mangue fraîche pressée, zeste de citron vert',                             calories: 130, price: 2000, benefits: ['Vitamine A', 'Énergie', 'Antioxydants'],                         type: 'fruit', image: juicesImage },
   { id: 'jus-cocktail',           name: 'Cocktail de Fruits Maison',description: 'Orange, ananas, maracuja, mangue — pressés à la commande',                calories: 155, price: 2500, benefits: ['Multi-vitamines', 'Énergie', 'Immunité'],                       type: 'fruit', image: 'https://images.unsplash.com/photo-1546173159-315724a31696?auto=format&fit=crop&w=600&q=80' },
   { id: 'jus-goyave',             name: 'Goyave Fraîche',           description: 'Goyave pressée, citron, pincée de sel rose',                               calories: 100, price: 2000, benefits: ['Vitamine C', 'Fer', 'Fibres'],                                  type: 'fruit', image: 'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=600&q=80' },
 ];
@@ -134,7 +142,7 @@ export const MEALS: MealProduct[] = [
   { id: 'poisson-quinoa', category: 'equilibre', name: 'Poisson & Quinoa aux Herbes',   description: 'Filet de poisson grillé, quinoa aux herbes fraîches, salade verte',                composition: ['Quinoa', 'Poisson grillé', 'Herbes fraîches', 'Salade'],       caloriesPerPortion: 380, portions: 2, price: 5000, image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=600&q=80' },
   { id: 'bowl-veggie',    category: 'equilibre', name: 'Bowl Végétarien Complet',        description: 'Patate douce rôtie, pois chiches épicés, avocat, riz complet',                     composition: ['Riz complet', 'Patate douce', 'Pois chiches', 'Avocat'],       caloriesPerPortion: 450, portions: 2, price: 4000, image: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80' },
   // Repas chauds
-  { id: 'poulet-roti',    category: 'chaud',     name: 'Poulet Rôti & Légumes Chauds',  description: 'Poulet rôti aux épices douces, légumes racines caramélisés, sauce aux herbes',     composition: ['Poulet rôti', 'Carottes', 'Pommes de terre', 'Sauce herbes'],  caloriesPerPortion: 480, portions: 2, price: 5500, image: 'https://images.unsplash.com/photo-1598103442097-8b74394b95c3?auto=format&fit=crop&w=600&q=80' },
+  { id: 'poulet-roti',    category: 'chaud',     name: 'Poulet Rôti & Légumes Chauds',  description: 'Poulet rôti aux épices douces, légumes racines caramélisés, sauce aux herbes',     composition: ['Poulet rôti', 'Carottes', 'Pommes de terre', 'Sauce herbes'],  caloriesPerPortion: 480, portions: 2, price: 5500, image: balancedMealImage },
   { id: 'ragout-legumes', category: 'chaud',     name: 'Ragoût de Légumes du Marché',   description: 'Légumes frais du marché mijotés, sauce tomate maison, riz ou igname',              composition: ['Légumes de saison', 'Sauce tomate', 'Épices', 'Riz ou igname'],caloriesPerPortion: 350, portions: 2, price: 3500, image: 'https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=600&q=80' },
   // Omelettes
   { id: 'omelette-herbes',category: 'omelette',  name: 'Omelette aux Herbes & Légumes', description: 'Omelette moelleuse aux herbes fraîches, tomates, poivrons, oignons caramélisés',  composition: ['Œufs', 'Herbes fraîches', 'Tomates', 'Poivrons'],              caloriesPerPortion: 280, portions: 1, price: 2500, image: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?auto=format&fit=crop&w=600&q=80' },
@@ -155,5 +163,5 @@ export const CATEGORY_LABELS: Record<IngredientCategory, string> = {
 };
 
 export function formatPrice(priceFCFA: number): string {
-  return new Intl.NumberFormat('fr-FR').format(priceFCFA) + ' FCFA';
+  return formatPrixFcfa(priceFCFA);
 }

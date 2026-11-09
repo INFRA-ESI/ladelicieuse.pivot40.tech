@@ -2,10 +2,11 @@ import {
   Search, UserCheck, UserX, Eye, X, Mail, Phone, Star, Award,
   Trash2, AlertTriangle, ChevronLeft, ChevronRight, ShoppingBag, Loader2,
   MailCheck, MailX, ShieldAlert,
-} from 'lucide-react';
+} from '@/components/icons';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { adminGet, adminDelete } from '@/services/adminApiService';
+import { formatPrixFcfa as fmtPrice } from '@/lib/fcfa';
 
 interface RawUser {
   _id: string;
@@ -35,18 +36,17 @@ interface RawOrder {
 }
 
 const TIER_COLOR: Record<string, string> = {
-  bronze:  'bg-amber-100 text-amber-800',
-  argent:  'bg-gray-100 text-gray-700',
-  or:      'bg-yellow-100 text-yellow-800',
-  platine: 'bg-violet-100 text-violet-700',
+  bronze:  'text-amber-700',
+  argent:  'text-muted-foreground',
+  or:      'text-amber-700',
+  platine: 'text-muted-foreground',
 };
 
 const TIER_LABEL: Record<string, string> = { bronze: 'Bronze', argent: 'Argent', or: 'Or', platine: 'Platine' };
 
 const fmtDate  = (iso: string) => new Date(iso).toLocaleDateString('fr-FR');
-const fmtPrice = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 function Skeleton() {
   return (
@@ -71,7 +71,7 @@ export default function UsersPage() {
   const [verifFilter, setVerifFilter] = useState('tous');
   const [page, setPage]               = useState(1);
 
-  // Modal state
+  // État de la fenêtre
   const [selectedUser, setSelectedUser]       = useState<RawUser | null>(null);
   const [userOrders, setUserOrders]           = useState<RawOrder[]>([]);
   const [ordersLoading, setOrdersLoading]     = useState(false);
@@ -102,7 +102,7 @@ export default function UsersPage() {
     return () => clearTimeout(t);
   }, [loadUsers, search]);
 
-  // Reset page when filters change
+  // Retour à la page 1 quand les filtres changent
   useEffect(() => { setPage(1); }, [search, tierFilter, statutFilter, verifFilter]);
 
   const openUserDetail = async (u: RawUser) => {
@@ -266,7 +266,7 @@ export default function UsersPage() {
                         }
                         <p className="font-body text-xs text-muted-foreground truncate">{u.email}</p>
                         {!u.emailVerified && (
-                          <span className="shrink-0 text-xs font-body px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Non vérifié</span>
+                          <span className="text-amber-700 shrink-0 text-xs font-body px-1.5 py-0.5 rounded-full">Non vérifié</span>
                         )}
                       </div>
                     </td>
@@ -404,7 +404,7 @@ export default function UsersPage() {
                 <div className="flex items-center gap-2 text-sm font-body text-foreground">
                   <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
                   <span className="truncate">{selectedUser.email}</span>
-                  {selectedUser.emailVerified && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Vérifié</span>}
+                  {selectedUser.emailVerified && <span className="text-primary text-xs px-1.5 py-0.5 rounded-full">Vérifié</span>}
                 </div>
                 {selectedUser.telephone && (
                   <div className="flex items-center gap-2 text-sm font-body text-foreground">
@@ -448,9 +448,9 @@ export default function UsersPage() {
                   <p className="font-body text-xs text-muted-foreground uppercase tracking-wider mb-1">Abonnement</p>
                   <p className="font-body text-sm font-medium text-foreground">{selectedUser.subscription.planName}</p>
                   <p className="font-body text-xs text-muted-foreground">
-                    {selectedUser.subscription.billing === 'monthly' ? 'Mensuel' : 'Annuel'} · expire le {fmtDate(selectedUser.subscription.endDate)}
+                    {{ weekly: 'Hebdomadaire', monthly: 'Mensuel', annual: 'Annuel' }[selectedUser.subscription.billing]} · expire le {fmtDate(selectedUser.subscription.endDate)}
                   </p>
-                  <span className={`inline-block mt-1 text-xs font-body px-2 py-0.5 rounded-full ${selectedUser.subscription.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`inline-block mt-1 text-xs font-body px-2 py-0.5 rounded-full ${selectedUser.subscription.status === 'active' ? 'text-primary' : 'bg-muted text-muted-foreground'}`}>
                     {selectedUser.subscription.status}
                   </span>
                 </div>
@@ -477,8 +477,8 @@ export default function UsersPage() {
                             {o.numero ?? `#${o._id.slice(-8).toUpperCase()}`} · {fmtDate(o.createdAt)}
                           </span>
                           <span className={`font-body text-xs px-2 py-0.5 rounded-full ${
-                            o.statut === 'livree' ? 'bg-green-100 text-green-700' :
-                            o.statut === 'annulee' ? 'bg-red-100 text-red-700' :
+                            o.statut === 'livree' ? 'text-primary' :
+                            o.statut === 'annulee' ? 'text-destructive' :
                             'bg-muted text-muted-foreground'
                           }`}>{o.statut.replace('_', ' ')}</span>
                         </div>

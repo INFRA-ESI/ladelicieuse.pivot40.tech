@@ -15,6 +15,10 @@ function getTransporter(): nodemailer.Transporter {
       },
       pool:           true,
       maxConnections: 3,
+      // Sans ces bornes, un SMTP injoignable bloque la requête ~2 min (défaut nodemailer).
+      connectionTimeout: 10_000,
+      greetingTimeout:   10_000,
+      socketTimeout:     20_000,
     }) as nodemailer.Transporter;
   }
   return _transporter!;
@@ -54,14 +58,16 @@ const COMMANDE_LABELS: Record<string, string> = {
   emporter:  'À emporter',
 };
 
+// Même logique que le site (src/lib/orderStatus.ts) : ambre quand une action est attendue, puis un vert qui se
+// renforce jusqu'à « prête », gris discret une fois terminé, rouge pour une annulation.
 const STATUT_META: Record<string, { label: string; bg: string; color: string }> = {
-  en_attente:     { label: 'En attente',    bg: '#fef3c7', color: '#d97706' },
-  confirmee:      { label: 'Confirmée', bg: '#dcfce7', color: '#267340' },
-  en_preparation: { label: 'En préparation', bg: '#dbeafe', color: '#2563eb' },
-  prete:          { label: 'Prête',    bg: '#dcfce7', color: '#267340' },
-  livree:         { label: 'Livrée',   bg: '#dcfce7', color: '#267340' },
-  annulee:        { label: 'Annulée',  bg: '#fee2e2', color: '#e6352a' },
-  remboursee:     { label: 'Remboursée', bg: '#f1f5f9', color: '#7a9488' },
+  en_attente:     { label: 'En attente',    bg: '#fef3c7', color: '#b45309' },
+  confirmee:      { label: 'Confirmée',     bg: '#eef5f0', color: '#267340' },
+  en_preparation: { label: 'En préparation', bg: '#d5e6da', color: '#267340' },
+  prete:          { label: 'Prête',         bg: '#bcd8c5', color: '#1d5a32' },
+  livree:         { label: 'Livrée',        bg: '#f1f5f9', color: '#5b6f66' },
+  annulee:        { label: 'Annulée',       bg: '#fee2e2', color: '#c42a20' },
+  remboursee:     { label: 'Remboursée',    bg: '#f1f5f9', color: '#5b6f66' },
 };
 
 // ── Blocs réutilisables ───────────────────────────────────────────────────────
@@ -434,7 +440,7 @@ export async function sendWelcomeEmail(to: string, nom: string): Promise<void> {
   await getTransporter().sendMail({
     from:    `"La Délicieuse Diète" <${process.env.EMAIL_USER}>`,
     to,
-    subject: `Bienvenue chez La Délicieuse Diète, ${nom} !`,
+    subject: `Bienvenue chez La Délicieuse Diète, ${nom}`,
     html:    wrapper(rows, `Votre compte est activé. Découvrez nos salades, jus et repas équilibrés.`),
     text:    `Bienvenue ${nom} !\n\nVotre compte La Délicieuse Diète est activé.\n\nCommencez à commander : ${frontendUrl}/composer\n\nNos produits : Salades composées, Jus détox, Repas chauds du jour\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
   });
@@ -581,6 +587,48 @@ export async function sendPasswordResetEmail(to: string, nom: string, token: str
     subject: `Réinitialisation de votre mot de passe — La Délicieuse Diète`,
     html:    wrapper(rows, `Lien de réinitialisation de votre mot de passe La Délicieuse Diète. Valable 1 heure.`),
     text:    `Bonjour ${nom},\n\nVous avez demandé la réinitialisation de votre mot de passe.\n\nLien (valable 1h) : ${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
+  });
+}
+
+export async function sendAdminPasswordResetEmail(to: string, resetUrl: string, ip?: string): Promise<void> {
+  const rows = `
+    ${header('Acc&egrave;s administrateur')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                  font-weight:400;color:${C.textDark};">
+          Mot de passe administrateur oubli&eacute;
+        </p>
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;
+                  line-height:1.9;color:${C.textMid};">
+          Une r&eacute;initialisation du mot de passe du back-office a &eacute;t&eacute; demand&eacute;e.
+          Cliquez sur le bouton ci-dessous pour en d&eacute;finir un nouveau.
+        </p>
+
+        ${btn(resetUrl, 'Définir un nouveau mot de passe')}
+
+        ${divider()}
+
+        <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                  color:${C.textLight};line-height:1.7;">
+          Ce lien est valable <strong style="color:${C.textMid};">30 minutes</strong> et ne peut &ecirc;tre utilis&eacute; qu&apos;une fois.
+          Si le bouton ne s&apos;affiche pas correctement&nbsp;:
+        </p>
+        ${linkBox(resetUrl)}
+
+        ${divider()}
+
+        ${alertBox(`Si vous n&apos;&ecirc;tes pas &agrave; l&apos;origine de cette demande${ip ? ` (IP&nbsp;: ${ip})` : ''}, ignorez cet email. Votre mot de passe actuel reste inchang&eacute;.`, C.tomato)}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète · Admin" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: 'Réinitialisation du mot de passe administrateur',
+    html:    wrapper(rows, 'Lien de réinitialisation du mot de passe administrateur. Valable 30 minutes.'),
+    text:    `Une réinitialisation du mot de passe administrateur a été demandée.\n\nLien (valable 30 minutes, usage unique) : ${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
   });
 }
 
@@ -977,7 +1025,7 @@ export async function sendOrderConfirmationEmail(to: string, order: OrderEmailDa
     from:    `"La Délicieuse Diète" <${process.env.EMAIL_USER}>`,
     to,
     subject: `Commande ${order.numero} reçue — La Délicieuse Diète`,
-    html:    wrapper(rows, `Commande ${order.numero} bien reçue. Total : ${fmt(order.total)}. Nous préparons votre commande !`),
+    html:    wrapper(rows, `Commande ${order.numero} bien reçue. Total : ${fmt(order.total)}. Nous préparons votre commande !`),
     text:    `Merci ${order.nom} !\n\nCommande n° ${order.numero} reçue.\n\nArticles :\n${itemsText}\n\nSous-total : ${fmt(order.sousTotal)}\nFrais de livraison : ${order.fraisLivraison > 0 ? fmt(order.fraisLivraison) : 'Offert'}\nTotal : ${fmt(order.total)}\n\nLivraison : ${COMMANDE_LABELS[order.modeCommande] || order.modeCommande}\nPaiement : ${PAIEMENT_LABELS[order.modePaiement] || order.modePaiement}\n\nSuivez votre commande : ${frontendUrl}/mon-compte\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
   });
 }

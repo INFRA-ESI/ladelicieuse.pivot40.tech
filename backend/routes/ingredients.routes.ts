@@ -13,7 +13,8 @@ const parseLimit   = (v: string, max = 200) => Math.min(max, Math.max(1, parseIn
 router.get('/public', async (req: Request, res: Response): Promise<void> => {
   try {
     const { categorie } = req.query as Record<string, string>;
-    const filter: Record<string, unknown> = { actif: true, stock: { $gt: 0 } };
+    // $ne et non $in : les ingrédients créés avant l'ajout du champ `usage` n'en ont pas et restent des salades.
+    const filter: Record<string, unknown> = { actif: true, stock: { $gt: 0 }, usage: { $ne: 'repas' } };
     if (categorie) filter.categorie = { $regex: escapeRegex(categorie.slice(0, 50)), $options: 'i' };
     const ingredients = await Ingredient.find(filter).sort({ categorie: 1, nom: 1 }).lean({ virtuals: true });
     res.json({ success: true, data: ingredients });
@@ -42,11 +43,11 @@ router.get('/', verifyJWT, async (req: Request, res: Response): Promise<void> =>
     const limitNum = parseLimit(limit);
     const skip  = (pageNum - 1) * limitNum;
     const total = await Ingredient.countDocuments(filter);
-    let query   = Ingredient.find(filter).sort({ categorie: 1, nom: 1 }).skip(skip).limit(limitNum);
+    const query = Ingredient.find(filter).sort({ categorie: 1, nom: 1 }).skip(skip).limit(limitNum);
 
     let ingredients = await query.lean({ virtuals: true });
 
-    // Client-side filter on computed virtual if needed
+    // Filtre en mémoire sur le champ virtuel calculé, si nécessaire
     if (stockLevel && stockLevel !== 'tous') {
       ingredients = ingredients.filter(i => (i as Record<string, unknown>).stockLevel === stockLevel);
     }

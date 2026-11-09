@@ -13,6 +13,29 @@ interface ClientPayload {
   role:  string;
 }
 
+/**
+ * Identifie le client s'il envoie un jeton valide, sans jamais refuser la requête :
+ * sans jeton, ou avec un jeton invalide ou non client, la requête continue comme celle d'un invité.
+ * Sert aux routes ouvertes à tous mais qui rattachent l'action au compte quand il est connu (commande).
+ */
+export function optionalClient(req: ClientRequest, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  const secret = process.env.JWT_SECRET;
+  if (header?.startsWith('Bearer ') && secret) {
+    try {
+      const payload = jwt.verify(header.slice(7), secret) as ClientPayload;
+      if (payload.role === 'client') {
+        req.clientId    = payload.id;
+        req.clientEmail = payload.email;
+        req.clientRole  = payload.role;
+      }
+    } catch {
+      // Jeton expiré ou falsifié : traité comme un invité.
+    }
+  }
+  next();
+}
+
 export function requireClient(req: ClientRequest, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {

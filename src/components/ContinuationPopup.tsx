@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ShoppingCart, Plus, X } from 'lucide-react';
+import { ShoppingCart, Plus, X } from '@/components/icons';
 import { useCart } from '@/context/CartContext';
 import { formatPrice } from '@/data/products';
 
@@ -27,7 +27,7 @@ export default function ContinuationPopup() {
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 20 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
             className="fixed inset-x-4 bottom-6 z-50 md:inset-auto md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-md"
           >
             <div className="bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
@@ -38,7 +38,7 @@ export default function ContinuationPopup() {
                     <ShoppingCart className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-body text-xs text-muted-foreground uppercase tracking-wider mb-0.5">Ajouté au panier</p>
+                    <p className="font-body text-xs text-muted-foreground mb-0.5">Ajouté au panier</p>
                     <h3 className="font-display text-xl text-foreground">{lastAdded.name}</h3>
                   </div>
                 </div>
@@ -68,14 +68,14 @@ export default function ContinuationPopup() {
                 <Link
                   to="/panier"
                   onClick={dismissContinuation}
-                  className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-primary text-primary-foreground hover:opacity-90 transition-opacity rounded-lg"
+                  className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:opacity-90 transition-opacity rounded-lg"
                 >
                   <ShoppingCart className="w-4 h-4" />
                   Voir mon panier & payer
                 </Link>
                 <button
                   onClick={dismissContinuation}
-                  className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 border border-border text-foreground hover:bg-muted transition-colors rounded-lg"
+                  className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-3 border border-border text-foreground hover:bg-muted transition-colors rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
                   Continuer mes achats

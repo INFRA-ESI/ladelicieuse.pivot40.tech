@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Navigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import ProductSheetModal from '@/components/ProductSheetModal';
@@ -10,7 +11,7 @@ import { FlyingIngredient } from '@/components/FlyingIngredient';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiMeal } from '@/types/api.types';
 import Footer from '@/components/Footer';
-import { Check, FileText, Plus, Minus } from 'lucide-react';
+import { Check, FileText, Plus, Minus } from '@/components/icons';
 
 const SECTION_META: Record<string, { subtitle: string; img: string }> = {
   'Repas Équilibrés':  { subtitle: 'Préparés avec soin pour votre équilibre nutritionnel.',        img: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80' },
@@ -28,6 +29,13 @@ function sectionMeta(cat: string) {
     img:      'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80',
   };
 }
+
+// Segment d'URL → mot-clé retrouvé dans le nom de catégorie (le nom exact est libre côté admin).
+const CATEGORY_PAGES: Record<string, { keyword: string; title: string }> = {
+  chaud:    { keyword: 'chaud',    title: 'Repas Chauds' },
+  omelette: { keyword: 'omelette', title: 'Omelettes' },
+  soupe:    { keyword: 'soupe',    title: 'Soupes & Bouillons' },
+};
 
 function isJuice(cat: string) {
   const c = cat.toLowerCase();
@@ -56,6 +64,8 @@ export default function MealsPage() {
   const [meals, setMeals] = useState<MealProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const { categorie } = useParams<{ categorie: string }>();
+  const page = categorie ? CATEGORY_PAGES[categorie] : undefined;
 
   useEffect(() => {
     publicFetch<ApiMeal[]>('/api/meals?catalog=true').then(data => {
@@ -84,7 +94,7 @@ export default function MealsPage() {
         quantity:      1,
       });
       launchFly(e, { image: meal.image });
-      toast.success(`${meal.name} ajouté au panier !`);
+      toast.success(`${meal.name} ajouté au panier`);
     } else {
       updateQuantity(existing.id, existing.quantity + 1);
       launchFly(e, { image: meal.image });
@@ -102,12 +112,16 @@ export default function MealsPage() {
     }
   };
 
-  const sections = meals.reduce<{ key: string; meals: MealProduct[] }[]>((acc, meal) => {
-    const existing = acc.find(s => s.key === meal.category);
-    if (existing) { existing.meals.push(meal); }
-    else          { acc.push({ key: meal.category, meals: [meal] }); }
-    return acc;
-  }, []);
+  const sections = meals
+    .filter(meal => !page || meal.category.toLowerCase().includes(page.keyword))
+    .reduce<{ key: string; meals: MealProduct[] }[]>((acc, meal) => {
+      const existing = acc.find(s => s.key === meal.category);
+      if (existing) { existing.meals.push(meal); }
+      else          { acc.push({ key: meal.category, meals: [meal] }); }
+      return acc;
+    }, []);
+
+  if (categorie && !page) return <Navigate to="/repas" replace />;
 
   return (
     <div className="min-h-screen pt-24 pb-32 bg-muted/30">
@@ -119,9 +133,13 @@ export default function MealsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="absolute bottom-0 left-0 p-6 md:p-12 max-w-2xl"
         >
-          <h1 className="font-display text-4xl md:text-6xl text-foreground mb-3">À Commander</h1>
+          <h1 className="font-display text-4xl md:text-6xl text-foreground mb-3">
+            {page ? (sections[0]?.key ?? page.title) : 'À Commander'}
+          </h1>
           <p className="font-body text-foreground/80 text-lg">
-            Repas chauds, omelettes, soupes et plats équilibrés préparés avec soin.
+            {page
+              ? (sectionMeta(sections[0]?.key ?? page.title).subtitle)
+              : 'Repas chauds, omelettes, soupes et plats équilibrés préparés avec soin.'}
           </p>
         </motion.div>
       </section>
@@ -209,7 +227,7 @@ function MealCard({
       whileInView={{ opacity: 1, y: 0 }}
       transition={{ delay }}
       viewport={{ once: true }}
-      className={`group relative border-2 bg-background flex flex-col rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden
+      className={`group relative border-2 bg-background flex flex-col rounded-xl shadow-sm hover:shadow-lg transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 overflow-hidden
         ${selected
           ? 'border-green-500 ring-2 ring-green-500/30 shadow-green-100'
           : 'border-border hover:border-primary/40'}`}
@@ -220,7 +238,7 @@ function MealCard({
           <img
             src={meal.image}
             alt={meal.name}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="w-full h-full object-cover"
             loading="lazy"
           />
         ) : (
@@ -246,9 +264,11 @@ function MealCard({
         <div className="absolute bottom-3 left-3">
           <span className="font-display text-xl text-white drop-shadow-md">{formatPrice(meal.price)}</span>
         </div>
-        <div className="absolute bottom-3 right-3">
-          <span className="font-body text-xs text-white/80 bg-black/30 px-2 py-0.5 rounded-full">{meal.caloriesPerPortion} cal</span>
-        </div>
+        {meal.caloriesPerPortion > 0 && (
+          <div className="absolute bottom-3 right-3">
+            <span className="font-body text-xs text-white/80 bg-black/30 px-2 py-0.5 rounded-full">{meal.caloriesPerPortion} cal</span>
+          </div>
+        )}
       </div>
 
       {/* Contenu */}
@@ -259,7 +279,7 @@ function MealCard({
         {meal.composition.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-4">
             {meal.composition.slice(0, 3).map(c => (
-              <span key={c} className="font-body text-[10px] uppercase tracking-wider px-2 py-1 bg-primary/10 text-primary rounded">
+              <span key={c} className="font-body text-xs px-2 py-1 bg-primary/10 text-primary rounded">
                 {c}
               </span>
             ))}
@@ -271,7 +291,7 @@ function MealCard({
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onSheet(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl"
+            className="flex-1 flex items-center justify-center gap-1.5 font-body text-xs px-3 py-2.5 bg-muted text-muted-foreground hover:bg-muted/60 transition-colors rounded-xl"
           >
             <FileText className="w-3.5 h-3.5" />
             Fiche
@@ -280,7 +300,7 @@ function MealCard({
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onIncrement(e); }}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl font-body text-xs uppercase tracking-wider"
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl font-body text-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               Ajouter
@@ -295,7 +315,7 @@ function MealCard({
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
-              <span className="px-2 font-body text-sm font-bold text-primary min-w-[1.5rem] text-center">{qty}</span>
+              <span className="px-2 font-body text-sm font-semibold text-primary min-w-[1.5rem] text-center">{qty}</span>
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); onIncrement(e); }}

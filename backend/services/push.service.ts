@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import PushSubscription from '../models/PushSubscription.model.js';
+import { mapWithConcurrency } from '../utils/concurrency.js';
 
 export interface PushPayload {
   title: string;
@@ -21,19 +22,20 @@ async function dispatch(
   subs: Array<{ _id: unknown; endpoint: string; keys: { p256dh: string; auth: string } }>,
   payload: PushPayload,
 ): Promise<{ sent: number; failed: number }> {
-  let sent = 0, failed = 0;
   const data = JSON.stringify(payload);
-  for (const sub of subs) {
+  // Les abonnements pointent vers des services push différents : on les envoie par groupes de 10.
+  const results = await mapWithConcurrency(subs, 10, async sub => {
     try {
       await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, data);
-      sent++;
+      return true;
     } catch {
       // Subscription expirée ou invalide — on la supprime
       await PushSubscription.deleteOne({ _id: sub._id });
-      failed++;
+      return false;
     }
-  }
-  return { sent, failed };
+  });
+  const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
+  return { sent, failed: subs.length - sent };
 }
 
 // Envoyer une notification à un utilisateur spécifique (toutes ses sessions)

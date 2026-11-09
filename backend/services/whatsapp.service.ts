@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from '../config/logger.js';
 
 interface OrderItem {
   name: string;
@@ -55,7 +56,7 @@ async function sendViaMeta(to: string, body: string): Promise<boolean> {
     return true;
   } catch (err: unknown) {
     const axiosErr = err as { response?: { data?: unknown }; message?: string };
-    console.error('[WhatsApp] Meta error:', JSON.stringify(axiosErr?.response?.data ?? axiosErr?.message));
+    logger.error('[WhatsApp] Erreur Meta', { detail: JSON.stringify(axiosErr?.response?.data ?? axiosErr?.message) });
     return false;
   }
 }
@@ -263,7 +264,8 @@ export async function sendWhatsAppNotification(
   const storePhone = process.env.WHATSAPP_STORE_PHONE ?? '+24177000000';
   const message    = buildOrderMessage(payload);
   const url        = `https://wa.me/${storePhone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
-  console.info('[WhatsApp] Fallback link generated:', url);
+  // Pas d'URL dans les logs : elle contient le détail de la commande (données personnelles).
+  logger.info('[WhatsApp] Lien de repli généré');
   return { success: true, method: 'link', ...(process.env.NODE_ENV === 'development' ? { url } : {}) } as { success: boolean; method: string };
 }
 
@@ -277,7 +279,7 @@ export async function sendStatusNotification(
   if (!phone) return;
   const msg = buildStatusMessage(orderId, customerName, newStatus, note);
   const sent = await sendMessage(normalizePhone(phone), msg);
-  if (!sent) console.info(`[WhatsApp] Statut non envoyé pour ${orderId} -> ${newStatus}`);
+  if (!sent) logger.info(`[WhatsApp] Statut non envoyé pour ${orderId} -> ${newStatus}`);
 }
 
 export async function sendFideliteNotification(
@@ -291,7 +293,7 @@ export async function sendFideliteNotification(
   if (!phone) return;
   const msg = buildFideliteMessage(customerName, pointsGagnes, soldeTotal, tier, tierChange);
   const sent = await sendMessage(normalizePhone(phone), msg);
-  if (!sent) console.info(`[WhatsApp] Notification fidelite non envoyee pour ${customerName}`);
+  if (!sent) logger.info(`[WhatsApp] Notification fidélité non envoyée pour ${customerName}`);
 }
 
 export async function sendWhatsAppBroadcast(
@@ -319,7 +321,7 @@ export async function sendPaymentNotification(
   if (!phone) return;
   const msg = buildPaymentMessage(customerName, orderId, amount, provider);
   const sent = await sendMessage(normalizePhone(phone), msg);
-  if (!sent) console.info(`[WhatsApp] Notification paiement non envoyee — commande ${orderId}`);
+  if (!sent) logger.info(`[WhatsApp] Notification paiement non envoyée — commande ${orderId}`);
 }
 
 export { buildOrderMessage, buildStatusMessage, buildFideliteMessage, buildPaymentMessage };

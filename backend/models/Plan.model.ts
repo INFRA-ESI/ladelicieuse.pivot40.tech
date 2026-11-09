@@ -8,8 +8,10 @@ export interface IPlanFeature {
 export interface IPlan extends Document {
   nom: string;
   description: string;
+  /** Prix d'une semaine. */
+  prixHebdo: number;
+  /** Prix d'un mois (4 semaines) : c'est lui qui porte la réduction. */
   prixMensuel: number;
-  prixAnnuel: number;
   tag: string;
   icone: string;
   features: IPlanFeature[];
@@ -24,8 +26,8 @@ const PlanSchema = new Schema<IPlan>(
   {
     nom:         { type: String, required: true, trim: true },
     description: { type: String, required: true, trim: true },
+    prixHebdo:   { type: Number, required: true, min: 0 },
     prixMensuel: { type: Number, required: true, min: 0 },
-    prixAnnuel:  { type: Number, required: true, min: 0 },
     tag:         { type: String, default: '' },
     icone:       { type: String, default: 'leaf' },
     features:    [{ texte: { type: String, required: true }, inclus: { type: Boolean, default: true } }],

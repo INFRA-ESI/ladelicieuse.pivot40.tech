@@ -348,7 +348,7 @@ const CONSULTATIONS_DATA = [
 const PLANS_DATA = [
   {
     nom: 'Essentiel', description: 'Idéal pour adopter une routine saine, sans contrainte ni engagement.',
-    prixMensuel: 25000, prixAnnuel: 20000, tag: 'Pour commencer', icone: 'leaf', populaire: false, ordre: 1,
+    prixHebdo: 7800, prixMensuel: 25000, tag: 'Pour commencer', icone: 'leaf', populaire: false, ordre: 1,
     features: [
       { texte: '4 salades personnalisées / mois',  inclus: true  },
       { texte: '2 jus détox / mois',               inclus: true  },
@@ -361,7 +361,7 @@ const PLANS_DATA = [
   },
   {
     nom: 'Vitalité', description: 'Alimentation complète au quotidien — salades, jus, repas et suivi inclus.',
-    prixMensuel: 45000, prixAnnuel: 36000, tag: 'Le plus choisi', icone: 'zap', populaire: true, ordre: 2,
+    prixHebdo: 14100, prixMensuel: 45000, tag: 'Le plus choisi', icone: 'zap', populaire: true, ordre: 2,
     features: [
       { texte: '8 salades personnalisées / mois',   inclus: true  },
       { texte: '4 jus détox / mois',                inclus: true  },
@@ -374,7 +374,7 @@ const PLANS_DATA = [
   },
   {
     nom: 'Premium', description: 'Tout inclus, illimité — avec coaching nutritionnel et consultation mensuelle.',
-    prixMensuel: 75000, prixAnnuel: 60000, tag: "L'expérience totale", icone: 'crown', populaire: false, ordre: 3,
+    prixHebdo: 23400, prixMensuel: 75000, tag: "L'expérience totale", icone: 'crown', populaire: false, ordre: 3,
     features: [
       { texte: 'Salades personnalisées illimitées', inclus: true },
       { texte: 'Jus illimités',                    inclus: true },

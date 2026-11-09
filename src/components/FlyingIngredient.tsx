@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart } from '@/components/icons';
 
 export interface FlyingItem {
   id: string;
@@ -34,12 +34,12 @@ function findTarget(): { x: number; y: number } {
   if (summaryRect) {
     return { x: summaryRect.left + summaryRect.width / 2, y: summaryRect.top + 60 };
   }
-  // 3. Header cart icon (global pages: juices, meals, etc.)
+  // 3. Icône du panier dans l'en-tête (pages globales : jus, repas, etc.)
   const cartIconRect = visibleRect(document.getElementById('cart-header-icon'));
   if (cartIconRect) {
     return { x: cartIconRect.left + cartIconRect.width / 2, y: cartIconRect.top + cartIconRect.height / 2 };
   }
-  // Fallback: top-right corner
+  // Repli : coin supérieur droit
   return { x: window.innerWidth - 72, y: 28 };
 }
 

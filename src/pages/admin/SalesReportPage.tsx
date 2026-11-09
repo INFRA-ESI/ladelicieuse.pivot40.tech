@@ -6,12 +6,15 @@ import {
 import {
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight,
   Download, ChevronUp, ChevronDown, Minus, Loader2,
-} from 'lucide-react';
+} from '@/components/icons';
 import { adminGet } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Period = 'semaine' | 'mois';
+type SortKey = 'nom' | 'vendu' | 'ca' | 'marge' | 'margePct';
 
 interface RevenuePoint { _id: string; revenu: number; factures: number; }
 interface TopMeal { _id: string; total: number; revenu: number; }
@@ -47,7 +50,6 @@ interface ProductStat {
 }
 
 const PROD_COLORS = ['hsl(var(--primary))', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6'];
-const catColor = (_cat: string, i: number) => PROD_COLORS[i % PROD_COLORS.length];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -224,7 +226,7 @@ export default function SalesReportPage() {
       .finally(() => setDataLoading(false));
   }, []);
 
-  // Build allDays from real daily data, estimating cost from monthly bilan ratio
+  // Construit allDays depuis les données journalières réelles, en estimant le coût d'après le ratio du bilan mensuel
   const allDays = useMemo<DayData[]>(() => {
     return revenueApiData.map(r => {
       const date = new Date(r._id + 'T12:00:00');
@@ -235,7 +237,7 @@ export default function SalesReportPage() {
     });
   }, [revenueApiData, bilanData]);
 
-  // For mois view: use bilan rows for better cost accuracy
+  // Vue mensuelle : utilise les lignes du bilan pour un coût plus précis
   const periodBilanRows = useMemo(() => getPeriodBilan(period, offset, bilanData), [period, offset, bilanData]);
 
   const periodDays = useMemo(() => getPeriodDays(period, offset, allDays), [period, offset, allDays]);
@@ -276,6 +278,8 @@ export default function SalesReportPage() {
       return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
     });
   }, [productStats, sortKey, sortDir]);
+
+  const productsPagination = usePagination(sortedProducts, `${sortKey}|${sortDir}|${period}`);
 
   const onSort = (k: SortKey) => {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -348,7 +352,7 @@ export default function SalesReportPage() {
 
   // ── Export PDF (impression navigateur) ───────────────────────────────────────
   const printReport = () => {
-    const G1 = '#1c4028', G2 = '#267340', GL = '#f4f7f2';
+    const G2 = '#267340', GL = '#f4f7f2';
     const genDate = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 
     // Barre de progression CSS pour la marge
@@ -529,7 +533,7 @@ export default function SalesReportPage() {
       </div>
       <div class="marge-bar-wrap">
         <div class="marge-bar-bg"><div class="marge-bar-fill"></div></div>
-        <div class="marge-label">${totalMarge >= 55 ? '✓ Excellente rentabilité' : totalMarge >= 40 ? '→ Rentabilité correcte' : '⚠ Marge à améliorer'}</div>
+        <div class="marge-label">${totalMarge >= 55 ? 'Excellente rentabilité' : totalMarge >= 40 ? 'Rentabilité correcte' : 'Marge à améliorer'}</div>
       </div>
     </div>
   </div>
@@ -623,7 +627,7 @@ export default function SalesReportPage() {
   const margeColor = (pct: number) =>
     pct >= 55 ? 'text-green-600' : pct >= 40 ? 'text-yellow-600' : 'text-red-600';
   const margeBg = (pct: number) =>
-    pct >= 55 ? 'bg-green-100 text-green-700' : pct >= 40 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+    pct >= 55 ? 'text-primary' : pct >= 40 ? 'text-amber-700' : 'text-destructive';
 
   return (
     <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
@@ -813,7 +817,10 @@ export default function SalesReportPage() {
             <tbody>
               {sortedProducts.length === 0 ? (
                 <tr><td colSpan={7} className="p-8 text-center font-body text-sm text-muted-foreground">Aucune vente enregistrée en base</td></tr>
-              ) : sortedProducts.map((p, rank) => (
+              ) : productsPagination.pageItems.map((p, i) => {
+                // Le rang reste celui du classement complet, pas celui de la page.
+                const rank = (productsPagination.page - 1) * productsPagination.pageSize + i;
+                return (
                 <tr key={p.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
                   <td className="p-3">
                     <div className="flex items-center gap-2">
@@ -822,7 +829,7 @@ export default function SalesReportPage() {
                     </div>
                   </td>
                   <td className="p-3 hidden md:table-cell">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground" style={{ borderLeft: `3px solid ${catColor(p.categorie, rank)}` }}>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground">
                       {p.categorie}
                     </span>
                   </td>
@@ -836,7 +843,8 @@ export default function SalesReportPage() {
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="border-t border-border bg-muted/30">
@@ -860,6 +868,7 @@ export default function SalesReportPage() {
             </tfoot>
           </table>
         </div>
+        <TablePagination {...productsPagination} onPageChange={productsPagination.setPage} />
       </div>
 
       {/* Insights */}

@@ -1,17 +1,21 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Check, X, ArrowRight, Star,
   Leaf, Zap, Crown, ChevronDown,
-  CreditCard, Smartphone, Banknote, Loader2, CheckCircle2, CalendarDays,
-} from 'lucide-react';
+  Loader2, CheckCircle2, CalendarDays,
+} from '@/components/icons';
 import { toast } from 'sonner';
-import { useUser, type Subscription } from '@/context/UserContext';
+import { useUser, TOKEN_KEY } from '@/context/UserContext';
+import { ls, ss } from '@/lib/storage';
+import { formatPrixFcfa as fmt } from '@/lib/fcfa';
+import { PaymentMethods } from '@/components/payment';
 import Footer from '@/components/Footer';
 import prepImage from '@/assets/preparation.jpg';
 import prepCloseImage from '@/assets/preparation-close.jpg';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
+import { cachedJson } from '@/services/publicApiService';
 import juicesImage from '@/assets/juices.jpg';
 
 // ─── Tokens de layout uniformes ───────────────────────────────────────────────
@@ -20,12 +24,17 @@ import juicesImage from '@/assets/juices.jpg';
 // contenu large      : max-w-6xl mx-auto
 // contenu standard   : max-w-5xl mx-auto
 // contenu étroit     : max-w-2xl mx-auto
-// CTA bouton         : font-body text-sm uppercase tracking-[0.2em] px-8 py-4 rounded-xl
+// CTA bouton         : font-body text-sm px-8 py-4 rounded-xl
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
+// Le mensuel équivaut à 4 semaines : la réduction affichée se déduit des deux prix saisis dans l'admin.
+const WEEKS_PER_MONTH = 4;
+const discountPct = (p: { weeklyPrice: number; monthlyPrice: number }) =>
+  p.weeklyPrice > 0 ? Math.max(0, Math.round((1 - p.monthlyPrice / (p.weeklyPrice * WEEKS_PER_MONTH)) * 100)) : 0;
+
 const STATS = [
-  { value: '−20 %', label: 'sur la facturation annuelle' },
+  { value: '−20 %', label: "avec l'abonnement mensuel" },
   { value: '0 FCFA', label: 'de frais de livraison' },
   { value: '3', label: 'formules sans engagement' },
 ];
@@ -36,8 +45,8 @@ const PLANS = [
     num: '01',
     name: 'Essentiel',
     icon: Leaf,
+    weeklyPrice: 7800,
     monthlyPrice: 25000,
-    annualPrice: 20000,
     tag: 'Pour commencer',
     description: 'Idéal pour adopter une routine saine, sans contrainte ni engagement.',
     features: [
@@ -56,8 +65,8 @@ const PLANS = [
     num: '02',
     name: 'Vitalité',
     icon: Zap,
+    weeklyPrice: 14100,
     monthlyPrice: 45000,
-    annualPrice: 36000,
     tag: 'Le plus choisi',
     description: 'Alimentation complète au quotidien — salades, jus, repas et suivi inclus.',
     features: [
@@ -76,8 +85,8 @@ const PLANS = [
     num: '03',
     name: 'Premium',
     icon: Crown,
+    weeklyPrice: 23400,
     monthlyPrice: 75000,
-    annualPrice: 60000,
     tag: "L'expérience totale",
     description: 'Tout inclus, illimité — avec coaching nutritionnel et consultation mensuelle.',
     features: [
@@ -112,10 +121,6 @@ const FAQS = [
   { q: 'Les abonnés cumulent-ils des points fidélité ?', a: 'Oui, et en bonus. Vitalité : points doublés. Premium : points triplés par rapport à la commande à la carte.' },
   { q: 'Les ingrédients sont-ils frais chaque semaine ?', a: 'Toujours. Nos ingrédients sont sélectionnés chaque matin au marché de Libreville. Aucun produit surgelé.' },
 ];
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
-}
 
 // ─── FaqItem ──────────────────────────────────────────────────────────────────
 
@@ -159,42 +164,69 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type CheckoutStep = 'account' | 'payment' | 'processing' | 'success';
+// 'requested' : demande enregistrée mais paiement pas encore constaté (espèces sur place) : l'abonnement n'est pas actif.
+type CheckoutStep = 'account' | 'payment' | 'processing' | 'success' | 'requested';
 
-function nextRenewalDate(annual: boolean): string {
-  const d = new Date();
-  if (annual) d.setFullYear(d.getFullYear() + 1);
-  else d.setMonth(d.getMonth() + 1);
-  return d.toLocaleDateString('fr-FR');
+type Billing = 'weekly' | 'monthly';
+
+// 'annual' : abonnements souscrits avant la suppression de l'offre annuelle, encore actifs en base.
+const BILLING_LABELS: Record<Billing | 'annual', string> = {
+  weekly: 'Hebdomadaire',
+  monthly: 'Mensuelle (réduction incluse)',
+  annual: 'Annuelle',
+};
+
+// Ce qu'il faut pour terminer l'inscription d'un abonnement, y compris au retour de la page de la banque.
+interface SubscriptionContext {
+  planId: string;
+  planName: string;
+  quote: string;
+  nom: string;
+  email: string;
+  telephone: string;
 }
+
+// Sauvegardé en sessionStorage avant la redirection vers la banque : la page est rechargée à son retour.
+interface PendingSubscription extends SubscriptionContext {
+  orderId: string;
+  total: number;
+  billing: Billing;
+  weeklyPrice: number;
+  monthlyPrice: number;
+}
+
+const PENDING_KEY = 'pending_subscription';
+
+const PAYMENT_MODE: Record<string, string> = {
+  'Espèces sur place': 'especes',
+  'Carte bancaire': 'carte',
+};
 
 type IconKey = 'leaf' | 'zap' | 'crown' | 'star';
 const ICON_MAP: Record<IconKey, React.ElementType> = { leaf: Leaf, zap: Zap, crown: Crown, star: Crown };
 
 export default function AbonnementPage() {
   const { user, register, subscribe } = useUser();
-  const [annual, setAnnual] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [billing, setBilling] = useState<Billing>('monthly');
   const [plans, setPlans]               = useState<typeof PLANS[number][]>([...PLANS]);
   const [faqs, setFaqs]                 = useState(FAQS);
   const [testimonials, setTestimonials] = useState(TESTIMONIALS);
   const [steps, setSteps]               = useState(STEPS);
+  const bestDiscount = Math.max(0, ...plans.map(discountPct));
+  const stats = STATS.map((s, i) => (i === 0 && bestDiscount > 0 ? { ...s, value: `−${bestDiscount} %` } : s));
 
   useEffect(() => {
-    const ac  = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 8000);
-    const sig = ac.signal;
-
-    fetch('/api/plans', { signal: sig })
-      .then(r => r.json())
+    cachedJson('/api/plans')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const mapped = json.data.map((p: { _id: string; nom: string; description: string; prixMensuel: number; prixAnnuel: number; tag: string; icone: string; features: { texte: string; inclus: boolean }[]; populaire: boolean }, idx: number) => ({
+          const mapped = json.data.map((p: { _id: string; nom: string; description: string; prixHebdo: number; prixMensuel: number; tag: string; icone: string; features: { texte: string; inclus: boolean }[]; populaire: boolean }, idx: number) => ({
             id:           p._id,
             num:          String(idx + 1).padStart(2, '0'),
             name:         p.nom,
             icon:         ICON_MAP[(p.icone as IconKey)] ?? Leaf,
+            weeklyPrice:  p.prixHebdo,
             monthlyPrice: p.prixMensuel,
-            annualPrice:  p.prixAnnuel,
             tag:          p.tag,
             description:  p.description,
             features:     p.features.map(f => ({ text: f.texte, ok: f.inclus })),
@@ -205,8 +237,7 @@ export default function AbonnementPage() {
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[AbonnementPage] /api/plans :', err); });
 
-    fetch('/api/faqs?page=abonnement', { signal: sig })
-      .then(r => r.json())
+    cachedJson('/api/faqs?page=abonnement')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setFaqs(json.data.map((f: { question: string; reponse: string }) => ({ q: f.question, a: f.reponse })));
@@ -214,8 +245,7 @@ export default function AbonnementPage() {
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[AbonnementPage] /api/faqs :', err); });
 
-    fetch('/api/testimonials?page=abonnement', { signal: sig })
-      .then(r => r.json())
+    cachedJson('/api/testimonials?page=abonnement')
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setTestimonials(json.data.map((t: { nom: string; texte: string; note: number }) => ({ name: t.nom, text: t.texte, rating: t.note })));
@@ -223,27 +253,29 @@ export default function AbonnementPage() {
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[AbonnementPage] /api/testimonials :', err); });
 
-    fetch('/api/settings/public', { signal: sig })
-      .then(r => r.json())
+    cachedJson('/api/settings/public')
       .then(json => {
         if (json.success && Array.isArray(json.data?.etapesAbonnement) && json.data.etapesAbonnement.length > 0) {
           setSteps(json.data.etapesAbonnement.map((e: { num: string; titre: string; description: string }) => ({ num: e.num, title: e.titre, desc: e.description })));
         }
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[AbonnementPage] /api/settings :', err); });
-
-    return () => { clearTimeout(tid); ac.abort(); };
   }, []);
-  const [email, setEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
 
-  // Checkout modal state
+  // État de la fenêtre de paiement
   const [selectedPlan, setSelectedPlan] = useState<(typeof PLANS)[number] | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('account');
   const [form, setForm] = useState({ nom: '', telephone: '', email: '' });
   const [formErrors, setFormErrors] = useState({ nom: '', telephone: '', email: '' });
+  // Devis signé par le serveur : le prix vient du plan en base, et c'est lui qui fixe la somme débitée.
+  const [subQuote, setSubQuote]     = useState<{ orderId: string; token: string; total: number } | null>(null);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteTry, setQuoteTry]     = useState(0);
+  const finalizing = useRef(false);
 
   const openCheckout = (plan: (typeof PLANS)[number]) => {
+    setSubQuote(null);
+    setQuoteError('');
     setSelectedPlan(plan);
     setFormErrors({ nom: '', telephone: '', email: '' });
     if (user) {
@@ -258,7 +290,71 @@ export default function AbonnementPage() {
   const closeCheckout = () => {
     if (checkoutStep === 'processing') return;
     setSelectedPlan(null);
+    setSubQuote(null);
+    setQuoteError('');
   };
+
+  // Devis demandé en arrivant à l'étape de paiement. Il est conservé tant que la fenêtre reste ouverte :
+  // après un échec d'enregistrement, on ne génère pas un nouveau devis (un client déjà débité repaierait).
+  useEffect(() => {
+    if (checkoutStep !== 'payment' || !selectedPlan || subQuote) return;
+    let cancelled = false;
+    const orderId = `SUB-${Date.now()}`;
+    fetch('/api/subscriptions/quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, planId: selectedPlan.id, billing }),
+    })
+      .then(async res => {
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !json?.success) {
+          setQuoteError(json?.message ?? 'Impossible de vérifier cette formule pour le moment. Réessayez.');
+          return;
+        }
+        setSubQuote({ orderId, token: json.data.quote, total: json.data.total });
+      })
+      .catch(() => { if (!cancelled) setQuoteError('Connexion impossible. Vérifiez votre réseau puis réessayez.'); });
+    return () => { cancelled = true; };
+  }, [checkoutStep, selectedPlan, billing, subQuote, quoteTry]);
+
+  // Retour de la page de la banque (?payment=success) : on vérifie le paiement auprès de SingPay, puis on enregistre
+  // l'abonnement avec le devis conservé avant la redirection.
+  useEffect(() => {
+    if (searchParams.get('payment') !== 'success') { ss.remove(PENDING_KEY); return; }
+    const raw = ss.get(PENDING_KEY);
+    if (!raw) return;
+    const txnId = ss.get('singpay_txn');
+    ss.remove(PENDING_KEY);
+    ss.remove('singpay_txn');
+    ss.remove('singpay_order');
+    setSearchParams({}, { replace: true });
+
+    let p: PendingSubscription;
+    try { p = JSON.parse(raw) as PendingSubscription; } catch { return; }
+
+    setBilling(p.billing);
+    setForm({ nom: p.nom, telephone: p.telephone, email: p.email });
+    setSubQuote({ orderId: p.orderId, token: p.quote, total: p.total });
+    // Seuls le nom et les prix servent à l'affichage de la fenêtre ; le reste de la formule n'est pas nécessaire ici.
+    setSelectedPlan({
+      id: p.planId, num: '', name: p.planName, icon: Leaf, weeklyPrice: p.weeklyPrice, monthlyPrice: p.monthlyPrice,
+      tag: '', description: '', features: [], dark: false,
+    } as unknown as (typeof PLANS)[number]);
+    setCheckoutStep('processing');
+
+    const verify = txnId
+      ? fetch(`/api/payments/singpay/check/${txnId}`).then(r => r.json()).then(j => !!j.success && j.data?.status === 'success').catch(() => false)
+      : Promise.resolve(false);
+    void verify.then(confirmed => {
+      if (confirmed) {
+        void finalizeSubscription('Carte bancaire', p);
+      } else {
+        toast.error('Paiement par carte non confirmé. Si le montant a été débité, contactez-nous.');
+        setCheckoutStep('payment');
+      }
+    });
+  }, []); // une seule fois à l'arrivée sur la page
 
   const handleAccountSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -271,37 +367,67 @@ export default function AbonnementPage() {
     setCheckoutStep('payment');
   };
 
-  const handlePayment = async (method: 'card' | 'mobile_money' | 'cash') => {
-    if (!selectedPlan) return;
+  // Le devis et la saisie sont gardés en sessionStorage dès l'arrivée à l'étape de paiement : la carte bancaire
+  // quitte le site, et la page est rechargée à son retour.
+  useEffect(() => {
+    if (checkoutStep !== 'payment' || !selectedPlan || !subQuote) return;
+    const pending: PendingSubscription = {
+      planId: selectedPlan.id, planName: selectedPlan.name, quote: subQuote.token,
+      nom: form.nom, email: form.email, telephone: form.telephone,
+      orderId: subQuote.orderId, total: subQuote.total, billing,
+      weeklyPrice: selectedPlan.weeklyPrice, monthlyPrice: selectedPlan.monthlyPrice,
+    };
+    ss.set(PENDING_KEY, JSON.stringify(pending));
+  }, [checkoutStep, selectedPlan, subQuote, form, billing]);
+
+  // Appelée une fois le paiement réussi (mobile money, carte) ou la demande faite (espèces sur place).
+  // Le serveur décide du statut : « active » seulement si un vrai paiement en ligne est retrouvé.
+  const finalizeSubscription = async (mode?: string, ctx?: SubscriptionContext) => {
+    const c = ctx ?? (selectedPlan && subQuote
+      ? { planId: selectedPlan.id, planName: selectedPlan.name, quote: subQuote.token, nom: form.nom, email: form.email, telephone: form.telephone }
+      : null);
+    if (!c || finalizing.current) return;
+    finalizing.current = true;
     setCheckoutStep('processing');
-    const price = annual ? selectedPlan.annualPrice : selectedPlan.monthlyPrice;
-    const totalCharged = annual ? price * 12 : price;
+    const token = user ? ls.get(TOKEN_KEY) : null;
     try {
-      const endpoint = method === 'cash' ? '/api/payments/singpay/cash' : '/api/payments/singpay/init';
-      await fetch(endpoint, {
+      const res = await fetch('/api/subscriptions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
-          amount: totalCharged,
-          paymentMethod: method,
-          customer: { name: form.nom, phone: form.telephone, email: form.email },
-          description: `Abonnement ${selectedPlan.name} – ${annual ? 'Annuel' : 'Mensuel'}`,
+          quote: c.quote,
+          clientNom: c.nom.trim(),
+          clientEmail: c.email.trim().toLowerCase(),
+          clientTelephone: c.telephone.trim(),
+          modePaiement: (mode && PAYMENT_MODE[mode]) ?? 'mobile_money',
         }),
       });
-    } catch { /* API indisponible, on continue quand même */ }
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message ?? 'Enregistrement impossible.');
 
-    const sub: Subscription = {
-      planId: selectedPlan.id as 'essentiel' | 'vitalite' | 'premium',
-      planName: selectedPlan.name,
-      billing: annual ? 'annual' : 'monthly',
-      startDate: new Date().toLocaleDateString('fr-FR'),
-      nextRenewal: nextRenewalDate(annual),
-      status: 'active',
-      price,
-    };
-    subscribe(sub);
-    toast.success(`Abonnement ${selectedPlan.name} activé !`);
-    setCheckoutStep('success');
+      const data = json.data as { statut: string; price: number; billing: Billing; endDate: string };
+      if (data.statut === 'active') {
+        subscribe({
+          planId: c.planId as 'essentiel' | 'vitalite' | 'premium',
+          planName: c.planName,
+          billing: data.billing,
+          startDate: new Date().toLocaleDateString('fr-FR'),
+          nextRenewal: new Date(data.endDate).toLocaleDateString('fr-FR'),
+          status: 'active',
+          price: data.price,
+        });
+        toast.success(`Abonnement ${c.planName} activé`);
+        setCheckoutStep('success');
+      } else {
+        toast.success('Demande d\'abonnement enregistrée.');
+        setCheckoutStep('requested');
+      }
+    } catch (e) {
+      toast.error(`${e instanceof Error ? e.message : 'Enregistrement impossible.'} Si un paiement a été débité, contactez-nous.`);
+      setCheckoutStep('payment');
+    } finally {
+      finalizing.current = false;
+    }
   };
 
   return (
@@ -328,27 +454,27 @@ export default function AbonnementPage() {
           transition={{ duration: 1, delay: 0.3 }}
           className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
         >
-          <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">
+          <span className="font-body text-xs text-primary mb-4 block">
             Abonnements
           </span>
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
             Mangez bien,<br />
-            <span className="italic">chaque semaine</span>
+            <span>chaque semaine</span>
           </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 italic max-w-xl mb-10">
+          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
             Salades, jus et repas préparés avec soin, livrés à votre porte — sans engagement.
           </p>
           {/* Boutons alignés horizontalement, même hauteur */}
           <div className="flex flex-wrap items-center gap-4">
             <a
               href="#formules"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
             >
               Voir les formules
             </a>
             <Link
               to="/composer"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
             >
               Commander à la carte
             </Link>
@@ -362,7 +488,7 @@ export default function AbonnementPage() {
       <section className="py-20 md:py-28 px-6 md:px-12 bg-muted">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-3">
-            {STATS.map((s, i) => (
+            {stats.map((s, i) => (
               <motion.div
                 key={s.label}
                 initial={{ opacity: 0, y: 20 }}
@@ -378,7 +504,7 @@ export default function AbonnementPage() {
                 <span className="font-display text-5xl md:text-6xl text-primary leading-none mb-3">
                   {s.value}
                 </span>
-                <p className="font-body text-sm text-muted-foreground uppercase tracking-wider">
+                <p className="font-body text-sm text-muted-foreground">
                   {s.label}
                 </p>
               </motion.div>
@@ -414,7 +540,7 @@ export default function AbonnementPage() {
                 className="absolute bottom-2 md:-bottom-4 right-2 md:-right-4 bg-primary text-primary-foreground rounded-2xl px-5 py-4 shadow-warm"
               >
                 <p className="font-display text-2xl leading-none">+2 000</p>
-                <p className="font-body text-xs uppercase tracking-wider opacity-75 mt-1">
+                <p className="font-body text-xs opacity-75 mt-1">
                   abonnés satisfaits
                 </p>
               </motion.div>
@@ -423,12 +549,12 @@ export default function AbonnementPage() {
             {/* Texte */}
             <div className="md:col-span-7 flex flex-col gap-6">
               <div>
-                <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block">
+                <span className="font-body text-xs text-primary mb-3 block">
                   Pourquoi s'abonner
                 </span>
                 <h2 className="font-display text-3xl md:text-5xl text-foreground leading-tight">
                   Plus qu'une commande,<br />
-                  <span className="text-primary italic">un mode de vie</span>
+                  <span className="text-primary">un mode de vie</span>
                 </h2>
               </div>
               <p className="font-body text-base md:text-lg text-muted-foreground leading-relaxed">
@@ -488,44 +614,50 @@ export default function AbonnementPage() {
               Résiliable à tout moment · Pas de frais cachés
             </motion.p>
 
-            {/* Toggle mensuel / annuel */}
+            {/* Sélecteur hebdomadaire / mensuel — la réduction porte sur le mensuel */}
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15 }}
               viewport={{ once: true }}
+              role="group"
+              aria-label="Fréquence de facturation"
               className="inline-flex items-center gap-4 bg-background border border-border rounded-full px-6 py-3 shadow-soft"
             >
               <button
-                onClick={() => setAnnual(false)}
-                className={`font-body text-sm transition-colors ${!annual ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}
+                onClick={() => setBilling('weekly')}
+                aria-pressed={billing === 'weekly'}
+                className={`font-body text-sm transition-colors ${billing === 'weekly' ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}
               >
-                Mensuel
+                Hebdomadaire
               </button>
 
               {/* Switch */}
               <button
-                onClick={() => setAnnual(a => !a)}
-                aria-label="Basculer facturation annuelle"
-                className={`relative w-11 h-6 rounded-full transition-colors duration-300 shrink-0 ${annual ? 'bg-primary' : 'bg-border'}`}
+                onClick={() => setBilling(b => (b === 'weekly' ? 'monthly' : 'weekly'))}
+                aria-label="Basculer entre facturation hebdomadaire et mensuelle"
+                className={`relative w-11 h-6 rounded-full transition-colors duration-300 shrink-0 ${billing === 'monthly' ? 'bg-primary' : 'bg-border'}`}
               >
                 <motion.span
-                  animate={{ x: annual ? 22 : 2 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  animate={{ x: billing === 'monthly' ? 22 : 2 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
                   className="absolute top-1 w-4 h-4 rounded-full bg-white shadow block"
                 />
               </button>
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setAnnual(true)}
-                  className={`font-body text-sm transition-colors ${annual ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}
+                  onClick={() => setBilling('monthly')}
+                  aria-pressed={billing === 'monthly'}
+                  className={`font-body text-sm transition-colors ${billing === 'monthly' ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}
                 >
-                  Annuel
+                  Mensuel
                 </button>
-                <span className="font-body text-[10px] uppercase tracking-wider bg-primary text-primary-foreground px-2.5 py-1 rounded-full">
-                  −20 %
-                </span>
+                {bestDiscount > 0 && (
+                  <span className="font-body text-xs bg-primary text-primary-foreground px-2.5 py-1 rounded-full">
+                    −{bestDiscount} %
+                  </span>
+                )}
               </div>
             </motion.div>
           </div>
@@ -534,7 +666,7 @@ export default function AbonnementPage() {
           <div className="grid md:grid-cols-3 gap-6 md:gap-8 items-stretch">
             {plans.map((plan, i) => {
               const Icon = plan.icon;
-              const price = annual ? plan.annualPrice : plan.monthlyPrice;
+              const price = billing === 'weekly' ? plan.weeklyPrice : plan.monthlyPrice;
               const isActive = user?.subscription?.planId === plan.id && user?.subscription?.status === 'active';
 
               return (
@@ -544,7 +676,6 @@ export default function AbonnementPage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.12 }}
-                  whileHover={{ y: -6, transition: { duration: 0.22 } }}
                   className={`
                     flex flex-col rounded-2xl overflow-hidden
                     ${plan.dark
@@ -562,7 +693,7 @@ export default function AbonnementPage() {
                     {/* Tag + numéro décoratif */}
                     <div className="flex items-center justify-between">
                       <span className={`
-                        font-body text-[10px] uppercase tracking-[0.2em] px-3 py-1.5 rounded-full
+                        font-body text-xs px-3 py-1.5 rounded-full
                         ${plan.dark ? 'bg-white/10 text-white/70' : 'bg-primary/10 text-primary'}
                       `}>
                         {plan.tag}
@@ -591,7 +722,7 @@ export default function AbonnementPage() {
                     <div className={`pb-6 border-b ${plan.dark ? 'border-white/10' : 'border-border'}`}>
                       <AnimatePresence mode="wait">
                         <motion.div
-                          key={`${plan.id}-${annual}`}
+                          key={`${plan.id}-${billing}`}
                           initial={{ opacity: 0, y: -6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
@@ -602,13 +733,13 @@ export default function AbonnementPage() {
                             {fmt(price)}
                           </span>
                           <span className={`font-body text-sm ${plan.dark ? 'text-white/50' : 'text-muted-foreground'}`}>
-                            / mois
+                            {billing === 'weekly' ? '/ semaine' : '/ mois'}
                           </span>
                         </motion.div>
                       </AnimatePresence>
-                      {annual && (
+                      {billing === 'monthly' && discountPct(plan) > 0 && (
                         <p className={`font-body text-xs mt-1.5 ${plan.dark ? 'text-white/40' : 'text-muted-foreground/60'}`}>
-                          Facturé {fmt(price * 12)} / an
+                          −{discountPct(plan)} % par rapport à 4 semaines ({fmt(plan.weeklyPrice * WEEKS_PER_MONTH)})
                         </p>
                       )}
                     </div>
@@ -645,7 +776,7 @@ export default function AbonnementPage() {
                       onClick={isActive ? undefined : () => openCheckout(plan)}
                       disabled={isActive}
                       className={`
-                        w-full font-body text-sm uppercase tracking-[0.15em] px-8 py-4 rounded-xl
+                        w-full font-body text-sm px-8 py-4 rounded-xl
                         transition-colors flex items-center justify-center gap-2
                         ${isActive
                           ? plan.dark
@@ -707,7 +838,7 @@ export default function AbonnementPage() {
           <div className="flex justify-center mt-14">
             <a
               href="#formules"
-              className="inline-flex items-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
+              className="inline-flex items-center gap-2 font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
             >
               Voir les formules <ArrowRight className="w-4 h-4" />
             </a>
@@ -747,13 +878,13 @@ export default function AbonnementPage() {
                 <img
                   src={prepImage}
                   alt="Homme noir préparant des légumes frais"
-                  className="absolute inset-0 w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-700"
+                  className="absolute inset-0 w-full h-full object-cover object-top"
                   loading="lazy"
                   decoding="async"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
                 <div className="absolute bottom-0 left-0 p-6 md:p-10">
-                  <span className="font-body text-xs uppercase tracking-[0.2em] text-secondary mb-2 block">
+                  <span className="font-body text-xs text-secondary mb-2 block">
                     Inclus dans toutes les formules
                   </span>
                   <h3 className="font-display text-3xl md:text-4xl text-primary-foreground">
@@ -780,11 +911,11 @@ export default function AbonnementPage() {
                   <img
                     src={juicesImage}
                     alt="Jus détox et fruits"
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
                   <div className="absolute bottom-0 left-0 p-6">
-                    <span className="font-body text-xs uppercase tracking-[0.2em] text-secondary mb-2 block">
+                    <span className="font-body text-xs text-secondary mb-2 block">
                       Inclus dès l'Essentiel
                     </span>
                     <h3 className="font-display text-2xl md:text-3xl text-primary-foreground">
@@ -808,13 +939,13 @@ export default function AbonnementPage() {
                   <img
                     src={prepCloseImage}
                     alt="Mains coupant des légumes verts frais"
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    className="absolute inset-0 w-full h-full object-cover"
                     loading="lazy"
                     decoding="async"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
                   <div className="absolute bottom-0 left-0 p-6">
-                    <span className="font-body text-xs uppercase tracking-[0.2em] text-secondary mb-2 block">
+                    <span className="font-body text-xs text-secondary mb-2 block">
                       Formule Premium
                     </span>
                     <h3 className="font-display text-2xl md:text-3xl text-primary-foreground">
@@ -862,7 +993,7 @@ export default function AbonnementPage() {
                   ))}
                 </div>
                 {/* Quote — flex-1 pour équilibrer la hauteur des cards */}
-                <p className="font-body text-sm text-muted-foreground leading-relaxed italic flex-1">
+                <p className="font-body text-sm text-muted-foreground leading-relaxed flex-1">
                   « {t.text} »
                 </p>
                 {/* Auteur toujours en bas */}
@@ -884,7 +1015,7 @@ export default function AbonnementPage() {
             viewport={{ once: true }}
             className="text-center mb-8"
           >
-            <span className="font-body text-xs uppercase tracking-[0.25em] text-primary mb-3 block">
+            <span className="font-body text-xs text-primary mb-3 block">
               Votre expérience
             </span>
             <h2 className="font-display text-3xl text-foreground mb-2">
@@ -922,7 +1053,7 @@ export default function AbonnementPage() {
       </section>
 
       {/* ══════════════════════════════════════════════════════════
-          9. CTA FINAL — dark, formulaire + 2 boutons uniformes
+          9. CTA FINAL — dark, 2 boutons
       ══════════════════════════════════════════════════════════ */}
       <section className="py-24 md:py-32 px-6 md:px-12 bg-foreground">
         <motion.div
@@ -932,71 +1063,26 @@ export default function AbonnementPage() {
           className="max-w-2xl mx-auto flex flex-col items-center text-center gap-8"
         >
           <div className="flex flex-col gap-4">
-            <h2 className="font-display text-4xl md:text-6xl text-primary-foreground italic">
-              « Soyez parmi les premiers »
+            <h2 className="font-display text-4xl md:text-6xl text-primary-foreground">
+              Choisissez votre formule
             </h2>
             <p className="font-body text-primary-foreground/60 text-lg leading-relaxed">
-              Les abonnements ouvrent très prochainement. Laissez votre email
-              pour être notifié en avant-première avec une offre de lancement exclusive.
+              Résiliable à tout moment, sans frais cachés. Payez par carte bancaire, Airtel Money, Moov Money ou en espèces.
             </p>
           </div>
 
-          {/* Formulaire email */}
-          <div className="w-full max-w-md">
-            <AnimatePresence mode="wait">
-              {!submitted ? (
-                <motion.form
-                  key="form"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onSubmit={e => { e.preventDefault(); if (email.trim()) setSubmitted(true); }}
-                  className="flex flex-col sm:flex-row gap-3 w-full"
-                >
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="votre@email.com"
-                    required
-                    className="flex-1 min-w-0 bg-white/10 border border-white/20 text-white placeholder:text-white/40 rounded-xl px-5 py-4 font-body text-sm focus:outline-none focus:border-primary transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    className="shrink-0 font-body text-sm uppercase tracking-[0.15em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
-                  >
-                    Me notifier
-                  </button>
-                </motion.form>
-              ) : (
-                <motion.div
-                  key="ok"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex items-center justify-center gap-3 w-full bg-primary/20 border border-primary/30 rounded-xl px-6 py-4"
-                >
-                  <Check className="w-5 h-5 text-primary shrink-0" />
-                  <p className="font-body text-sm text-white/80">
-                    Parfait ! Vous serez notifié dès le lancement.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Boutons secondaires — même hauteur, même padding */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full">
+            <a
+              href="#formules"
+              className="flex items-center justify-center gap-2 font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl w-full sm:w-auto"
+            >
+              Voir les formules <ArrowRight className="w-4 h-4 shrink-0" />
+            </a>
             <Link
               to="/composer"
-              className="flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl w-full sm:w-auto"
+              className="flex items-center justify-center gap-2 font-body text-sm px-8 py-4 border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors rounded-xl w-full sm:w-auto"
             >
-              Commander à la carte <ArrowRight className="w-4 h-4 shrink-0" />
-            </Link>
-            <Link
-              to="/dieteticien"
-              className="flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors rounded-xl w-full sm:w-auto"
-            >
-              Voir les consultations
+              Commander à la carte
             </Link>
           </div>
         </motion.div>
@@ -1020,7 +1106,7 @@ export default function AbonnementPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="bg-background rounded-2xl shadow-elevated w-full max-w-md relative overflow-hidden"
             >
               {/* Close button */}
@@ -1036,21 +1122,16 @@ export default function AbonnementPage() {
               {/* Plan summary header */}
               {checkoutStep !== 'success' && (
                 <div className={`px-7 pt-7 pb-5 border-b border-border ${checkoutStep === 'processing' ? 'pt-7' : ''}`}>
-                  <p className="font-body text-xs uppercase tracking-[0.2em] text-primary mb-1">
+                  <p className="font-body text-xs text-primary mb-1">
                     Formule sélectionnée
                   </p>
                   <div className="flex items-center justify-between">
                     <h2 className="font-display text-2xl text-foreground">{selectedPlan.name}</h2>
                     <div className="text-right">
                       <p className="font-display text-xl text-primary">
-                        {fmt(annual ? selectedPlan.annualPrice : selectedPlan.monthlyPrice)}
-                        <span className="font-body text-sm text-muted-foreground"> / mois</span>
+                        {fmt(billing === 'weekly' ? selectedPlan.weeklyPrice : selectedPlan.monthlyPrice)}
+                        <span className="font-body text-sm text-muted-foreground"> {billing === 'weekly' ? '/ semaine' : '/ mois'}</span>
                       </p>
-                      {annual && (
-                        <p className="font-body text-xs text-muted-foreground">
-                          {fmt((annual ? selectedPlan.annualPrice : selectedPlan.monthlyPrice) * 12)} / an
-                        </p>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1067,7 +1148,7 @@ export default function AbonnementPage() {
                   </div>
                   {(['nom', 'telephone', 'email'] as const).map(field => (
                     <div key={field}>
-                      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+                      <label className="font-body text-xs text-muted-foreground block mb-1.5">
                         {field === 'nom' ? 'Nom complet' : field === 'telephone' ? 'Téléphone' : 'Email'}
                       </label>
                       <input
@@ -1085,7 +1166,7 @@ export default function AbonnementPage() {
                   ))}
                   <button
                     type="submit"
-                    className="w-full font-body text-sm uppercase tracking-[0.15em] px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl mt-1 flex items-center justify-center gap-2"
+                    className="w-full font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl mt-1 flex items-center justify-center gap-2"
                   >
                     Continuer <ArrowRight className="w-4 h-4" />
                   </button>
@@ -1101,28 +1182,33 @@ export default function AbonnementPage() {
                       Bonjour {form.nom.split(' ')[0]}, choisissez comment régler votre abonnement.
                     </p>
                   </div>
-                  <div className="flex flex-col gap-3">
-                    {[
-                      { method: 'card' as const, icon: CreditCard, label: 'Carte bancaire', sub: 'Visa, Mastercard' },
-                      { method: 'mobile_money' as const, icon: Smartphone, label: 'Mobile Money', sub: 'Airtel, Moov' },
-                      { method: 'cash' as const, icon: Banknote, label: 'Paiement sur place', sub: 'En boutique à Libreville' },
-                    ].map(({ method, icon: Icon, label, sub }) => (
+                  {quoteError ? (
+                    <div className="flex flex-col items-start gap-3">
+                      <p className="font-body text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-4 w-full">{quoteError}</p>
                       <button
-                        key={method}
-                        onClick={() => handlePayment(method)}
-                        className="flex items-center gap-4 p-4 border border-border rounded-xl hover:border-primary hover:bg-primary/5 transition-colors text-left group"
+                        onClick={() => { setQuoteError(''); setQuoteTry(n => n + 1); }}
+                        className="font-body text-xs px-5 py-2.5 border border-border rounded-xl hover:bg-muted transition-colors"
                       >
-                        <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
-                          <Icon className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-body text-sm font-semibold text-foreground">{label}</p>
-                          <p className="font-body text-xs text-muted-foreground">{sub}</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground ml-auto group-hover:text-primary transition-colors" />
+                        Réessayer
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  ) : !subQuote ? (
+                    <div className="flex items-center gap-3 py-6 justify-center text-muted-foreground">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="font-body text-sm">Vérification de votre formule…</span>
+                    </div>
+                  ) : (
+                    <PaymentMethods
+                      amount={subQuote.total}
+                      orderId={subQuote.orderId}
+                      quote={subQuote.token}
+                      methods={['card', 'airtel', 'moov', 'cash']}
+                      cashHint="Réglez en boutique à Libreville : l'abonnement est activé à la réception du paiement"
+                      returnPath="/abonnement"
+                      onSuccess={mode => finalizeSubscription(mode)}
+                      onError={err => toast.error(err)}
+                    />
+                  )}
                 </div>
               )}
 
@@ -1137,20 +1223,42 @@ export default function AbonnementPage() {
                 </div>
               )}
 
+              {/* ── Step: Demande enregistrée (paiement sur place) : abonnement pas encore actif ── */}
+              {checkoutStep === 'requested' && selectedPlan && (
+                <div className="px-7 py-8 flex flex-col items-center gap-6 text-center">
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <CalendarDays className="w-8 h-8 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-3xl text-foreground mb-2">Demande enregistrée</h3>
+                    <p className="font-body text-sm text-muted-foreground">
+                      Votre abonnement <span className="text-foreground font-semibold">{selectedPlan.name}</span> sera activé dès la confirmation de votre
+                      paiement par notre équipe. Elle vous contactera au <span className="text-foreground font-semibold">{form.telephone}</span>.
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeCheckout}
+                    className="w-full font-body text-sm px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              )}
+
               {/* ── Step: Success ── */}
               {checkoutStep === 'success' && user?.subscription && (
                 <div className="px-7 py-8 flex flex-col items-center gap-6 text-center">
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 20, delay: 0.1 }}
+                    transition={{ duration: 0.2, ease: 'easeOut', delay: 0.1 }}
                     className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center"
                   >
                     <CheckCircle2 className="w-8 h-8 text-primary" />
                   </motion.div>
 
                   <div>
-                    <h3 className="font-display text-3xl text-foreground mb-2">Abonnement activé !</h3>
+                    <h3 className="font-display text-3xl text-foreground mb-2">Abonnement activé</h3>
                     <p className="font-body text-sm text-muted-foreground">
                       Bienvenue dans la formule <span className="text-foreground font-semibold">{user.subscription.planName}</span>.
                     </p>
@@ -1158,21 +1266,21 @@ export default function AbonnementPage() {
 
                   <div className="w-full bg-muted rounded-xl p-5 text-left flex flex-col gap-3">
                     <div className="flex justify-between items-center">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Formule</span>
+                      <span className="font-body text-xs text-muted-foreground">Formule</span>
                       <span className="font-display text-base text-foreground">{user.subscription.planName}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Facturation</span>
-                      <span className="font-body text-sm text-foreground capitalize">{user.subscription.billing === 'annual' ? 'Annuelle (−20 %)' : 'Mensuelle'}</span>
+                      <span className="font-body text-xs text-muted-foreground">Facturation</span>
+                      <span className="font-body text-sm text-foreground capitalize">{BILLING_LABELS[user.subscription.billing]}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Montant / mois</span>
+                      <span className="font-body text-xs text-muted-foreground">Montant / mois</span>
                       <span className="font-display text-base text-primary">{fmt(user.subscription.price)}</span>
                     </div>
                     <div className="border-t border-border pt-3 flex justify-between items-center">
                       <div className="flex items-center gap-1.5">
                         <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="font-body text-xs text-muted-foreground uppercase tracking-wider">Prochain renouvellement</span>
+                        <span className="font-body text-xs text-muted-foreground">Prochain renouvellement</span>
                       </div>
                       <span className="font-body text-sm text-foreground">{user.subscription.nextRenewal}</span>
                     </div>
@@ -1181,14 +1289,14 @@ export default function AbonnementPage() {
                   <div className="flex flex-col sm:flex-row gap-3 w-full">
                     <button
                       onClick={closeCheckout}
-                      className="flex-1 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
+                      className="flex-1 font-body text-sm px-6 py-3 border border-border text-muted-foreground hover:text-foreground transition-colors rounded-xl"
                     >
                       Fermer
                     </button>
                     <Link
                       to="/mon-compte"
                       onClick={closeCheckout}
-                      className="flex-1 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl text-center"
+                      className="flex-1 font-body text-sm px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl text-center"
                     >
                       Voir mon compte
                     </Link>

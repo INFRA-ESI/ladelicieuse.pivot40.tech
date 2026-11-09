@@ -77,6 +77,31 @@ export const requestOTP = async (credentials: LoginRequest): Promise<OTPResponse
   }
 };
 
+async function postAuth(path: string, body: unknown): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch(`${API_BASE}/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => null);
+    return {
+      success: response.ok && data?.success === true,
+      message: data?.errors?.[0]?.message ?? data?.message ?? 'Erreur serveur. Réessayez.',
+    };
+  } catch {
+    return { success: false, message: 'Impossible de joindre le serveur. Vérifiez votre connexion.' };
+  }
+}
+
+/** Demande l'envoi d'un lien de réinitialisation du mot de passe administrateur */
+export const requestAdminPasswordReset = (email: string) =>
+  postAuth('forgot-password', { email });
+
+/** Définit un nouveau mot de passe administrateur à partir du lien reçu par email */
+export const resetAdminPassword = (token: string, password: string) =>
+  postAuth('reset-password', { token, password });
+
 /**
  * Valide l'OTP et retourne un JWT
  */

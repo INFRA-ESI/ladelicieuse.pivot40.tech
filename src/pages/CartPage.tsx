@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ss } from '@/lib/storage';
+import { ls, ss } from '@/lib/storage';
 import { useCart } from '@/context/CartContext';
-import { useUser } from '@/context/UserContext';
+import { useUser, TOKEN_KEY } from '@/context/UserContext';
 import { formatPrice, type CartItem } from '@/data/products';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { cachedJson } from '@/services/publicApiService';
+import { toOrderLine } from '@/lib/orderLines';
 import { STORE_WHATSAPP } from '@/lib/config';
 import {
-  CheckCircle, Check, Sparkles, Star, Printer, ArrowRight, X,
+  CheckCircle, Check, Star, Printer, ArrowRight, X,
   Leaf, Droplets, UtensilsCrossed, Stethoscope, RotateCcw,
   Trash2, Plus, Minus, AlertTriangle, MessageCircle,
   Truck, Package, MapPin, Calendar, Clock,
-} from 'lucide-react';
+} from '@/components/icons';
 import { PaymentMethods } from '@/components/payment';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
@@ -198,10 +200,10 @@ function buildWhatsAppMessage(
 // ─── Item type config ─────────────────────────────────────────────────────────
 
 const TYPE_CFG: Record<string, { label: string; icon: React.ElementType; stripe: string; pill: string; text: string }> = {
-  salade:       { label: 'Salade',       icon: Leaf,            stripe: 'bg-green-500',  pill: 'bg-green-50 border-green-200',  text: 'text-green-700' },
-  jus:          { label: 'Jus',          icon: Droplets,        stripe: 'bg-sky-500',    pill: 'bg-sky-50 border-sky-200',      text: 'text-sky-700' },
-  repas:        { label: 'Repas',        icon: UtensilsCrossed, stripe: 'bg-orange-500', pill: 'bg-orange-50 border-orange-200',text: 'text-orange-700' },
-  consultation: { label: 'Consultation', icon: Stethoscope,     stripe: 'bg-violet-500', pill: 'bg-violet-50 border-violet-200',text: 'text-violet-700' },
+  salade:       { label: 'Salade',       icon: Leaf,            stripe: 'bg-green-500',  pill: 'text-primary',  text: 'text-green-700' },
+  jus:          { label: 'Jus',          icon: Droplets,        stripe: 'bg-muted-foreground', pill: 'bg-muted border-border', text: 'text-muted-foreground' },
+  repas:        { label: 'Repas',        icon: UtensilsCrossed, stripe: 'bg-amber-500', pill: 'text-amber-700',text: 'text-amber-700' },
+  consultation: { label: 'Consultation', icon: Stethoscope,     stripe: 'bg-primary', pill: 'bg-primary/10 border-primary/20',text: 'text-primary' },
   reorder:      { label: 'Commande',     icon: RotateCcw,       stripe: 'bg-primary',    pill: 'bg-primary/5 border-primary/20',text: 'text-primary' },
 };
 
@@ -224,7 +226,7 @@ function DeliverySlotPicker({
     <>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+          <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
             <Calendar className="w-3.5 h-3.5" /> {dateLabel}
           </label>
           <select
@@ -240,7 +242,7 @@ function DeliverySlotPicker({
           </select>
         </div>
         <div>
-          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+          <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
             <Clock className="w-3.5 h-3.5" /> {timeLabel}
           </label>
           <select
@@ -306,6 +308,10 @@ export default function CartPage() {
   const [prenoms, setPrenoms]             = useState(user?.prenoms ?? '');
   const [telephone, setTelephone]         = useState(user?.telephone ?? '');
   const [infoError, setInfoError]         = useState('');
+  // Devis signé par le serveur (prix vérifiés contre le catalogue) : sert au paiement puis à la commande.
+  const [quote, setQuote]                 = useState('');
+  const [quotedTotal, setQuotedTotal]     = useState<number | null>(null);
+  const [quoting, setQuoting]             = useState(false);
 
   // ── Livraison / Retrait ────────────────────────────────────────────────────────
   // deliveryDate/deliveryTime servent aux deux modes : date+heure de livraison, ou
@@ -318,11 +324,7 @@ export default function CartPage() {
   const [deliverySlots, setDeliverySlots]         = useState<string[]>(DELIVERY_SLOTS_DEFAULT);
 
   useEffect(() => {
-    const ac  = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 8000);
-
-    fetch('/api/settings/public', { signal: ac.signal })
-      .then(r => r.json())
+    cachedJson('/api/settings/public')
       .then(json => {
         if (json.success && Array.isArray(json.data?.creneauxLivraison) && json.data.creneauxLivraison.length > 0) {
           setDeliverySlots(json.data.creneauxLivraison);
@@ -332,8 +334,6 @@ export default function CartPage() {
         }
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[CartPage] /api/settings :', err); });
-
-    return () => { clearTimeout(tid); ac.abort(); };
   }, []);
 
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -348,13 +348,13 @@ export default function CartPage() {
   useEffect(() => {
     if (searchParams.get('payment') !== 'success') return;
 
-    // Read saved checkout data directly — do NOT go through setState (async, would be stale)
+    // Lit directement les données de paiement sauvegardées, sans passer par setState (asynchrone, valeur périmée)
     let ov: Partial<{
       pendingOrderId: string; nom: string; prenoms: string; telephone: string;
       deliveryMode: 'livraison' | 'retrait' | null;
       deliveryDate: string; deliveryTime: string;
       deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
-      deliveryFee: number; orderTotal: number;
+      deliveryFee: number; orderTotal: number; quote: string;
     }> = {};
     const savedRaw = ss.get('pending_checkout');
     ss.remove('pending_checkout');
@@ -373,6 +373,7 @@ export default function CartPage() {
           deliveryLocation:  saved.deliveryLocation,
           deliveryFee:    saved.deliveryFee,
           orderTotal:     saved.orderTotal,
+          quote:          saved.quote,
         };
       } catch { /* ignore malformed sessionStorage data */ }
     }
@@ -397,7 +398,7 @@ export default function CartPage() {
     }
   }, []); // runs once on mount — handles redirect-back from card payment gateway
 
-  // Clear stale checkout data when user arrives at cart without completing payment
+  // Efface les données de paiement périmées quand l'utilisateur revient au panier sans avoir payé
   useEffect(() => {
     if (searchParams.get('payment') === 'success') return; // payment handler takes care of cleanup
     ss.remove('pending_checkout');
@@ -423,7 +424,7 @@ export default function CartPage() {
     deliveryMode: 'livraison' | 'retrait' | null;
     deliveryDate: string; deliveryTime: string;
     deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
-    deliveryFee: number; orderTotal: number;
+    deliveryFee: number; orderTotal: number; quote: string;
   }> = {}) => {
     // Capture snapshot immédiatement avant toute opération async
     const itemsSnapshot = [...items];
@@ -484,7 +485,11 @@ export default function CartPage() {
     try {
       const res = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // Le jeton rattache la commande au compte (points de fidélité) ; sans compte, commande d'invité.
+        headers: {
+          'Content-Type': 'application/json',
+          ...(user && ls.get(TOKEN_KEY) ? { Authorization: `Bearer ${ls.get(TOKEN_KEY)}` } : {}),
+        },
         body: JSON.stringify({
           client: {
             nom: _nom,
@@ -493,7 +498,8 @@ export default function CartPage() {
             telephone: _phone,
             adresse: _dAddr,
           },
-          userId: user?.id ?? undefined,
+          // Le devis fixe les prix côté serveur : ceux de ce corps de requête sont ignorés.
+          quote: ov.quote ?? quote,
           items: itemsSnapshot.map(i => ({
             nom: i.name,
             qty: i.quantity,
@@ -531,7 +537,7 @@ export default function CartPage() {
       console.error('[CartPage] Erreur réseau sauvegarde commande:', err);
     }
 
-    // Notification WhatsApp — fire-and-forget (secondaire)
+    // Notification WhatsApp — sans attendre la fin (secondaire)
     fetch('/api/notifications/whatsapp/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -549,6 +555,8 @@ export default function CartPage() {
 
   const openCheckout = () => {
     setPendingOrderId(`ORDER-${Date.now()}`);
+    setQuote('');
+    setQuotedTotal(null);
     setInfoError('');
     setNom(user?.nom ?? '');
     setPrenoms(user?.prenoms ?? '');
@@ -562,8 +570,9 @@ export default function CartPage() {
     setCheckoutOpen(true);
   };
 
-  const handleInfoSubmit = (e: React.FormEvent) => {
+  const handleInfoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (quoting) return;
     setInfoError('');
     if (!nom.trim() || !telephone.trim()) {
       setInfoError('Veuillez renseigner votre nom et votre numéro de téléphone.');
@@ -584,21 +593,55 @@ export default function CartPage() {
       if (!deliveryDate)             { setInfoError('Veuillez choisir une date de retrait.'); return; }
       if (!deliveryTime)             { setInfoError('Veuillez choisir une heure de retrait.'); return; }
     }
-    // Persist checkout data before potential card redirect
-    ss.set('pending_checkout', JSON.stringify({
-      nom: nom.trim(),
-      prenoms: prenoms.trim(),
-      telephone: telephone.trim(),
-      deliveryMode,
-      deliveryDate,
-      deliveryTime,
-      deliveryZoneGroup,
-      deliveryLocation,
-      deliveryFee,
-      orderTotal,
-      pendingOrderId,
-    }));
-    setCheckoutStep('payment');
+    // Le serveur vérifie le panier contre le catalogue AVANT le paiement et le signe : s'il refuse (prix
+    // modifié, article retiré), rien n'a encore été payé et on le dit tout de suite.
+    setQuoting(true);
+    try {
+      const res = await fetch('/api/orders/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: pendingOrderId,
+          modeCommande: deliveryMode === 'retrait' ? 'sur_place' : 'livraison',
+          fraisLivraison: deliveryFee,
+          items: items.map(i => toOrderLine(i, composeCustomizations(i))),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        // « Données invalides » = une ligne n'a pas pu être rattachée au catalogue (ancien panier).
+        setInfoError(
+          json?.errors
+            ? 'Un article de votre panier doit être mis à jour : retirez-le puis ajoutez-le de nouveau.'
+            : json?.message ?? 'Impossible de vérifier votre panier pour le moment. Réessayez.',
+        );
+        return;
+      }
+      const verifiedTotal = json.data.total as number;
+      setQuote(json.data.quote);
+      setQuotedTotal(verifiedTotal);
+
+      // Conserve les données de paiement (dont le devis) avant une éventuelle redirection carte
+      ss.set('pending_checkout', JSON.stringify({
+        nom: nom.trim(),
+        prenoms: prenoms.trim(),
+        telephone: telephone.trim(),
+        deliveryMode,
+        deliveryDate,
+        deliveryTime,
+        deliveryZoneGroup,
+        deliveryLocation,
+        deliveryFee,
+        orderTotal: verifiedTotal,
+        quote: json.data.quote,
+        pendingOrderId,
+      }));
+      setCheckoutStep('payment');
+    } catch {
+      setInfoError('Connexion impossible. Vérifiez votre réseau puis réessayez.');
+    } finally {
+      setQuoting(false);
+    }
   };
 
   const handleClearCart = () => {
@@ -652,22 +695,11 @@ export default function CartPage() {
             <motion.div
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center"
             >
               <CheckCircle className="w-14 h-14 text-primary" />
             </motion.div>
-            {[...Array(6)].map((_, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 0, x: 0 }}
-                animate={{ opacity: [0, 1, 0], y: -90, x: (i - 2.5) * 34 }}
-                transition={{ delay: 0.2 + i * 0.09, duration: 1.2 }}
-                className="absolute"
-              >
-                <Sparkles className="w-5 h-5 text-secondary" />
-              </motion.div>
-            ))}
           </div>
 
           <motion.div
@@ -681,7 +713,7 @@ export default function CartPage() {
               Merci, <span className="text-foreground font-medium">{fullName || nom}</span> — on s'occupe de tout.
             </p>
             <p className="font-body text-sm text-muted-foreground mt-2">
-              Référence <span className="font-semibold text-foreground tracking-wider">#{short}</span>
+              Référence <span className="font-semibold text-foreground">#{short}</span>
             </p>
           </motion.div>
 
@@ -698,7 +730,7 @@ export default function CartPage() {
               href={waUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-[#25D366] text-white hover:opacity-90 transition-opacity rounded-xl shadow-md"
+              className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-[#25D366] text-white hover:opacity-90 transition-opacity rounded-xl shadow-md"
             >
               <MessageCircle className="w-4 h-4" />
               Cliquez ici pour valider votre commande sur WhatsApp
@@ -728,24 +760,24 @@ export default function CartPage() {
               <div ref={receiptRef} className="px-6 py-5">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-5 pb-5 border-b border-border">
                   <div>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground">Référence</p>
+                    <p className="font-body text-xs text-muted-foreground">Référence</p>
                     <p className="font-body text-sm font-semibold text-foreground">#{short}</p>
                   </div>
                   <div>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground">Date &amp; heure</p>
+                    <p className="font-body text-xs text-muted-foreground">Date &amp; heure</p>
                     <p className="font-body text-sm text-foreground">{confirmedAt}</p>
                   </div>
                   <div>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground">Client</p>
+                    <p className="font-body text-xs text-muted-foreground">Client</p>
                     <p className="font-body text-sm text-foreground">{fullName || nom}</p>
                   </div>
                   <div>
-                    <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground">Paiement</p>
+                    <p className="font-body text-xs text-muted-foreground">Paiement</p>
                     <p className="font-body text-sm text-foreground">{confirmedMode}</p>
                   </div>
                   {confirmedDelivery && (
                     <div className="col-span-2">
-                      <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground">Livraison</p>
+                      <p className="font-body text-xs text-muted-foreground">Livraison</p>
                       <p className="font-body text-sm text-foreground">
                         {confirmedDelivery.mode === 'livraison'
                           ? `${confirmedDelivery.address} · ${formatDeliveryDate(confirmedDelivery.date ?? '')} à ${confirmedDelivery.time}`
@@ -758,9 +790,9 @@ export default function CartPage() {
                 <table className="w-full mb-5">
                   <thead>
                     <tr>
-                      <th className="text-left font-body text-[10px] text-muted-foreground uppercase tracking-wider pb-3 border-b border-border">Article</th>
-                      <th className="text-center font-body text-[10px] text-muted-foreground uppercase tracking-wider pb-3 border-b border-border">Qté</th>
-                      <th className="text-right font-body text-[10px] text-muted-foreground uppercase tracking-wider pb-3 border-b border-border">Prix</th>
+                      <th className="text-left font-body text-xs text-muted-foreground pb-3 border-b border-border">Article</th>
+                      <th className="text-center font-body text-xs text-muted-foreground pb-3 border-b border-border">Qté</th>
+                      <th className="text-right font-body text-xs text-muted-foreground pb-3 border-b border-border">Prix</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -803,7 +835,7 @@ export default function CartPage() {
                     </div>
                     <Link
                       to="/connexion?tab=inscription"
-                      className="flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-wider text-primary font-semibold hover:underline mt-3"
+                      className="flex items-center justify-center gap-1.5 font-body text-xs text-primary font-semibold hover:underline mt-3"
                     >
                       Créer mon compte gratuitement <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
@@ -816,7 +848,7 @@ export default function CartPage() {
               {user && (
                 <Link
                   to="/mon-compte"
-                  className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 border border-primary text-primary hover:bg-primary/5 transition-colors rounded-xl"
+                  className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 border border-primary text-primary hover:bg-primary/5 transition-colors rounded-xl"
                 >
                   Suivre ma commande <ArrowRight className="w-4 h-4" />
                 </Link>
@@ -853,32 +885,32 @@ export default function CartPage() {
           transition={{ duration: 1, delay: 0.3 }}
           className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
         >
-          <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">
+          <span className="font-body text-xs text-primary mb-4 block">
             {isEmpty ? 'Panier' : `${totalItems} article${totalItems > 1 ? 's' : ''} sélectionné${totalItems > 1 ? 's' : ''}`}
           </span>
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
             {isEmpty ? (
-              <>Le plaisir<br /><span className="italic">commence ici</span></>
+              <>Le plaisir<br /><span>commence ici</span></>
             ) : (
-              <>Finalisez<br /><span className="italic">votre commande</span></>
+              <>Finalisez<br /><span>votre commande</span></>
             )}
           </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 italic max-w-xl mb-10">
+          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
             {isEmpty
               ? 'Choisissez parmi nos salades, jus, repas chauds, omelettes et soupes.'
               : `${formatPrice(totalPrice)} · Livraison calculée selon votre zone`}
           </p>
           <div className="flex flex-wrap items-center gap-4">
             {isEmpty ? (
-              <Link to="/composer" className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
+              <Link to="/composer" className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
                 Découvrir la carte
               </Link>
             ) : (
               <>
-                <a href="#panier" className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
+                <a href="#panier" className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
                   Voir mon panier
                 </a>
-                <button onClick={openCheckout} className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl">
+                <button onClick={openCheckout} className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl">
                   Commander
                 </button>
               </>
@@ -898,8 +930,8 @@ export default function CartPage() {
                 { to: '/dieteticien', label: 'Diététicien', sub: 'Conseil nutritionnel personnalisé', img: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=600&q=80' },
               ].map(({ to, label, sub, img }, i) => (
                 <motion.div key={to} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                  <Link to={to} className="block group relative overflow-hidden rounded-2xl h-44 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5">
-                    <img src={img} alt={label} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <Link to={to} className="block group relative overflow-hidden rounded-2xl h-44 shadow-sm hover:shadow-lg transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300">
+                    <img src={img} alt={label} className="absolute inset-0 w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                     <div className="absolute bottom-0 left-0 p-5 text-white">
                       <h3 className="font-display text-xl mb-0.5">{label}</h3>
@@ -928,14 +960,14 @@ export default function CartPage() {
                         layout
                         initial={{ opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -24, height: 0, marginBottom: 0 }}
-                        transition={{ delay: idx * 0.05, exit: { duration: 0.2 } }}
+                        exit={{ opacity: 0, x: -24, height: 0, marginBottom: 0, transition: { duration: 0.2 } }}
+                        transition={{ delay: idx * 0.05 }}
                         className="bg-background border border-border rounded-2xl overflow-hidden flex"
                       >
                         <div className={`w-1 shrink-0 ${cfg.stripe}`} />
                         <div className="flex-1 p-5 md:p-6">
                           <div className="flex items-start justify-between mb-3">
-                            <span className={`inline-flex items-center gap-1.5 font-body text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full border ${cfg.pill} ${cfg.text}`}>
+                            <span className={`inline-flex items-center gap-1.5 font-body text-xs px-2.5 py-1 rounded-full border ${cfg.pill} ${cfg.text}`}>
                               <TypeIcon className="w-3 h-3" />
                               {cfg.label}
                             </span>
@@ -1043,7 +1075,7 @@ export default function CartPage() {
                     {/* Finaliser — CTA primaire */}
                     <button
                       onClick={openCheckout}
-                      className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl shadow-sm"
+                      className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] rounded-xl shadow-sm"
                     >
                       Finaliser la commande
                       <ArrowRight className="w-4 h-4" />
@@ -1052,7 +1084,7 @@ export default function CartPage() {
                     {/* Continuer mes achats — secondaire */}
                     <Link
                       to="/composer"
-                      className="flex items-center justify-center py-3.5 px-4 font-body text-[11px] uppercase tracking-[0.08em] border border-border rounded-xl text-foreground hover:border-primary hover:text-primary hover:bg-primary/5 active:scale-[0.97] transition-all duration-200 text-center leading-snug"
+                      className="flex items-center justify-center py-3.5 px-4 font-body text-xs border border-border rounded-xl text-foreground hover:border-primary hover:text-primary hover:bg-primary/5 active:scale-[0.97] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 text-center leading-snug"
                     >
                       Continuer mes achats
                     </Link>
@@ -1066,7 +1098,7 @@ export default function CartPage() {
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           onClick={() => setClearConfirm(true)}
-                          className="w-full flex items-center justify-center gap-1.5 font-body text-xs uppercase tracking-[0.1em] py-3 border border-border rounded-xl text-muted-foreground hover:border-red-200 hover:text-red-500 hover:bg-red-50/60 active:scale-[0.98] transition-all duration-200"
+                          className="w-full flex items-center justify-center gap-1.5 font-body text-xs py-3 border border-border rounded-xl text-muted-foreground hover:border-red-200 hover:text-red-500 hover:bg-red-50/60 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           Vider le panier
@@ -1083,13 +1115,13 @@ export default function CartPage() {
                           <span className="font-body text-sm text-red-700 flex-1">Vider le panier ?</span>
                           <button
                             onClick={() => { clearCart(); setClearConfirm(false); }}
-                            className="font-body text-xs uppercase tracking-wider px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                            className="font-body text-xs px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                           >
                             Oui
                           </button>
                           <button
                             onClick={() => setClearConfirm(false)}
-                            className="font-body text-xs uppercase tracking-wider px-3 py-1.5 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
+                            className="font-body text-xs px-3 py-1.5 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
                           >
                             Non
                           </button>
@@ -1124,7 +1156,7 @@ export default function CartPage() {
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 40 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="bg-background w-full sm:rounded-2xl sm:max-w-lg shadow-elevated overflow-hidden max-h-[92vh] overflow-y-auto"
             >
               {/* En-tête */}
@@ -1147,7 +1179,7 @@ export default function CartPage() {
                       {(['info', 'payment'] as const).map(s => (
                         <div
                           key={s}
-                          className={`h-1 rounded-full transition-all duration-300 ${
+                          className={`h-1 rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ${
                             s === checkoutStep ? 'w-8 bg-primary' :
                             s === 'info' && checkoutStep === 'payment' ? 'w-4 bg-primary/30' :
                             'w-4 bg-border'
@@ -1200,7 +1232,7 @@ export default function CartPage() {
                     <div className="flex flex-col gap-4">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Prénom(s)</label>
+                          <label className="font-body text-xs text-muted-foreground block mb-2">Prénom(s)</label>
                           <input
                             type="text"
                             value={prenoms}
@@ -1211,7 +1243,7 @@ export default function CartPage() {
                           />
                         </div>
                         <div>
-                          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Nom</label>
+                          <label className="font-body text-xs text-muted-foreground block mb-2">Nom</label>
                           <input
                             type="text"
                             value={nom}
@@ -1224,7 +1256,7 @@ export default function CartPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Téléphone</label>
+                        <label className="font-body text-xs text-muted-foreground block mb-2">Téléphone</label>
                         <input
                           type="tel"
                           value={telephone}
@@ -1238,7 +1270,7 @@ export default function CartPage() {
 
                     {/* Mode de livraison */}
                     <div>
-                      <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-3">
+                      <p className="font-body text-xs text-muted-foreground mb-3">
                         Comment souhaitez-vous recevoir votre commande ?
                       </p>
                       <div className="grid grid-cols-2 gap-3">
@@ -1247,7 +1279,7 @@ export default function CartPage() {
                         <button
                           type="button"
                           onClick={() => { setDeliveryMode('livraison'); setInfoError(''); }}
-                          className={`relative group flex flex-col items-center gap-3 px-4 py-6 rounded-2xl border-2 transition-all duration-200 ${
+                          className={`relative group flex flex-col items-center gap-3 px-4 py-6 rounded-2xl border-2 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 ${
                             deliveryMode === 'livraison'
                               ? 'border-primary bg-primary/5 shadow-warm'
                               : 'border-border hover:border-primary/40 bg-background hover:bg-muted/30'
@@ -1267,7 +1299,7 @@ export default function CartPage() {
                             <span className={`font-display text-base block leading-tight transition-colors ${deliveryMode === 'livraison' ? 'text-primary' : 'text-foreground'}`}>
                               Se faire livrer
                             </span>
-                            <span className="font-body text-[11px] text-muted-foreground mt-0.5 block">
+                            <span className="font-body text-xs text-muted-foreground mt-0.5 block">
                               À votre adresse
                             </span>
                           </div>
@@ -1277,7 +1309,7 @@ export default function CartPage() {
                         <button
                           type="button"
                           onClick={() => { setDeliveryMode('retrait'); setInfoError(''); }}
-                          className={`relative group flex flex-col items-center gap-3 px-4 py-6 rounded-2xl border-2 transition-all duration-200 ${
+                          className={`relative group flex flex-col items-center gap-3 px-4 py-6 rounded-2xl border-2 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 ${
                             deliveryMode === 'retrait'
                               ? 'border-primary bg-primary/5 shadow-warm'
                               : 'border-border hover:border-primary/40 bg-background hover:bg-muted/30'
@@ -1297,7 +1329,7 @@ export default function CartPage() {
                             <span className={`font-display text-base block leading-tight transition-colors ${deliveryMode === 'retrait' ? 'text-primary' : 'text-foreground'}`}>
                               Récupérer
                             </span>
-                            <span className="font-body text-[11px] text-muted-foreground mt-0.5 block">
+                            <span className="font-body text-xs text-muted-foreground mt-0.5 block">
                               Sur place, sans frais
                             </span>
                           </div>
@@ -1317,7 +1349,7 @@ export default function CartPage() {
                         >
                           {/* 4 cartes de zone */}
                           <div>
-                            <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+                            <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
                               <MapPin className="w-3.5 h-3.5" /> Zone de livraison
                             </label>
                             <div className="grid grid-cols-2 gap-2.5">
@@ -1328,7 +1360,7 @@ export default function CartPage() {
                                     key={card.group}
                                     type="button"
                                     onClick={() => { setDeliveryZoneGroup(card.group); setInfoError(''); }}
-                                    className={`relative flex flex-col items-start gap-0.5 px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                                    className={`relative flex flex-col items-start gap-0.5 px-4 py-3 rounded-xl border-2 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                                       active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 bg-background'
                                     }`}
                                   >
@@ -1355,7 +1387,7 @@ export default function CartPage() {
                                 className="flex flex-col gap-3 overflow-hidden"
                               >
                                 <div>
-                                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-2">
+                                  <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
                                     <MapPin className="w-3.5 h-3.5" /> Décrivez précisément votre lieu *
                                   </label>
                                   <input
@@ -1367,7 +1399,7 @@ export default function CartPage() {
                                     required
                                   />
                                   {deliveryZoneGroup === 'PK' && (
-                                    <p className="font-body text-[11px] text-muted-foreground mt-1.5">
+                                    <p className="font-body text-xs text-muted-foreground mt-1.5">
                                       Précisez votre numéro de PK (ex : PK9) pour un tarif exact.
                                     </p>
                                   )}
@@ -1386,7 +1418,7 @@ export default function CartPage() {
                                         <Truck className="w-4 h-4 text-primary" />
                                         <span className="font-body text-sm text-primary">Zone {deliveryZoneGroup}</span>
                                       </div>
-                                      <span className="font-body text-sm font-bold text-primary">{formatPrice(deliveryFee)}</span>
+                                      <span className="font-body text-sm font-semibold text-primary">{formatPrice(deliveryFee)}</span>
                                     </motion.div>
                                   )}
                                 </AnimatePresence>
@@ -1442,9 +1474,10 @@ export default function CartPage() {
                     <div className="flex flex-col gap-3 pt-1">
                       <button
                         type="submit"
-                        className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/85 active:scale-[0.98] transition-all rounded-xl shadow-sm hover:shadow-md"
+                        disabled={quoting}
+                        className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/85 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] rounded-xl shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-wait"
                       >
-                        Passer ma commande <ArrowRight className="w-4 h-4" />
+                        {quoting ? 'Vérification du panier…' : <>Passer ma commande <ArrowRight className="w-4 h-4" /></>}
                       </button>
                       <AnimatePresence mode="wait">
                         {!clearConfirm ? (
@@ -1455,7 +1488,7 @@ export default function CartPage() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setClearConfirm(true)}
-                            className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 border-2 border-red-200 text-red-500 bg-transparent hover:bg-red-50 active:scale-[0.98] transition-all rounded-xl"
+                            className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 border-2 border-red-200 text-red-500 bg-transparent hover:bg-red-50 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] rounded-xl"
                           >
                             <Trash2 className="w-4 h-4" />
                             Vider le panier
@@ -1473,14 +1506,14 @@ export default function CartPage() {
                             <button
                               type="button"
                               onClick={handleClearCart}
-                              className="font-body text-xs uppercase tracking-wider px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                              className="font-body text-xs px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                             >
                               Oui
                             </button>
                             <button
                               type="button"
                               onClick={() => setClearConfirm(false)}
-                              className="font-body text-xs uppercase tracking-wider px-3 py-1.5 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
+                              className="font-body text-xs px-3 py-1.5 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
                             >
                               Non
                             </button>
@@ -1506,8 +1539,10 @@ export default function CartPage() {
                     </p>
                     <div className="flex justify-center">
                       <PaymentMethods
-                        amount={orderTotal}
+                        amount={quotedTotal ?? orderTotal}
                         orderId={pendingOrderId}
+                        quote={quote}
+                        returnPath="/panier"
                         onSuccess={(mode) => finishOrder(mode ?? 'En ligne')}
                         onError={err => toast.error(err)}
                       />

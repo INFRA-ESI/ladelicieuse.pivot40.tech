@@ -3,8 +3,9 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '@/context/UserContext';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowRight, Mail, CheckCircle, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Mail, CheckCircle, RefreshCw } from '@/components/icons';
 import Footer from '@/components/Footer';
+import { PASSWORD_HINT, loginPasswordError, passwordError } from '@/lib/password';
 
 const HERO_IMG = 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80';
 
@@ -20,7 +21,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+      <label className="font-body text-xs text-muted-foreground block mb-2">
         {label}
       </label>
       <div className="relative">
@@ -77,10 +78,12 @@ export default function ConnexionPage() {
     e.preventDefault();
     setLoginError('');
     if (!loginEmail || !loginPassword) { setLoginError('Remplissez tous les champs.'); return; }
+    const weak = loginPasswordError(loginPassword);
+    if (weak) { setLoginError(weak); return; }
     setLoading(true);
     try {
       await loginWithPassword(loginEmail.trim().toLowerCase(), loginPassword);
-      toast.success('Connexion réussie !');
+      toast.success('Connexion réussie');
       navigate('/mon-compte');
     } catch (err) {
       setLoginError((err as Error).message || 'Email ou mot de passe incorrect.');
@@ -96,10 +99,8 @@ export default function ConnexionPage() {
       setRegError('Prénom(s), nom, email et mot de passe sont requis.');
       return;
     }
-    if (regPwd.length < 8 || !/[A-Z]/.test(regPwd) || !/[0-9]/.test(regPwd) || !/[^a-zA-Z0-9]/.test(regPwd)) {
-      setRegError('Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (@, !, #, $...).');
-      return;
-    }
+    const pwdError = passwordError(regPwd);
+    if (pwdError) { setRegError(pwdError); return; }
     if (regPwd !== regConfirm) { setRegError('Les mots de passe ne correspondent pas.'); return; }
     setLoading(true);
     try {
@@ -142,12 +143,12 @@ export default function ConnexionPage() {
               transition={{ duration: 0.4 }}
               className="relative z-10 px-12 pb-16"
             >
-              <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">
+              <span className="font-body text-xs text-primary mb-4 block">
                 Votre espace membre
               </span>
               <h2 className="font-display text-5xl lg:text-6xl text-primary-foreground leading-[0.95] mb-5">
                 Chaque repas,<br />
-                <span className="italic">une intention</span>
+                <span>une intention</span>
               </h2>
               <p className="font-body text-primary-foreground/70 text-base max-w-xs leading-relaxed">
                 Retrouvez vos commandes, vos points fidélité et vos abonnements en un seul endroit.
@@ -162,12 +163,12 @@ export default function ConnexionPage() {
               transition={{ duration: 0.4 }}
               className="relative z-10 px-12 pb-16"
             >
-              <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">
+              <span className="font-body text-xs text-primary mb-4 block">
                 Rejoindre la famille
               </span>
               <h2 className="font-display text-5xl lg:text-6xl text-primary-foreground leading-[0.95] mb-5">
                 Bien manger,<br />
-                <span className="italic">c'est choisir</span>
+                <span>c'est choisir</span>
               </h2>
               <p className="font-body text-primary-foreground/70 text-base max-w-xs leading-relaxed">
                 Créez votre compte et accédez à des salades sur-mesure, des jus détox et un suivi nutritionnel pensé pour vous.
@@ -192,14 +193,14 @@ export default function ConnexionPage() {
 
           {/* Titre */}
           <div className="mb-8">
-            <span className="font-body text-xs uppercase tracking-[0.3em] text-primary block mb-3">
+            <span className="font-body text-xs text-primary block mb-3">
               {tab === 'connexion' ? 'Accès membre' : 'Rejoindre'}
             </span>
             <h1 className="font-display text-4xl md:text-5xl text-foreground leading-[0.95]">
               {tab === 'connexion' ? (
-                <>Se<br /><span className="italic">connecter</span></>
+                <>Se<br /><span>connecter</span></>
               ) : (
-                <>Créer mon<br /><span className="italic">compte</span></>
+                <>Créer mon<br /><span>compte</span></>
               )}
             </h1>
           </div>
@@ -210,7 +211,7 @@ export default function ConnexionPage() {
               <button
                 key={t}
                 onClick={() => switchTab(t)}
-                className={`font-body text-xs uppercase tracking-[0.2em] pb-3 transition-colors border-b-2 -mb-px ${
+                className={`font-body text-xs pb-3 transition-colors border-b-2 -mb-px ${
                   tab === t
                     ? 'text-primary border-primary'
                     : 'text-muted-foreground border-transparent hover:text-foreground'
@@ -255,7 +256,7 @@ export default function ConnexionPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl mt-1"
+                  className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl mt-1"
                 >
                   {loading ? 'Connexion…' : <><span>Accéder à mon compte</span><ArrowRight className="w-4 h-4" /></>}
                 </button>
@@ -309,7 +310,7 @@ export default function ConnexionPage() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email: regSuccess }),
                           });
-                          toast.success('Email renvoyé !', { description: 'Vérifiez votre boîte mail et vos spams.' });
+                          toast.success('Email renvoyé', { description: 'Vérifiez votre boîte mail et vos spams.' });
                         } catch {
                           toast.error('Erreur réseau', { description: 'Réessayez dans quelques instants.' });
                         } finally {
@@ -323,7 +324,7 @@ export default function ConnexionPage() {
                     </button>
                     <button
                       onClick={() => switchTab('connexion')}
-                      className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+                      className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
                     >
                       Aller à la connexion <ArrowRight className="w-4 h-4" />
                     </button>
@@ -331,8 +332,8 @@ export default function ConnexionPage() {
                 ) : (
                   <form onSubmit={handleRegister} className="flex flex-col gap-4">
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Prénom(s)" value={regPrenoms} onChange={setRegPrenoms} placeholder="Jean-Marie" autoComplete="given-name" />
-                      <Field label="Nom" value={regNom} onChange={setRegNom} placeholder="DUPONT" autoComplete="family-name" />
+                      <Field label="Prénom(s)" value={regPrenoms} onChange={setRegPrenoms} placeholder="Eric" autoComplete="given-name" />
+                      <Field label="Nom" value={regNom} onChange={setRegNom} placeholder="MOUSSAVOU" autoComplete="family-name" />
                     </div>
                     <Field label="Adresse email" type="email" value={regEmail} onChange={setRegEmail}
                       placeholder="vous@exemple.com" autoComplete="email" />
@@ -340,7 +341,8 @@ export default function ConnexionPage() {
                       label={<>Téléphone <span className="normal-case tracking-normal font-normal text-muted-foreground/60">(optionnel)</span></> as unknown as string}
                       type="tel" value={regTel} onChange={setRegTel} placeholder="+241 XX XXX XXX" />
                     <Field label="Mot de passe" type={showPwd ? 'text' : 'password'} value={regPwd}
-                      onChange={setRegPwd} placeholder="Minimum 6 caractères" autoComplete="new-password" suffix={eyeBtn} />
+                      onChange={setRegPwd} placeholder="8 caractères, une majuscule, un chiffre" autoComplete="new-password" suffix={eyeBtn} />
+                    <p className="font-body text-xs text-muted-foreground -mt-2">{PASSWORD_HINT}</p>
                     <Field label="Confirmer le mot de passe" type={showPwd ? 'text' : 'password'} value={regConfirm}
                       onChange={setRegConfirm} placeholder="Répétez le mot de passe" autoComplete="new-password" />
 
@@ -353,7 +355,7 @@ export default function ConnexionPage() {
                     <button
                       type="submit"
                       disabled={loading}
-                      className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl mt-1"
+                      className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl mt-1"
                     >
                       {loading ? 'Création du compte…' : <><span>Créer mon compte</span><ArrowRight className="w-4 h-4" /></>}
                     </button>

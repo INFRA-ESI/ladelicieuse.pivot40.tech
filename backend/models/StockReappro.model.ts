@@ -44,7 +44,7 @@ const StockReapproSchema = new Schema<IStockReappro>(
   { timestamps: true }
 );
 
-// Auto-compute total before save
+// Calcul automatique du total avant sauvegarde
 StockReapproSchema.pre('save', function (this: IStockReappro, next) {
   this.total = this.articles.reduce(
     (sum, a) => sum + a.quantiteCommandee * a.prixUnitaire,

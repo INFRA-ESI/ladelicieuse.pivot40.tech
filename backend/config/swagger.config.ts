@@ -100,7 +100,7 @@ API RESTful du backend La Délicieuse Diète.
         type: 'object',
         properties: {
           _id:     { type: 'string' },
-          numero:  { type: 'string', example: 'CMD-2026-0042' },
+          numero:  { type: 'string', example: 'LDD-0042' },
           statut:  { type: 'string', enum: ['en_attente','confirmee','en_preparation','prete','en_livraison','livree','annulee','remboursee'] },
           priorite:{ type: 'string', enum: ['normale','haute','urgente'] },
           total:   { type: 'number', example: 9500 },

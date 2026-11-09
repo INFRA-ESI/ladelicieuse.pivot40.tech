@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus, Eye, EyeOff } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -20,6 +22,8 @@ interface Ingredient {
   image?: string;
   nutrition: { calories: number; proteines: number; glucides: number; lipides: number; fibres: number };
   actif: boolean;
+  portionGrammes?: number;
+  usage?: 'salade' | 'repas' | 'tous';
   stockLevel?: string;
 }
 
@@ -28,24 +32,26 @@ type SortDir = 'asc' | 'desc';
 
 const CATEGORIES_FALLBACK = ['Bases', 'Légumes', 'Protéines', 'Garnitures', 'Sauces', 'Fruits'];
 const UNITES = ['portion', 'pièce', 'litre', 'kg', 'g'];
+const USAGE_LABELS = { salade: 'Salades', repas: 'Repas chauds', tous: 'Salades + repas' } as const;
 
 const EMPTY_FORM = {
-  nom: '', categorie: 'Bases', unite: 'portion',
+  nom: '', categorie: 'Bases', unite: 'portion', usage: 'salade',
   prixVente: '', prixAchat: '', stock: '', stockMin: '5', stockOptimal: '20',
   calories: '', proteines: '', glucides: '', lipides: '', fibres: '',
+  portionGrammes: '100',
   image: '',
 };
 
 const marge = (i: Ingredient) => i.prixVente > 0 ? Math.round(((i.prixVente - i.prixAchat) / i.prixVente) * 100) : 0;
 
 function MargeBadge({ pct }: { pct: number }) {
-  const cls = pct >= 50 ? 'bg-green-100 text-green-700' : pct >= 25 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+  const cls = pct >= 50 ? 'text-primary' : pct >= 25 ? 'text-amber-700' : 'text-destructive';
   return <span className={`px-2 py-0.5 rounded-full text-xs font-body font-medium ${cls}`}>{pct}%</span>;
 }
 
 function StockBadge({ stock, min }: { stock: number; min: number }) {
   const ratio = stock / (min || 1);
-  const cls = ratio >= 3 ? 'bg-green-100 text-green-700' : ratio >= 1 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700';
+  const cls = ratio >= 3 ? 'text-primary' : ratio >= 1 ? 'text-amber-700' : 'text-destructive';
   return <span className={`px-2 py-0.5 rounded-full text-xs font-body font-medium ${cls}`}>{stock}</span>;
 }
 
@@ -155,11 +161,13 @@ export default function IngredientsPage() {
       let va: number | string, vb: number | string;
       if (sort.key === 'marge')     { va = marge(a); vb = marge(b); }
       else if (sort.key === 'calories') { va = a.nutrition.calories; vb = b.nutrition.calories; }
-      else { va = (a as Record<string, unknown>)[sort.key] as string | number; vb = (b as Record<string, unknown>)[sort.key] as string | number; }
+      else { va = (a as unknown as Record<string, unknown>)[sort.key] as string | number; vb = (b as unknown as Record<string, unknown>)[sort.key] as string | number; }
       if (typeof va === 'string') return sort.dir === 'asc' ? va.localeCompare(vb as string) : (vb as string).localeCompare(va);
       return sort.dir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
     });
   }, [items, search, catFilter, sort]);
+
+  const pagination = usePagination(filtered, `${search}|${catFilter}|${sort.key}|${sort.dir}`);
 
   const toggleSort = (key: SortKey) => {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
@@ -190,10 +198,11 @@ export default function IngredientsPage() {
 
     setSaving(true);
     const payload = {
-      nom: form.nom.trim(), categorie: form.categorie, unite: form.unite,
+      nom: form.nom.trim(), categorie: form.categorie, unite: form.unite, usage: form.usage,
       prixVente: +form.prixVente, prixAchat: +form.prixAchat,
       stock: +form.stock, stockMin: +form.stockMin || 0, stockOptimal: +form.stockOptimal || 0,
       image: form.image || '',
+      portionGrammes: +form.portionGrammes > 0 ? +form.portionGrammes : 100,
       nutrition: {
         calories: +form.calories || 0, proteines: +form.proteines || 0,
         glucides: +form.glucides || 0, lipides: +form.lipides || 0, fibres: +form.fibres || 0,
@@ -220,15 +229,26 @@ export default function IngredientsPage() {
 
   const handleEdit = (i: Ingredient) => {
     setForm({
-      nom: i.nom, categorie: i.categorie, unite: i.unite,
+      nom: i.nom, categorie: i.categorie, unite: i.unite, usage: i.usage ?? 'salade',
       prixVente: String(i.prixVente), prixAchat: String(i.prixAchat),
       stock: String(i.stock), stockMin: String(i.stockMin), stockOptimal: '20',
       calories: String(i.nutrition.calories), proteines: String(i.nutrition.proteines),
       glucides: String(i.nutrition.glucides), lipides: String(i.nutrition.lipides), fibres: String(i.nutrition.fibres),
       image: i.image || '',
+      portionGrammes: String(i.portionGrammes ?? 100),
     });
     setImagePreview(i.image || '');
     setEditId(i._id); setShowForm(true);
+  };
+
+  const toggleActif = async (i: Ingredient) => {
+    try {
+      const res = await adminPatch<{ data: Ingredient }>(`/ingredients/${i._id}`, { actif: !i.actif });
+      setItems(prev => prev.map(x => x._id === i._id ? res.data : x));
+      toast.success(res.data.actif ? `${i.nom} : visible sur le site` : `${i.nom} : masqué du site`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erreur serveur');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -349,10 +369,10 @@ export default function IngredientsPage() {
                 <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                 <p className="font-body text-sm text-muted-foreground">Aucun ingrédient trouvé</p>
               </div>
-            : filtered.map(i => {
+            : pagination.pageItems.map(i => {
                 const m = marge(i);
                 return (
-                  <div key={i._id} className="bg-background border border-border rounded-xl p-4 shadow-sm">
+                  <div key={i._id} className={`bg-background border border-border rounded-xl p-4 shadow-sm ${i.actif ? '' : 'opacity-60'}`}>
                     <div className="flex items-start gap-3">
                       {i.image && (
                         <img src={i.image} alt={i.nom} className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" />
@@ -361,11 +381,17 @@ export default function IngredientsPage() {
                         <div className="flex items-start justify-between gap-2">
                           <p className="font-body font-semibold text-foreground leading-tight">{i.nom}</p>
                           <div className="flex gap-1 shrink-0">
+                            <button onClick={() => toggleActif(i)} title={i.actif ? 'Masquer du site' : 'Afficher sur le site'} aria-label={i.actif ? 'Masquer du site' : 'Afficher sur le site'} className="p-2 rounded-lg hover:bg-muted transition-colors">
+                              {i.actif ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />}
+                            </button>
                             <button onClick={() => handleEdit(i)} className="p-2 rounded-lg hover:bg-muted transition-colors"><Edit2 className="w-3.5 h-3.5 text-muted-foreground" /></button>
                             <button onClick={() => setDeleteConfirm(i._id)} className="p-2 rounded-lg hover:bg-destructive/10 transition-colors"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
                           </div>
                         </div>
                         <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground">{i.categorie}</span>
+                        {i.usage && i.usage !== 'salade' && (
+                          <span className="text-amber-700 inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-xs font-body">{USAGE_LABELS[i.usage]}</span>
+                        )}
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center">
@@ -410,12 +436,17 @@ export default function IngredientsPage() {
           <tbody>
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
-              : filtered.map(i => {
+              : pagination.pageItems.map(i => {
                   const m = marge(i);
                   return (
-                    <tr key={i._id} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                    <tr key={i._id} className={`border-b border-border/50 last:border-0 hover:bg-muted/30 ${i.actif ? '' : 'opacity-60'}`}>
                       <td className="p-3 font-body font-medium text-foreground">{i.nom}</td>
-                      <td className="p-3"><span className="px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground">{i.categorie}</span></td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-body bg-muted text-muted-foreground">{i.categorie}</span>
+                        {i.usage && i.usage !== 'salade' && (
+                          <span className="text-amber-700 ml-1 px-2 py-0.5 rounded-full text-xs font-body">{USAGE_LABELS[i.usage]}</span>
+                        )}
+                      </td>
                       <td className="p-3 font-body text-foreground text-right">{i.prixVente.toLocaleString()}</td>
                       <td className="p-3 font-body text-muted-foreground text-right">{i.prixAchat.toLocaleString()}</td>
                       <td className="p-3 text-center"><MargeBadge pct={m} /></td>
@@ -426,6 +457,9 @@ export default function IngredientsPage() {
                       </td>
                       <td className="p-3">
                         <div className="flex gap-1.5 justify-end">
+                          <button onClick={() => toggleActif(i)} title={i.actif ? 'Masquer du site' : 'Afficher sur le site'} aria-label={i.actif ? 'Masquer du site' : 'Afficher sur le site'} className="text-muted-foreground hover:text-foreground p-1">
+                            {i.actif ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          </button>
                           <button onClick={() => handleEdit(i)} className="text-muted-foreground hover:text-foreground p-1"><Edit2 className="w-3.5 h-3.5" /></button>
                           <button onClick={() => setDeleteConfirm(i._id)} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
@@ -464,6 +498,8 @@ export default function IngredientsPage() {
         )}
       </div>
 
+      <TablePagination {...pagination} onPageChange={pagination.setPage} />
+
       {/* Form modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 px-4 py-8 overflow-y-auto" onClick={resetForm}>
@@ -493,11 +529,23 @@ export default function IngredientsPage() {
                       </select>
                     </div>
                   </div>
+                  <div>
+                    <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">Utilisé pour</label>
+                    <select value={form.usage} onChange={e => setForm(f => ({ ...f, usage: e.target.value }))}
+                      className="w-full h-9 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                      <option value="salade">Salades (proposé dans « Composer ma salade »)</option>
+                      <option value="repas">Repas chauds uniquement (jamais dans les salades)</option>
+                      <option value="tous">Salades et repas chauds</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Photo</p>
+                <p className="font-body text-xs uppercase tracking-wider text-primary mb-1">Photo</p>
+                <p className="font-body text-xs text-muted-foreground mb-3">
+                  Affichée au format 4:3, recadrée au centre : privilégiez une photo horizontale avec l'ingrédient centré.
+                </p>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
                   className="hidden" onChange={e => { if (e.target.files?.[0]) handleImageFile(e.target.files[0]); }} />
                 {imagePreview ? (
@@ -549,8 +597,13 @@ export default function IngredientsPage() {
               </div>
 
               <div>
-                <p className="font-body text-xs uppercase tracking-wider text-primary mb-3">Valeurs nutritionnelles (par portion)</p>
+                <p className="font-body text-xs uppercase tracking-wider text-primary mb-1">Valeurs nutritionnelles (pour 100 g)</p>
+                <p className="font-body text-xs text-muted-foreground mb-3">
+                  Saisissez les valeurs pour 100 g, puis le poids d'une portion : les calories affichées aux clients en découlent
+                  (ex. huile d'olive : 884 kcal pour 100 g, portion de 15 g, soit 133 kcal).
+                </p>
                 <div className="grid grid-cols-2 gap-3">
+                  <IngF label="Poids d'une portion (g)" placeholder="100" value={form.portionGrammes} onChange={v => setForm(f => ({ ...f, portionGrammes: v }))} />
                   <IngF label="Calories (kcal)" placeholder="0" value={form.calories} onChange={v => setForm(f => ({ ...f, calories: v }))} />
                   <IngF label="Protéines (g)" placeholder="0" value={form.proteines} onChange={v => setForm(f => ({ ...f, proteines: v }))} />
                   <IngF label="Glucides (g)" placeholder="0" value={form.glucides} onChange={v => setForm(f => ({ ...f, glucides: v }))} />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, Sparkles, Leaf, Grape, ChevronDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, ChefHat, Leaf, Grape, ChevronDown } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 import { INGREDIENTS } from '@/data/products';
@@ -10,7 +10,7 @@ import {
 type IngredientItem = { id: string; name: string };
 type IngredientGroup = { label: string; category: string; items: IngredientItem[] };
 
-// Static fallback groups (used when the API has no data yet)
+// Groupes de repli statiques (utilisés tant que l'API n'a pas de données)
 const STATIC_INGREDIENT_GROUPS: IngredientGroup[] = [
   { label: 'Bases',       category: 'base',      items: INGREDIENTS.filter(i => i.category === 'base').map(i => ({ id: i.id, name: i.name }))      },
   { label: 'Légumes',     category: 'legume',    items: INGREDIENTS.filter(i => i.category === 'legume').map(i => ({ id: i.id, name: i.name }))    },
@@ -47,8 +47,8 @@ interface Suggestion {
 type FilterType = 'all' | 'crudites' | 'fruits';
 
 const TYPE_CONFIG = {
-  crudites: { label: 'Crudités',         icon: Leaf,  badge: 'bg-green-100 text-green-700 border-green-200' },
-  fruits:   { label: 'Fruits de saison', icon: Grape, badge: 'bg-rose-100 text-rose-700 border-rose-200'    },
+  crudites: { label: 'Crudités',         icon: Leaf,  badge: 'text-primary' },
+  fruits:   { label: 'Fruits de saison', icon: Grape, badge: 'text-destructive'    },
 };
 
 const EMPTY_FORM = {
@@ -304,7 +304,7 @@ export default function SuggestionsPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20">
-          <Sparkles className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+          <ChefHat className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
           <p className="font-body text-muted-foreground">Aucune suggestion{filter !== 'all' ? ' pour ce type' : ''}</p>
           <button
             onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM, type: filter !== 'all' ? filter : 'crudites' }); }}
@@ -331,10 +331,10 @@ export default function SuggestionsPage() {
                   ) : (
                     <div className={`w-full h-full flex items-center justify-center ${
                       s.type === 'crudites'
-                        ? 'bg-gradient-to-br from-green-100 to-emerald-200'
-                        : 'bg-gradient-to-br from-rose-100 to-pink-200'
+                        ? 'bg-primary/10'
+                        : 'bg-secondary/10'
                     }`}>
-                      <TypeIcon className={`w-10 h-10 ${s.type === 'crudites' ? 'text-green-500' : 'text-rose-400'}`} />
+                      <TypeIcon className={`w-10 h-10 ${s.type === 'crudites' ? 'text-primary' : 'text-secondary'}`} />
                     </div>
                   )}
                   <span className={`absolute top-2 left-2 font-body text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${cfg.badge}`}>

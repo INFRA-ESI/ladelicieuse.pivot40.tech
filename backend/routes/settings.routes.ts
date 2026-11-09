@@ -5,6 +5,7 @@ import { logAction } from '../models/HistoryLog.model.js';
 import { verifyJWT } from './auth.routes.js';
 import { getRedis } from '../config/redis.js';
 import { logger } from '../config/logger.js';
+import { passwordError } from '../utils/password.js';
 
 const router = Router();
 
@@ -101,14 +102,9 @@ router.post('/password', verifyJWT, async (req: Request, res: Response): Promise
       return;
     }
 
-    const pwdRules = [
-      nouveauMotDePasse.length >= 8,
-      /[A-Z]/.test(nouveauMotDePasse),
-      /[0-9]/.test(nouveauMotDePasse),
-      /[^a-zA-Z0-9]/.test(nouveauMotDePasse),
-    ];
-    if (!pwdRules.every(Boolean)) {
-      res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.' });
+    const pwdError = passwordError(nouveauMotDePasse);
+    if (pwdError) {
+      res.status(400).json({ success: false, message: pwdError });
       return;
     }
 
@@ -119,9 +115,9 @@ router.post('/password', verifyJWT, async (req: Request, res: Response): Promise
     if (settings?.adminPasswordHash) {
       currentIsValid = await bcrypt.compare(motDePasseActuel, settings.adminPasswordHash);
     } else {
-      // Fallback: plain-text env var
-      const envPassword = process.env.ADMIN_PASSWORD || 'admin123';
-      currentIsValid = motDePasseActuel === envPassword;
+      // Repli : variable d'environnement en clair (jamais de mot de passe par défaut)
+      const envPassword = process.env.ADMIN_PASSWORD;
+      currentIsValid = !!envPassword && motDePasseActuel === envPassword;
     }
 
     if (!currentIsValid) {

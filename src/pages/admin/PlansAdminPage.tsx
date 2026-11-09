@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, Check } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, Check } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 
@@ -9,8 +9,8 @@ interface Plan {
   _id: string;
   nom: string;
   description: string;
+  prixHebdo: number;
   prixMensuel: number;
-  prixAnnuel: number;
   tag: string;
   icone: string;
   features: PlanFeature[];
@@ -20,9 +20,13 @@ interface Plan {
 }
 
 const EMPTY_PLAN: Omit<Plan, '_id'> = {
-  nom: '', description: '', prixMensuel: 0, prixAnnuel: 0, tag: '', icone: 'leaf',
+  nom: '', description: '', prixHebdo: 0, prixMensuel: 0, tag: '', icone: 'leaf',
   features: [{ texte: '', inclus: true }], populaire: false, actif: true, ordre: 0,
 };
+
+// Même calcul que la page publique : le mensuel vaut 4 semaines, la réduction s'en déduit.
+const reductionMensuel = (p: { prixHebdo?: number; prixMensuel: number }) =>
+  p.prixHebdo ? Math.max(0, Math.round((1 - p.prixMensuel / (p.prixHebdo * 4)) * 100)) : 0;
 
 const ICONES = [
   { value: 'leaf',  label: 'Feuille (Essentiel)' },
@@ -50,7 +54,7 @@ export default function PlansAdminPage() {
 
   function openNew() { setForm(EMPTY_PLAN); setEditId(null); setShowForm(true); }
   function openEdit(p: Plan) {
-    setForm({ nom: p.nom, description: p.description, prixMensuel: p.prixMensuel, prixAnnuel: p.prixAnnuel, tag: p.tag, icone: p.icone, features: [...p.features], populaire: p.populaire, actif: p.actif, ordre: p.ordre });
+    setForm({ nom: p.nom, description: p.description, prixHebdo: p.prixHebdo, prixMensuel: p.prixMensuel, tag: p.tag, icone: p.icone, features: [...p.features], populaire: p.populaire, actif: p.actif, ordre: p.ordre });
     setEditId(p._id);
     setShowForm(true);
   }
@@ -127,7 +131,10 @@ export default function PlansAdminPage() {
               </div>
               <div className="space-y-0.5">
                 <p className="font-display text-2xl text-foreground">{p.prixMensuel.toLocaleString('fr-FR')} <span className="text-sm font-body text-muted-foreground">FCFA/mois</span></p>
-                <p className="font-body text-xs text-muted-foreground">{p.prixAnnuel.toLocaleString('fr-FR')} FCFA/mois en annuel</p>
+                <p className="font-body text-xs text-muted-foreground">
+                  {(p.prixHebdo ?? 0).toLocaleString('fr-FR')} FCFA/semaine
+                  {reductionMensuel(p) > 0 && ` · −${reductionMensuel(p)} % en mensuel`}
+                </p>
               </div>
               <ul className="space-y-1">
                 {p.features.slice(0, 4).map((f, i) => (
@@ -181,14 +188,20 @@ export default function PlansAdminPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Prix mensuel (FCFA) *</label>
-                  <input type="number" value={form.prixMensuel} onChange={e => setForm(f => ({ ...f, prixMensuel: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Prix hebdomadaire (FCFA) *</label>
+                  <input type="number" min={0} value={form.prixHebdo} onChange={e => setForm(f => ({ ...f, prixHebdo: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
-                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Prix annuel/mois (FCFA) *</label>
-                  <input type="number" value={form.prixAnnuel} onChange={e => setForm(f => ({ ...f, prixAnnuel: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Prix mensuel (FCFA) *</label>
+                  <input type="number" min={0} value={form.prixMensuel} onChange={e => setForm(f => ({ ...f, prixMensuel: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
               </div>
+              <p className="font-body text-xs text-muted-foreground -mt-1">
+                Le mensuel correspond à 4 semaines.
+                {reductionMensuel(form) > 0
+                  ? ` Réduction affichée aux clients : −${reductionMensuel(form)} % (par rapport à 4 × le prix hebdomadaire).`
+                  : ' Mettez un prix mensuel inférieur à 4 × le prix hebdomadaire pour afficher une réduction.'}
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Tag</label>

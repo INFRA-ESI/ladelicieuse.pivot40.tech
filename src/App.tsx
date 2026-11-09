@@ -1,6 +1,6 @@
-import { lazy, Suspense, Component } from "react";
+import { lazy, Suspense, Component, useEffect } from "react";
 import type { ReactNode, ErrorInfo } from "react";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { ls } from "@/lib/storage";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -38,6 +38,7 @@ const PolitiqueConfidentialitePage = lazy(() => import("@/pages/PolitiqueConfide
 
 // Admin pages — lazy-loadées (chunk séparé, pas chargé pour les clients)
 const AdminLoginPage        = lazy(() => import("@/pages/admin/AdminLoginPage"));
+const AdminPasswordResetPage = lazy(() => import("@/pages/admin/AdminPasswordResetPage"));
 const AdminLayout           = lazy(() => import("@/components/admin/AdminLayout"));
 const DashboardPage         = lazy(() => import("@/pages/admin/DashboardPage"));
 const OrdersPage            = lazy(() => import("@/pages/admin/OrdersPage"));
@@ -56,6 +57,7 @@ const PromotionsPage        = lazy(() => import("@/pages/admin/PromotionsPage"))
 const SuggestionsPage       = lazy(() => import("@/pages/admin/SuggestionsPage"));
 const ConsultationsAdminPage = lazy(() => import("@/pages/admin/ConsultationsAdminPage"));
 const PlansAdminPage        = lazy(() => import("@/pages/admin/PlansAdminPage"));
+const SubscriptionsAdminPage = lazy(() => import("@/pages/admin/SubscriptionsAdminPage"));
 const FAQsAdminPage         = lazy(() => import("@/pages/admin/FAQsAdminPage"));
 const LivraisonAdminPage    = lazy(() => import("@/pages/admin/LivraisonAdminPage"));
 const ProductPage           = lazy(() => import("@/pages/ProductPage"));
@@ -115,6 +117,15 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolea
   }
 }
 
+// Une nouvelle page doit s'ouvrir en haut, pas à la hauteur de scroll de la précédente.
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (!hash) window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
 const App = () => (
   <ErrorBoundary>
     <TooltipProvider>
@@ -122,6 +133,7 @@ const App = () => (
       <CartProvider>
         <Sonner position="top-right" richColors closeButton />
         <BrowserRouter>
+          <ScrollToTop />
           <ContinuationPopup />
           <FloatingDietician />
           <PWAInstall />
@@ -131,7 +143,9 @@ const App = () => (
             <Route path="/composer" element={<><Header /><PublicSuspense><SaladCategoryPage /></PublicSuspense></>} />
             <Route path="/composer/:type" element={<><Header /><PublicSuspense><SaladComposerPage /></PublicSuspense></>} />
             <Route path="/jus" element={<><Header /><PublicSuspense><JuicesPage /></PublicSuspense></>} />
+            <Route path="/jus/:categorie" element={<><Header /><PublicSuspense><JuicesPage /></PublicSuspense></>} />
             <Route path="/repas" element={<><Header /><PublicSuspense><MealsPage /></PublicSuspense></>} />
+            <Route path="/repas/:categorie" element={<><Header /><PublicSuspense><MealsPage /></PublicSuspense></>} />
             <Route path="/produit/:slug" element={<><Header /><PublicSuspense><ProductPage /></PublicSuspense></>} />
             <Route path="/dieteticien" element={<><Header /><PublicSuspense><ConsultationsPage /></PublicSuspense></>} />
             <Route path="/abonnement" element={<><Header /><PublicSuspense><AbonnementPage /></PublicSuspense></>} />
@@ -150,6 +164,8 @@ const App = () => (
 
             {/* Admin routes — lazy + guard synchrone */}
             <Route path="/admin/login" element={<AdminSuspense><AdminLoginPage /></AdminSuspense>} />
+            <Route path="/admin/forgot-password" element={<AdminSuspense><AdminPasswordResetPage /></AdminSuspense>} />
+            <Route path="/admin/reset-password" element={<AdminSuspense><AdminPasswordResetPage /></AdminSuspense>} />
             <Route path="/admin" element={
               <ProtectedAdminRoute>
                 <AdminSuspense><AdminLayout /></AdminSuspense>
@@ -171,6 +187,7 @@ const App = () => (
               <Route path="suggestions"   element={<AdminSuspense><SuggestionsPage /></AdminSuspense>} />
               <Route path="consultations" element={<AdminSuspense><ConsultationsAdminPage /></AdminSuspense>} />
               <Route path="plans"         element={<AdminSuspense><PlansAdminPage /></AdminSuspense>} />
+              <Route path="abonnements"   element={<AdminSuspense><SubscriptionsAdminPage /></AdminSuspense>} />
               <Route path="faqs"          element={<AdminSuspense><FAQsAdminPage /></AdminSuspense>} />
               <Route path="temoignages"   element={<AdminSuspense><AvisClientsAdminPage /></AdminSuspense>} />
               <Route path="livraison"     element={<AdminSuspense><LivraisonAdminPage /></AdminSuspense>} />

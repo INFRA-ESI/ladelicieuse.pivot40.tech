@@ -1,18 +1,20 @@
 import { useState, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Eye, EyeOff, ShieldCheck, ArrowLeft,
   Loader2, Lock, RotateCcw,
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { requestOTP, verifyOTP } from '@/services/authService';
+import { useAdminTheme } from '@/hooks/useAdminTheme';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { OTPInputField } from '@/components/admin/OTPInputField';
 import { cn } from '@/lib/utils';
+import { loginPasswordError } from '@/lib/password';
 import loginBg from '@/assets/admin-login-bg.jpg';
 import logo from '@/assets/logo.png';
 
@@ -33,13 +35,14 @@ function formatTimer(s: number): string {
 }
 
 // ── Variantes d'animation page ────────────────────────────────────────────────
-const stepVariants = {
+const stepVariants: Variants = {
   enter:  { opacity: 0, x: 24, filter: 'blur(4px)' },
   center: { opacity: 1, x: 0,  filter: 'blur(0px)', transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } },
   exit:   { opacity: 0, x: -24, filter: 'blur(4px)', transition: { duration: 0.2 } },
 };
 
 export default function AdminLoginPage() {
+  useAdminTheme();
   const navigate = useNavigate();
 
   // ── État global ───────────────────────────────────────────────────────────
@@ -106,6 +109,11 @@ export default function AdminLoginPage() {
       toast.error('Veuillez remplir tous les champs');
       return;
     }
+    const weak = loginPasswordError(password);
+    if (weak) {
+      toast.error(weak);
+      return;
+    }
     setLoadingCreds(true);
     const res = await requestOTP({ email, password });
     setLoadingCreds(false);
@@ -130,7 +138,7 @@ export default function AdminLoginPage() {
     setLoadingOTP(false);
     if (res.success) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      toast.success('Connexion réussie !');
+      toast.success('Connexion réussie');
       navigate('/admin');
     } else {
       const msg = res.message || 'Code incorrect. Réessayez.';
@@ -181,7 +189,7 @@ export default function AdminLoginPage() {
     ? Math.max(0, (otpExpires / otpTotalRef.current) * 100)
     : 0;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Rendu ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex bg-foreground">
 
@@ -240,7 +248,7 @@ export default function AdminLoginPage() {
               >
                 <Card className="border-0 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.5)] bg-white overflow-hidden">
                   {/* Barre décorative */}
-                  <div className="h-[3px] bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
+                  <div className="h-[3px] bg-primary" />
 
                   <CardContent className="p-8">
                     <div className="flex items-center gap-3 mb-7">
@@ -300,6 +308,12 @@ export default function AdminLoginPage() {
                         </div>
                       </div>
 
+                      <div className="text-right -mt-2">
+                        <Link to="/admin/forgot-password" className="text-xs text-primary hover:underline">
+                          Mot de passe oublié ?
+                        </Link>
+                      </div>
+
                       <Button
                         type="submit"
                         className="w-full h-11 mt-1"
@@ -331,14 +345,13 @@ export default function AdminLoginPage() {
               >
                 <Card className="border-0 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.5)] bg-white overflow-hidden">
                   {/* Barre décorative */}
-                  <div className="h-[3px] bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
+                  <div className="h-[3px] bg-primary" />
 
                   <CardContent className="p-8">
 
                     {/* ── Icône sécurité ── */}
                     <div className="flex justify-center mb-6">
                       <div className="relative">
-                        <div className="absolute inset-0 rounded-full bg-primary/10 scale-150 animate-ping opacity-30" />
                         <div className="absolute inset-0 rounded-full bg-primary/10 scale-[1.3] opacity-50" />
                         <div className="relative w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
                           <ShieldCheck className="w-7 h-7 text-primary" strokeWidth={1.5} />

@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle } from '@/components/icons';
 import Footer from '@/components/Footer';
+import { PASSWORD_HINT, passwordError } from '@/lib/password';
 
 export default function ResetPasswordPage() {
   const [searchParams]        = useSearchParams();
@@ -19,10 +20,8 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError('');
     if (!password || !confirm) { setError('Remplissez les deux champs.'); return; }
-    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^a-zA-Z0-9]/.test(password)) {
-      setError('Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (@, !, #, $...).');
-      return;
-    }
+    const pwdError = passwordError(password);
+    if (pwdError) { setError(pwdError); return; }
     if (password !== confirm) { setError('Les mots de passe ne correspondent pas.'); return; }
 
     setLoading(true);
@@ -62,7 +61,7 @@ export default function ResetPasswordPage() {
           </p>
           <Link
             to="/mot-de-passe-oublie"
-            className="inline-flex items-center gap-2 font-body text-sm uppercase tracking-wider px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+            className="inline-flex items-center gap-2 font-body text-sm px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
           >
             Demander un nouveau lien <ArrowRight className="w-4 h-4" />
           </Link>
@@ -97,26 +96,26 @@ export default function ResetPasswordPage() {
             </p>
             <Link
               to="/connexion"
-              className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+              className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
             >
               Se connecter <ArrowRight className="w-4 h-4" />
             </Link>
           </motion.div>
         ) : (
           <>
-            <span className="font-body text-xs uppercase tracking-[0.3em] text-primary block mb-3">
+            <span className="font-body text-xs text-primary block mb-3">
               Sécurité
             </span>
             <h1 className="font-display text-4xl md:text-5xl text-foreground leading-[0.95] mb-3">
-              Nouveau<br /><span className="italic">mot de passe</span>
+              Nouveau<br /><span>mot de passe</span>
             </h1>
             <p className="font-body text-sm text-muted-foreground mb-8 leading-relaxed">
-              Choisissez un mot de passe sécurisé : 8 caractères min, une majuscule, un chiffre et un caractère spécial.
+              Choisissez un mot de passe sécurisé : {PASSWORD_HINT}
             </p>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               <div>
-                <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+                <label className="font-body text-xs text-muted-foreground block mb-2">
                   Nouveau mot de passe
                 </label>
                 <div className="relative">
@@ -124,7 +123,7 @@ export default function ResetPasswordPage() {
                     type={showPwd ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Minimum 6 caractères"
+                    placeholder="8 caractères, une majuscule, un chiffre"
                     autoComplete="new-password"
                     className="w-full font-body text-sm px-4 py-3.5 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
                   />
@@ -133,7 +132,7 @@ export default function ResetPasswordPage() {
               </div>
 
               <div>
-                <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+                <label className="font-body text-xs text-muted-foreground block mb-2">
                   Confirmer le mot de passe
                 </label>
                 <div className="relative">
@@ -158,7 +157,7 @@ export default function ResetPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.2em] px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
+                className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
               >
                 {loading ? 'Mise à jour…' : <><span>Enregistrer le mot de passe</span><ArrowRight className="w-4 h-4" /></>}
               </button>

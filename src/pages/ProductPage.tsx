@@ -3,8 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ShoppingCart, ChevronRight, Clock, Users, Flame,
-  Check, AlertTriangle, ChevronLeft, Zap, X,
-} from 'lucide-react';
+  Check, AlertTriangle, ChevronLeft, Zap, X, Leaf,
+} from '@/components/icons';
 
 import { useCart } from '@/context/CartContext';
 import { publicFetch } from '@/services/publicApiService';
@@ -23,11 +23,11 @@ const ALLERGEN_LABELS: Record<string, string> = {
 };
 
 const GOAL_COLORS: Record<string, string> = {
-  detox:    'bg-emerald-50 text-emerald-700 border-emerald-200',
-  minceur:  'bg-sky-50 text-sky-700 border-sky-200',
-  energie:  'bg-amber-50 text-amber-700 border-amber-200',
-  sport:    'bg-orange-50 text-orange-700 border-orange-200',
-  'bien-être': 'bg-violet-50 text-violet-700 border-violet-200',
+  detox:    'text-primary',
+  minceur:  'bg-muted text-muted-foreground border-border',
+  energie:  'text-amber-700',
+  sport:    'text-amber-700',
+  'bien-être': 'bg-primary/10 text-primary border-primary/20',
   default:  'bg-primary/8 text-primary border-primary/20',
 };
 
@@ -43,12 +43,12 @@ function pct(val: number, ref: number) {
 }
 
 const MACRO_BARS = [
-  { key: 'proteines', label: 'Protéines',   unit: 'g',  color: 'bg-blue-500',   ref: DV.proteines },
+  { key: 'proteines', label: 'Protéines',   unit: 'g',  color: 'bg-primary',   ref: DV.proteines },
   { key: 'glucides',  label: 'Glucides',    unit: 'g',  color: 'bg-yellow-500', ref: DV.glucides },
   { key: 'lipides',   label: 'Lipides',     unit: 'g',  color: 'bg-red-400',    ref: DV.lipides },
   { key: 'fibres',    label: 'Fibres',      unit: 'g',  color: 'bg-green-500',  ref: DV.fibres },
-  { key: 'sucres',    label: 'Sucres',      unit: 'g',  color: 'bg-pink-400',   ref: DV.sucres },
-  { key: 'sodium',    label: 'Sodium',      unit: 'mg', color: 'bg-orange-400', ref: DV.sodium },
+  { key: 'sucres',    label: 'Sucres',      unit: 'g',  color: 'bg-primary',   ref: DV.sucres },
+  { key: 'sodium',    label: 'Sodium',      unit: 'mg', color: 'bg-amber-400', ref: DV.sodium },
 ] as const;
 
 // ── Composant principal ───────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ export default function ProductPage() {
       totalPrice:    product.prixPromo ?? product.prix,
       quantity:      1,
     });
-    toast.success(`${product.nom} ajouté au panier !`);
+    toast.success(`${product.nom} ajouté au panier`);
   };
 
   if (loading) return <ProductSkeleton />;
@@ -146,10 +146,10 @@ export default function ProductPage() {
               )}
               {/* Badges */}
               <div className="absolute top-3 left-3 flex flex-col gap-1.5">
-                {product.vedette    && <span className="bg-amber-500 text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded">⭐ Vedette</span>}
-                {product.recommande && <span className="bg-primary text-primary-foreground text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded">Recommandé</span>}
-                {product.saisonnier && <span className="bg-emerald-600 text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded">🍃 Saison</span>}
-                {hasPromo           && <span className="bg-red-500 text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded">Promo</span>}
+                {product.vedette    && <span className="bg-amber-500 text-white text-xs font-body px-2 py-0.5 rounded">Vedette</span>}
+                {product.recommande && <span className="bg-primary text-primary-foreground text-xs font-body px-2 py-0.5 rounded">Recommandé</span>}
+                {product.saisonnier && <span className="bg-emerald-600 text-white text-xs font-body px-2 py-0.5 rounded">Saison</span>}
+                {hasPromo           && <span className="bg-red-500 text-white text-xs font-body px-2 py-0.5 rounded">Promo</span>}
               </div>
             </div>
             {/* Thumbnails */}
@@ -171,7 +171,7 @@ export default function ProductPage() {
           {/* Infos produit */}
           <div className="space-y-5">
             <div>
-              <span className="font-body text-xs uppercase tracking-[0.2em] text-primary">{product.categorie}</span>
+              <span className="font-body text-xs text-primary">{product.categorie}</span>
               <h1 className="font-display text-3xl md:text-4xl text-foreground mt-1 leading-tight">{product.nom}</h1>
               {product.descriptionCourte && (
                 <p className="font-body text-muted-foreground mt-2 text-base leading-relaxed">{product.descriptionCourte}</p>
@@ -190,19 +190,19 @@ export default function ProductPage() {
             <div className="flex flex-wrap gap-3">
               {product.nutrition.calories > 0 && (
                 <div className="flex items-center gap-1.5 px-3 py-2 bg-muted rounded-lg">
-                  <Flame className="w-4 h-4 text-orange-500" />
+                  <Flame className="w-4 h-4 text-amber-500" />
                   <span className="font-body text-sm"><strong>{product.nutrition.calories}</strong> kcal</span>
                 </div>
               )}
               {product.tempsPrepMin != null && product.tempsPrepMin > 0 && (
                 <div className="flex items-center gap-1.5 px-3 py-2 bg-muted rounded-lg">
-                  <Clock className="w-4 h-4 text-blue-500" />
+                  <Clock className="w-4 h-4 text-primary" />
                   <span className="font-body text-sm"><strong>{product.tempsPrepMin}</strong> min</span>
                 </div>
               )}
               {product.portions > 0 && (
                 <div className="flex items-center gap-1.5 px-3 py-2 bg-muted rounded-lg">
-                  <Users className="w-4 h-4 text-violet-500" />
+                  <Users className="w-4 h-4 text-primary" />
                   <span className="font-body text-sm"><strong>{product.portions}</strong> portion{product.portions > 1 ? 's' : ''}</span>
                 </div>
               )}
@@ -235,7 +235,7 @@ export default function ProductPage() {
               <button
                 onClick={handleAddToCart}
                 disabled={!product.disponible}
-                className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground font-body text-sm uppercase tracking-[0.12em] rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground font-body text-sm rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ShoppingCart className="w-4 h-4" />
                 Ajouter au panier
@@ -243,7 +243,7 @@ export default function ProductPage() {
               <Link
                 to="/panier"
                 onClick={handleAddToCart}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 border-2 border-primary text-primary font-body text-sm uppercase tracking-[0.12em] rounded-xl hover:bg-primary/5 transition-colors"
+                className="flex items-center justify-center gap-2 px-5 py-3.5 border-2 border-primary text-primary font-body text-sm rounded-xl hover:bg-primary/5 transition-colors"
               >
                 <Zap className="w-4 h-4" />
                 Commander
@@ -269,7 +269,7 @@ export default function ProductPage() {
             {/* Calories featured */}
             <div className="bg-primary/5 border-b border-border px-6 py-5 flex items-center justify-between">
               <div>
-                <span className="font-body text-xs uppercase tracking-[0.2em] text-muted-foreground">Calories</span>
+                <span className="font-body text-xs text-muted-foreground">Calories</span>
                 <div className="font-display text-5xl text-primary mt-1">{product.nutrition.calories}</div>
                 <span className="font-body text-xs text-muted-foreground">kcal par portion</span>
               </div>
@@ -298,7 +298,7 @@ export default function ProductPage() {
                   </div>
                 );
               })}
-              <p className="font-body text-[11px] text-muted-foreground pt-2 border-t border-border mt-2">
+              <p className="font-body text-xs text-muted-foreground pt-2 border-t border-border mt-2">
                 * % des Apports Journaliers de Référence (AJR) pour un adulte (2000 kcal/jour)
               </p>
             </div>
@@ -351,7 +351,7 @@ export default function ProductPage() {
           <h2 className="font-display text-2xl text-foreground mb-4">Allergènes</h2>
           <div className="flex flex-wrap gap-2">
             {product.allergenes!.map(a => (
-              <span key={a} className="flex items-center gap-1.5 font-body text-xs px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-full">
+              <span key={a} className="text-amber-700 flex items-center gap-1.5 font-body text-xs px-3 py-1.5 border rounded-full">
                 <AlertTriangle className="w-3 h-3" />
                 {ALLERGEN_LABELS[a] ?? a}
               </span>
@@ -384,7 +384,7 @@ export default function ProductPage() {
               <Link key={p._id} to={`/produit/${p.slug ?? p._id}`} className="group border border-border rounded-xl overflow-hidden bg-background hover:shadow-md transition-shadow">
                 <div className="h-36 bg-muted overflow-hidden">
                   {p.image ? (
-                    <img src={p.image} alt={p.nom} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                    <img src={p.image} alt={p.nom} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center"><Leaf className="w-8 h-8 text-muted-foreground/30" /></div>
                   )}

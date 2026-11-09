@@ -81,6 +81,8 @@ export interface ApiIngredient {
   prixAchat: number;
   prixVente: number;
   nutrition: { calories: number; proteines: number; glucides: number; lipides: number; fibres: number };
+  /** Poids d'une portion en grammes ; la nutrition est exprimée pour 100 g. Absent = 100. */
+  portionGrammes?: number;
   actif: boolean;
   stockLevel: string;
 }

@@ -5,6 +5,7 @@ import { sendPushToUser } from '../services/push.service.js';
 import Order from '../models/Order.model.js';
 import type { TransactionProvider } from '../models/Transaction.model.js';
 import { logger } from '../config/logger.js';
+import { verifyQuote } from '../services/quote.service.js';
 import {
   SingPayInitDto,
   SingPayInitResponse,
@@ -16,20 +17,26 @@ import {
 
 // ── POST /api/payments/singpay/init ───────────────────────────────────────────
 export const initPayment = async (
-  req: Request<{}, {}, SingPayInitDto>,
+  req: Request<Record<string, string>, unknown, SingPayInitDto>,
   res: Response<ApiResponse<SingPayInitResponse>>,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { amount, orderId, method, phone, provider, customerName, customerEmail, description } =
-      req.body;
+    const { orderId, method, phone, provider, customerName, customerEmail, description } = req.body;
 
-    if (!amount || amount <= 0) {
-      res.status(400).json({ success: false, error: 'Le montant doit être supérieur à 0 FCFA.' });
-      return;
-    }
     if (!orderId) {
       res.status(400).json({ success: false, error: "L'identifiant de commande est requis." });
+      return;
+    }
+    // Le montant vient du devis signé par le serveur, pas du navigateur : on ne peut pas payer moins que le panier.
+    const quoted = verifyQuote((req.body as { quote?: unknown }).quote);
+    if (!quoted || quoted.orderId !== orderId) {
+      res.status(400).json({ success: false, error: 'Votre panier doit être revalidé. Actualisez la page puis réessayez.' });
+      return;
+    }
+    const amount = quoted.total;
+    if (amount <= 0) {
+      res.status(400).json({ success: false, error: 'Le montant doit être supérieur à 0 FCFA.' });
       return;
     }
     if (!method || !['mobile_money', 'card'].includes(method)) {
@@ -79,7 +86,7 @@ export const initPayment = async (
       return;
     }
 
-    // Persistance MongoDB (fire-and-forget)
+    // Persistance MongoDB (sans attendre la fin)
     const resolvedProvider: TransactionProvider =
       method === 'mobile_money' ? ((provider as TransactionProvider) ?? 'airtel') : 'card';
 
@@ -108,22 +115,24 @@ export const initPayment = async (
 // ── POST /api/payments/singpay/card ──────────────────────────────────────────
 export const initCardPayment = async (
   req: Request,
-  res: Response,
-  next: NextFunction
+  res: Response
 ): Promise<void> => {
   try {
-    const { amount, orderId, successUrl, cancelUrl } = req.body as {
-      amount: number; orderId: string; successUrl?: string; cancelUrl?: string;
+    const { orderId, successUrl, cancelUrl, quote } = req.body as {
+      orderId: string; successUrl?: string; cancelUrl?: string; quote?: unknown;
     };
 
-    if (!amount || amount <= 0) {
-      res.status(400).json({ success: false, error: 'Montant invalide.' });
-      return;
-    }
     if (!orderId) {
       res.status(400).json({ success: false, error: 'Identifiant de commande requis.' });
       return;
     }
+    // Même règle que le paiement mobile : montant issu du devis signé, jamais du navigateur.
+    const quoted = verifyQuote(quote);
+    if (!quoted || quoted.orderId !== orderId || quoted.total <= 0) {
+      res.status(400).json({ success: false, error: 'Votre panier doit être revalidé. Actualisez la page puis réessayez.' });
+      return;
+    }
+    const amount = quoted.total;
 
     const result = await singPayService.initiateCardPayment({
       amount, orderId,
@@ -148,7 +157,6 @@ export const initCardPayment = async (
     const message = error instanceof Error ? error.message : 'Erreur paiement carte.';
     logger.error('[SingPay Card]', { message });
     res.status(400).json({ success: false, error: message });
-    next;
   }
 };
 
@@ -175,7 +183,7 @@ export const checkPayment = async (
       return;
     }
 
-    // Mise à jour du statut en base + notifications (fire-and-forget)
+    // Mise à jour du statut en base + notifications (sans attendre la fin)
     if (data.isComplete) {
       singPayService.updateTransactionStatus(transactionId, data.status, {
         paidAt: data.status === 'success' ? new Date() : undefined,
@@ -218,7 +226,7 @@ export const checkPayment = async (
 
 // ── POST /api/payments/singpay/cash ───────────────────────────────────────────
 export const confirmCashPayment = async (
-  req: Request<{}, {}, CashConfirmDto>,
+  req: Request<Record<string, string>, unknown, CashConfirmDto>,
   res: Response<ApiResponse<CashConfirmResponse>>,
   next: NextFunction
 ): Promise<void> => {

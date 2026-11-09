@@ -8,7 +8,8 @@ const router = Router();
 
 const InitPaymentSchema = z.object({
   orderId:       z.string().min(1).max(128),
-  amount:        z.number().positive('Le montant doit être positif'),
+  quote:         z.string().min(20).max(8000),
+  amount:        z.number().positive().optional(), // ignoré : le montant vient du devis
   method:        z.enum(['mobile_money', 'card']),
   phone:         z.string().regex(/^\+?[\d\s()-]{7,20}$/, 'Numéro de téléphone invalide').optional(),
   provider:      z.enum(['airtel', 'moov', 'card']).optional(),
@@ -19,7 +20,8 @@ const InitPaymentSchema = z.object({
 
 const CardPaymentSchema = z.object({
   orderId:    z.string().min(1).max(128),
-  amount:     z.number().positive('Le montant doit être positif'),
+  quote:      z.string().min(20).max(8000),
+  amount:     z.number().positive().optional(), // ignoré : le montant vient du devis
   successUrl: z.string().url().optional(),
   cancelUrl:  z.string().url().optional(),
 });

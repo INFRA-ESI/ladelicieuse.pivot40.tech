@@ -3,7 +3,7 @@ import { useCart } from '@/context/CartContext';
 import { useUser } from '@/context/UserContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { CircleUser, ShoppingBag, Menu, X } from 'lucide-react';
+import { CircleUser, ShoppingBag, Menu, X } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import logo from '@/assets/logo.png';
 
@@ -59,7 +59,7 @@ export default function Header() {
           {user ? (
             <Link
               to="/mon-compte"
-              className="flex items-center gap-1.5 font-body text-sm font-medium tracking-wide uppercase text-muted-foreground hover:text-primary transition-colors"
+              className="flex items-center gap-1.5 font-body text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
             >
               <CircleUser className="w-4 h-4" />
               {user.nom.split(' ')[0]}
@@ -67,7 +67,7 @@ export default function Header() {
           ) : (
             <Link
               to="/connexion"
-              className="flex items-center gap-1.5 font-body text-sm font-medium tracking-wide uppercase text-muted-foreground hover:text-primary transition-colors"
+              className="flex items-center gap-1.5 font-body text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
             >
               <CircleUser className="w-4 h-4" />
               Connexion
@@ -76,7 +76,7 @@ export default function Header() {
           <Link
             id="cart-header-icon"
             to="/panier"
-            className="relative flex items-center gap-1.5 font-body text-sm font-medium tracking-wide uppercase text-foreground hover:text-primary transition-colors"
+            className="relative flex items-center gap-1.5 font-body text-sm font-medium text-foreground hover:text-primary transition-colors"
           >
             <motion.div
               animate={cartBump ? { scale: [1, 1.35, 0.9, 1.1, 1] } : { scale: 1 }}
@@ -91,8 +91,8 @@ export default function Header() {
                   initial={{ scale: 0, y: -4 }}
                   animate={{ scale: 1, y: 0 }}
                   exit={{ scale: 0, opacity: 0 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                  className="absolute -top-2 -right-3 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold"
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="absolute -top-2 -right-3 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-semibold"
                 >
                   {totalItems}
                 </motion.span>
@@ -144,7 +144,7 @@ function NavItem({ to, label }: { to: string; label: string }) {
   return (
     <Link 
       to={to} 
-      className="font-body text-sm font-medium tracking-wide uppercase text-muted-foreground hover:text-primary transition-colors"
+      className="font-body text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
     >
       {label}
     </Link>

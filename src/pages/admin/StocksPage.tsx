@@ -3,9 +3,11 @@ import {
   Search, Plus, Edit2, Trash2, X, AlertTriangle, CheckCircle,
   Package, Truck, ChevronRight, ChevronDown, RefreshCw, Star, Phone,
   Mail, Send, ClipboardList, Eye,
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -55,15 +57,15 @@ interface StockReappro {
   createdAt: string;
 }
 
-// ─── Static config ─────────────────────────────────────────────────────────────
+// ─── Configuration statique ─────────────────────────────────────────────────────────────
 
 const CMD_STATUT_LABEL: Record<ReapproStatut, string> = {
   brouillon: 'Brouillon', envoyee: 'Envoyée', confirmee: 'Confirmée', recue: 'Reçue',
 };
 const CMD_STATUT_COLOR: Record<ReapproStatut, string> = {
-  brouillon: 'bg-gray-100 text-gray-700',
-  envoyee:   'bg-blue-100 text-blue-700',
-  confirmee: 'bg-green-100 text-green-700',
+  brouillon: 'text-muted-foreground',
+  envoyee:   'text-muted-foreground',
+  confirmee: 'text-primary',
   recue:     'bg-primary/10 text-primary',
 };
 
@@ -82,10 +84,10 @@ const stockLevel = (s: Ingredient): StockLevel => {
 };
 
 const levelColor: Record<StockLevel, string> = {
-  rupture:  'bg-red-100 text-red-800',
-  critique: 'bg-orange-100 text-orange-800',
-  faible:   'bg-yellow-100 text-yellow-800',
-  normal:   'bg-green-100 text-green-800',
+  rupture:  'text-destructive',
+  critique: 'text-amber-700',
+  faible:   'text-amber-700',
+  normal:   'text-primary',
 };
 const levelLabel: Record<StockLevel, string> = {
   rupture: 'Rupture', critique: 'Critique', faible: 'Faible', normal: 'Normal',
@@ -192,7 +194,7 @@ export default function StocksPage() {
   const [receptionQty, setReceptionQty] = useState<Record<string, string>>({});
   const [quickCmdItem, setQuickCmdItem] = useState<Ingredient | null>(null);
 
-  // ── Load all data at mount ─────────────────────────────────────────────────
+  // ── Chargement de toutes les données au montage ─────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -234,6 +236,8 @@ export default function StocksPage() {
     const ml = levelFilter === 'tous' || stockLevel(s) === levelFilter;
     return ms && ml;
   }), [ingredients, search, levelFilter]);
+
+  const stocksPagination = usePagination(filteredStocks, `${search}|${levelFilter}`);
 
   const categories = useMemo(() =>
     Array.from(new Set(ingredients.map(i => i.categorie))).sort(),
@@ -349,7 +353,7 @@ export default function StocksPage() {
         statut: 'recue', articles,
       });
       setReappros(prev => prev.map(r => r._id === receptionModal._id ? res.data : r));
-      // Refresh ingredients after backend updated stocks
+      // Recharge les ingrédients une fois les stocks mis à jour côté serveur
       const ingRes = await adminGet<{ data: Ingredient[] }>('/ingredients?limit=500');
       setIngredients(ingRes.data);
       toast.success('Réception enregistrée — stocks mis à jour');
@@ -449,7 +453,7 @@ export default function StocksPage() {
     }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Rendu ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 bg-muted/30 -m-6 p-6 min-h-screen">
@@ -589,11 +593,11 @@ export default function StocksPage() {
               <tbody>
                 {loadingIng
                   ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
-                  : filteredStocks.map(s => {
+                  : stocksPagination.pageItems.map(s => {
                     const lvl = stockLevel(s);
                     return (
                       <tr key={s._id}
-                        className={`border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer ${lvl === 'rupture' ? 'bg-red-50/30' : lvl === 'critique' ? 'bg-orange-50/20' : ''}`}
+                        className={`border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer ${lvl === 'rupture' ? 'bg-muted' : lvl === 'critique' ? 'bg-muted' : ''}`}
                         onClick={() => setDetailItem(s)}>
                         <td className="p-3">
                           <p className="font-body font-medium text-foreground">{s.nom}</p>
@@ -648,6 +652,7 @@ export default function StocksPage() {
               <p className="text-center py-10 font-body text-sm text-muted-foreground">Aucun ingrédient trouvé</p>
             )}
           </div>
+          <TablePagination {...stocksPagination} onPageChange={stocksPagination.setPage} />
         </div>
       )}
 
@@ -669,7 +674,7 @@ export default function StocksPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <h3 className="font-display text-base text-foreground truncate">{s.nom}</h3>
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-body shrink-0 ${s.actif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-body shrink-0 ${s.actif ? 'text-primary' : 'text-muted-foreground'}`}>
                           {s.actif ? 'Actif' : 'Inactif'}
                         </span>
                       </div>

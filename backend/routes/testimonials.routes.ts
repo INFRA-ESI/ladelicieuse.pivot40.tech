@@ -2,8 +2,10 @@ import { Router, Request, Response } from 'express';
 import Testimonial from '../models/Testimonial.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { verifyJWT } from './auth.routes.js';
+import { rateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
+const SUBMIT_PAGES = ['consultations', 'abonnement', 'accueil'];
 
 // ── GET /api/testimonials?page=consultations — Public (actifs seulement) ───────
 router.get('/', async (req: Request, res: Response): Promise<void> => {
@@ -18,16 +20,17 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── POST /api/testimonials/submit — Public (soumission client) ────────────────
-router.post('/submit', async (req: Request, res: Response): Promise<void> => {
+// Endpoint ouvert à tous : limité en débit et en taille pour éviter le spam de la file de modération.
+router.post('/submit', rateLimiter(5, 900, 'testimonial-submit'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { nom, texte, note, page, email } = req.body;
-    if (!nom?.trim() || !texte?.trim() || !page) {
-      res.status(400).json({ success: false, message: 'Nom, témoignage et page requis' });
+    if (typeof nom !== 'string' || typeof texte !== 'string' || !nom.trim() || !texte.trim() || !SUBMIT_PAGES.includes(page)) {
+      res.status(400).json({ success: false, message: 'Nom, témoignage et page valides requis' });
       return;
     }
     const item = new Testimonial({
-      nom:    nom.trim(),
-      texte:  texte.trim(),
+      nom:    nom.trim().slice(0, 80),
+      texte:  texte.trim().slice(0, 1000),
       note:   Math.min(5, Math.max(1, Number(note) || 5)),
       page,
       email:  email?.trim() || '',

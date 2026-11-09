@@ -3,7 +3,7 @@ import {
   Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight,
   Flame, Eye, EyeOff, Search, GripVertical, ImagePlus, Loader2,
   Send, Globe, BookOpen, CalendarDays,
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
 import { adminUploadImage, adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 
@@ -153,13 +153,13 @@ const CATEGORIES: Meal['categorie'][] = [
 ];
 
 const CAT_COLOR: Record<string, string> = {
-  'Salade':                'bg-green-100 text-green-700',
-  'Jus & Détox':           'bg-blue-100 text-blue-700',
-  'Jus de Fruits Pressés': 'bg-sky-100 text-sky-700',
-  'Repas équilibré':       'bg-orange-100 text-orange-700',
-  'Repas Chauds':          'bg-red-100 text-red-700',
-  'Omelettes':             'bg-amber-100 text-amber-700',
-  'Soupes & Bouillons':    'bg-purple-100 text-purple-700',
+  'Salade':                'text-primary',
+  'Jus & Détox':           'text-muted-foreground',
+  'Jus de Fruits Pressés': 'text-muted-foreground',
+  'Repas équilibré':       'text-amber-700',
+  'Repas Chauds':          'text-destructive',
+  'Omelettes':             'text-amber-700',
+  'Soupes & Bouillons':    'text-muted-foreground',
 };
 const DEFAULT_CAT_COLOR = 'bg-muted text-muted-foreground';
 
@@ -230,13 +230,13 @@ function MealCard({ meal, libMap, onEdit, onDelete, onToggle }: {
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <div className="flex items-center gap-1.5 bg-primary/10 text-primary rounded-lg px-3 py-1.5">
             <Flame className="w-3.5 h-3.5" />
-            <span className="font-body text-sm font-bold">{Math.round(pp.cal)} kcal</span>
+            <span className="font-body text-sm font-semibold">{Math.round(pp.cal)} kcal</span>
             <span className="font-body text-xs opacity-70">/ portion</span>
           </div>
-          <NutriBadge label="Prot." value={pp.prot} unit="g" color="bg-blue-50 text-blue-700" />
-          <NutriBadge label="Gluc." value={pp.glu}  unit="g" color="bg-yellow-50 text-yellow-700" />
-          <NutriBadge label="Lip."  value={pp.lip}  unit="g" color="bg-red-50 text-red-700" />
-          <NutriBadge label="Fibr." value={pp.fib}  unit="g" color="bg-green-50 text-green-700" />
+          <NutriBadge label="Prot." value={pp.prot} unit="g" color="text-muted-foreground" />
+          <NutriBadge label="Gluc." value={pp.glu}  unit="g" color="text-amber-700" />
+          <NutriBadge label="Lip."  value={pp.lip}  unit="g" color="text-destructive" />
+          <NutriBadge label="Fibr." value={pp.fib}  unit="g" color="text-primary" />
         </div>
 
         <div className="flex items-center justify-between font-body text-xs text-muted-foreground">
@@ -297,7 +297,7 @@ export default function MenuDayPage() {
   const [importing, setImporting]       = useState<string | null>(null);
   const catalogLoadedRef                = useRef(false);
 
-  // ── Fetch ingredient library ─────────────────────────────────────────────────
+  // ── Chargement de la bibliothèque d'ingrédients ─────────────────────────────────────────────────
   useEffect(() => {
     adminGet<{ data: Array<{ _id: string; nom: string; categorie: string; nutrition: { calories: number; proteines: number; glucides: number; lipides: number; fibres: number } }> }>('/ingredients?limit=500&actif=true')
       .then(res => {
@@ -318,13 +318,13 @@ export default function MenuDayPage() {
       .finally(() => setLoadingLib(false));
   }, []);
 
-  // ── Fetch meals + DailyMenu status for selected date ─────────────────────────
+  // ── Chargement des repas et du statut du menu pour la date choisie ─────────────────────────
   const loadMeals = useCallback(async (d: string) => {
     setLoadingMeals(true);
     try {
       const [mealsRes] = await Promise.all([
         adminGet<{ data: Meal[] }>(`/meals/admin?date=${d}`),
-        // Load DailyMenu status — 404 = not published yet, ignore error
+        // Charge le statut du menu : 404 = pas encore publié, erreur ignorée
         adminGet<{ data: { published: boolean } }>(`/menu/${d}`)
           .then(r => setPublished(r.data?.published ?? false))
           .catch(() => setPublished(false)),
@@ -483,7 +483,7 @@ export default function MenuDayPage() {
     }
   };
 
-  // ── Save (create or update) ───────────────────────────────────────────────────
+  // ── Enregistrement (création ou modification) ───────────────────────────────────────────────────
   const handleSave = async () => {
     if (!form.nom.trim())         { toast.error('Nom requis'); return; }
     if (!form.prix || +form.prix <= 0) { toast.error('Prix requis'); return; }
@@ -553,7 +553,7 @@ export default function MenuDayPage() {
     }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────────
+  // ── Suppression ────────────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     const isCatalog = catalogMeals.some(m => m._id === id);
     try {
@@ -628,7 +628,7 @@ export default function MenuDayPage() {
   const setFormat = (idx: number, field: keyof FormatEntry, v: string | boolean) =>
     setForm(f => ({ ...f, formats: f.formats.map((fmt, i) => i === idx ? { ...fmt, [field]: v } : fmt) }));
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Rendu ────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
 
@@ -1150,7 +1150,7 @@ export default function MenuDayPage() {
                         }))}
                         className={`px-3 py-1.5 rounded-full border font-body text-xs transition-colors ${
                           form.allergenes.includes(a.key)
-                            ? 'bg-amber-50 border-amber-400 text-amber-800'
+                            ? 'text-amber-700'
                             : 'border-border text-muted-foreground hover:border-amber-300'
                         }`}
                       >

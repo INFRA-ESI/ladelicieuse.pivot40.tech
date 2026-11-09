@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 
@@ -8,6 +8,7 @@ interface Consultation {
   titre: string;
   description: string;
   prix: number;
+  prixPresentiel: number;
   duree: string;
   tag: string;
   image: string;
@@ -16,7 +17,7 @@ interface Consultation {
 }
 
 const EMPTY: Omit<Consultation, '_id'> = {
-  titre: '', description: '', prix: 15000, duree: '60 min', tag: '', image: '', actif: true, ordre: 0,
+  titre: '', description: '', prix: 15000, prixPresentiel: 25000, duree: '60 min', tag: '', image: '', actif: true, ordre: 0,
 };
 
 const DUREES = ['30 min', '45 min', '60 min', '90 min', '120 min'];
@@ -39,10 +40,10 @@ interface Booking {
 }
 
 const BOOKING_STATUTS: { value: string; label: string; cls: string }[] = [
-  { value: 'en_attente', label: 'En attente',  cls: 'bg-amber-50  text-amber-700  border-amber-200' },
-  { value: 'confirme',   label: 'Confirmé',    cls: 'bg-blue-50   text-blue-700   border-blue-200' },
-  { value: 'effectue',   label: 'Effectué',    cls: 'bg-green-50  text-green-700  border-green-200' },
-  { value: 'annule',     label: 'Annulé',      cls: 'bg-red-50    text-red-700    border-red-200' },
+  { value: 'en_attente', label: 'En attente',  cls: 'text-amber-700' },
+  { value: 'confirme',   label: 'Confirmé',    cls: 'text-muted-foreground' },
+  { value: 'effectue',   label: 'Effectué',    cls: 'text-primary' },
+  { value: 'annule',     label: 'Annulé',      cls: 'text-destructive' },
 ];
 
 // ── Helpers calendrier ────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ export default function ConsultationsAdminPage() {
   }
 
   function openEdit(c: Consultation) {
-    setForm({ titre: c.titre, description: c.description, prix: c.prix, duree: c.duree, tag: c.tag, image: c.image, actif: c.actif, ordre: c.ordre });
+    setForm({ titre: c.titre, description: c.description, prix: c.prix, prixPresentiel: c.prixPresentiel ?? 25000, duree: c.duree, tag: c.tag, image: c.image, actif: c.actif, ordre: c.ordre });
     setImagePreview(c.image || '');
     setEditId(c._id);
     setShowForm(true);
@@ -414,7 +415,10 @@ export default function ConsultationsAdminPage() {
                   <p className="font-body text-xs text-muted-foreground line-clamp-2">{c.description}</p>
                 </div>
                 <div className="flex items-center gap-3 font-body text-sm">
-                  <span className="font-semibold text-foreground">{c.prix.toLocaleString('fr-FR')} FCFA</span>
+                  <span className="font-semibold text-foreground">
+                    {c.prix.toLocaleString('fr-FR')} FCFA <span className="font-normal text-muted-foreground">en ligne</span>
+                    {' · '}{(c.prixPresentiel ?? 0).toLocaleString('fr-FR')} FCFA <span className="font-normal text-muted-foreground">présentiel</span>
+                  </span>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-muted-foreground">{c.duree}</span>
                 </div>
@@ -454,8 +458,12 @@ export default function ConsultationsAdminPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Prix (FCFA) *</label>
-                  <input type="number" value={form.prix} onChange={e => setForm(f => ({ ...f, prix: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Téléconsultation (FCFA) *</label>
+                  <input type="number" min={0} value={form.prix} onChange={e => setForm(f => ({ ...f, prix: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                  <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Présentiel (FCFA) *</label>
+                  <input type="number" min={0} value={form.prixPresentiel} onChange={e => setForm(f => ({ ...f, prixPresentiel: Number(e.target.value) }))} className="w-full h-10 px-3 bg-muted border border-border rounded-md font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
                   <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1">Durée *</label>

@@ -5,8 +5,8 @@ import { useCart } from '@/context/CartContext';
 import { INGREDIENTS, CATEGORY_LABELS, formatPrice, type Ingredient, type IngredientCategory } from '@/data/products';
 import { toast } from 'sonner';
 import { FlyingIngredient, type FlyingItem } from '@/components/FlyingIngredient';
-import { ChevronRight, ChevronLeft, ShoppingCart, Check, Info } from 'lucide-react';
-import { publicFetch } from '@/services/publicApiService';
+import { ChevronRight, ChevronLeft, ShoppingCart, Check, Info, ChefHat } from '@/components/icons';
+import { publicFetch, cachedJson } from '@/services/publicApiService';
 import { ApiIngredient } from '@/types/api.types';
 import { ss } from '@/lib/storage';
 import IngredientSheetModal from '@/components/IngredientSheetModal';
@@ -73,14 +73,42 @@ function normalizeCategory(cat: string): IngredientCategory {
   return 'garniture';
 }
 
+const labelOf = (i: Ingredient) => i.categoryLabel ?? CATEGORY_LABELS[i.category];
+
+// Une section par catégorie telle que nommée dans l'admin, dans l'ordre des clés de l'étape.
+// Sans ingrédient chargé, on garde une section par clé (libellés par défaut) pour les squelettes.
+function stepSections(keys: IngredientCategory[], ingredients: Ingredient[]): { label: string; items: Ingredient[] }[] {
+  if (ingredients.length === 0) return keys.map(k => ({ label: CATEGORY_LABELS[k], items: [] }));
+  return keys.flatMap(key => {
+    const inStock = ingredients.filter(i => i.category === key && i.inStock);
+    const labels = [...new Set(inStock.map(labelOf))];
+    return labels.map(label => ({ label, items: inStock.filter(i => labelOf(i) === label) }));
+  });
+}
+
+// Photo de l'ingrédient, ou une pastille avec son initiale quand il n'en a pas (au lieu d'une image cassée).
+function IngredientImage({ ingredient, className }: { ingredient: Pick<Ingredient, 'image' | 'name'>; className: string }) {
+  if (ingredient.image) {
+    return <img src={ingredient.image} alt={ingredient.name} loading="lazy" className={`${className} object-cover object-center`} />;
+  }
+  return (
+    <div role="img" aria-label={ingredient.name} className={`${className} bg-primary/10 text-primary font-display flex items-center justify-center select-none`}>
+      {ingredient.name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
 function apiToIngredient(i: ApiIngredient): Ingredient {
+  // La nutrition de la bibliothèque est pour 100 g ; une portion peut peser autre chose (15 g d'huile, par exemple).
+  const portionGrams = i.portionGrammes && i.portionGrammes > 0 ? i.portionGrammes : 100;
   return {
     id:                String(i._id),
     name:              i.nom,
     category:          normalizeCategory(i.categorie),
+    categoryLabel:     i.categorie,
     caloriesPer100g:   i.nutrition.calories,
-    portionGrams:      100,
-    caloriesPerPortion:i.nutrition.calories,
+    portionGrams,
+    caloriesPerPortion:Math.round((i.nutrition.calories * portionGrams) / 100),
     pricePerPortion:   i.prixVente,
     benefits:          '',
     image:             i.image,
@@ -88,31 +116,31 @@ function apiToIngredient(i: ApiIngredient): Ingredient {
   };
 }
 
-// Resolves any ingredient identifier (static ID, MongoDB ObjectId, or ingredient name)
-// to the actual ID in the current ingredients list.
-// Handles all three data states:
-//   1. static IDs + static ingredients (no API) → direct match
-//   2. MongoDB ObjectIds + API ingredients (suggestion stored by new admin) → direct match
-//   3. static IDs + API ingredients → name-based lookup via INGREDIENTS reference table
-//   4. ingredient names + API ingredients (edge case) → direct name match
+// Résout n'importe quel identifiant d'ingrédient (ID statique, ObjectId MongoDB ou nom)
+// vers l'ID réel dans la liste d'ingrédients courante.
+// Gère les quatre états de données :
+//   1. IDs statiques + ingrédients statiques (sans API) → correspondance directe
+//   2. ObjectIds MongoDB + ingrédients de l'API (suggestion enregistrée par le nouvel admin) → correspondance directe
+//   3. IDs statiques + ingrédients de l'API → recherche par nom via la table de référence INGREDIENTS
+//   4. noms d'ingrédients + ingrédients de l'API (cas limite) → correspondance directe par nom
 function resolveIngredientId(idOrName: string, currentIngredients: Ingredient[]): string | null {
-  // Step 1: direct ID match (fastest path — works for static AND MongoDB ObjectId cases)
+  // Étape 1 : correspondance directe par ID (chemin le plus rapide, valable pour les ID statiques et les ObjectId MongoDB)
   if (currentIngredients.some(i => i.id === idOrName)) return idOrName;
 
   const norm = (s: string) =>
     s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
   const query = norm(idOrName);
 
-  // Step 2: direct name match against current ingredients
-  // (handles suggestions that store ingredient names, or fuzzy ObjectId mismatches)
+  // Étape 2 : correspondance directe par nom parmi les ingrédients courants
+  // (gère les suggestions qui stockent des noms d'ingrédients, ou des ObjectId approximatifs)
   const nameMatch = currentIngredients.find(i => {
     const n = norm(i.name);
     return n === query || n.startsWith(query) || query.startsWith(n);
   });
   if (nameMatch) return nameMatch.id;
 
-  // Step 3: static ID → name lookup then match against current ingredients
-  // (handles static suggestion IDs like 'poulet' when API ingredients are loaded)
+  // Étape 3 : ID statique → recherche du nom, puis correspondance avec les ingrédients courants
+  // (gère les ID statiques de suggestion comme 'poulet' quand les ingrédients de l'API sont chargés)
   const staticRef = INGREDIENTS.find(i => i.id === idOrName);
   if (!staticRef) return null;
   const refName = norm(staticRef.name);
@@ -141,7 +169,7 @@ function PulseValue({ value, className }: { value: string | number; className?: 
       key={String(value)}
       initial={{ scale: 1.45, y: -6 }}
       animate={{ scale: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 14 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
       className={`inline-block ${className ?? ''}`}
     >
       {value}
@@ -211,8 +239,7 @@ export default function SaladComposerPage() {
   // Charger les suggestions depuis l'API
   useEffect(() => {
     if (!saladType) return;
-    fetch(`/api/suggestions?type=${saladType}`)
-      .then(r => r.json())
+    cachedJson(`/api/suggestions?type=${saladType}`)
       .then(json => {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setApiSuggestions(json.data.map((s: { nom: string; description: string; base?: string; ingredients: string[]; image?: string }) => ({
@@ -344,8 +371,8 @@ export default function SaladComposerPage() {
     setSelected(next);
     setStep(suggestionJumpIndex);
     toast.success(saladType === 'crudites'
-      ? `"${suggestion.name}" chargé — choisissez votre sauce !`
-      : `"${suggestion.name}" chargé !`);
+      ? `"${suggestion.name}" chargé — choisissez votre sauce`
+      : `"${suggestion.name}" chargé`);
   };
 
   const addCurrentToCart = () => {
@@ -368,8 +395,7 @@ export default function SaladComposerPage() {
   };
 
   const handleFinaliser  = () => { addCurrentToCart(); navigate('/panier'); };
-  const handleAddAnother = () => { addCurrentToCart(); navigate('/composer'); toast.success('Salade ajoutée — choisissez un autre produit !'); };
-  const handleAddToCart  = () => { addCurrentToCart(); setSelected(new Map()); setStep(0); toast.success('Salade ajoutée au panier !'); };
+  const handleAddAnother = () => { addCurrentToCart(); navigate('/composer'); toast.success('Salade ajoutée — choisissez un autre produit'); };
 
   const canGoNext = () => {
     if (!currentStepConfig.required) return true;
@@ -389,11 +415,16 @@ export default function SaladComposerPage() {
       {step < recapStepIndex && (
         <div className="pt-20 bg-background border-b border-border/60">
           <div className="max-w-4xl mx-auto px-4 md:px-6 pt-8 pb-6 flex items-end justify-between">
-            <div>
-              <p className="font-body text-[11px] uppercase tracking-[0.25em] text-primary mb-1.5">Recommandations</p>
-              <h2 className="font-display text-3xl md:text-4xl text-foreground">Suggestions du chef</h2>
+            <div className="flex items-center gap-4">
+              <span className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary shrink-0">
+                <ChefHat className="w-6 h-6" />
+              </span>
+              <div>
+                <p className="font-body text-xs text-primary mb-1.5">Recommandations</p>
+                <h2 className="font-display text-3xl md:text-4xl text-foreground">Suggestions du chef</h2>
+              </div>
             </div>
-            <p className="font-body text-xs text-muted-foreground hidden sm:block italic">Appuyez pour pré-remplir</p>
+            <p className="font-body text-xs text-muted-foreground hidden sm:block">Appuyez pour pré-remplir</p>
           </div>
 
           <div className="relative max-w-4xl mx-auto px-12 md:px-16">
@@ -408,29 +439,26 @@ export default function SaladComposerPage() {
                 exit={{ opacity: 0, x: -slideDir * 32 }}
                 transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => applySuggestion(activeSuggestion)}
+                aria-label={`Composer ${activeSuggestion.name}`}
                 className="relative w-full h-60 md:h-72 rounded-2xl overflow-hidden group shadow-elevated block active:scale-[0.99] transition-transform duration-100"
               >
                 {activeCover ? (
-                  <img src={activeCover} alt={activeSuggestion.name} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <img src={activeCover} alt={activeSuggestion.name} className="absolute inset-0 w-full h-full object-cover" />
                 ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/40 to-secondary/30" />
+                  <div className="absolute inset-0 bg-primary/30" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-foreground/55 via-foreground/8 to-transparent" />
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white/[0.035]" />
                 <div className="absolute top-5 right-5">
-                  <span className="font-body text-[10px] text-white/70 tabular-nums bg-black/20 backdrop-blur-md px-2 py-1 rounded-full">{suggestionIdx + 1} / {suggestions.length}</span>
+                  <span className="font-body text-xs text-white/70 tabular-nums bg-black/20 backdrop-blur-md px-2 py-1 rounded-full">{suggestionIdx + 1} / {suggestions.length}</span>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 p-5 md:p-7">
-                  <h3 className="font-display text-3xl md:text-4xl text-white leading-none mb-3 drop-shadow-md">{activeSuggestion.name}</h3>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {activeSuggestion.description.split(', ').map(tag => (
-                      <span key={tag} className="font-body text-xs px-3 py-1.5 bg-white/30 backdrop-blur-md border border-white/40 text-primary rounded-full font-semibold shadow-sm">{tag}</span>
-                    ))}
+                {/* Une seule barre en pied de carte (nom + ingrédients + action) : la salade reste visible. */}
+                <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4">
+                  <div className="flex items-center gap-3 px-4 py-3 text-left bg-white/75 backdrop-blur-md border border-white/60 rounded-xl shadow-sm group-hover:bg-white/90 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display text-xl md:text-2xl text-foreground leading-tight truncate">{activeSuggestion.name}</h3>
+                      <p className="font-body text-xs text-foreground/70 line-clamp-2">{activeSuggestion.description}</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-primary shrink-0" aria-hidden="true" />
                   </div>
-                  <span className="inline-flex items-center gap-2 font-body text-xs uppercase tracking-[0.14em] px-5 py-2.5 bg-white/35 backdrop-blur-md border border-white/50 text-primary group-hover:bg-white/50 rounded-xl transition-colors shadow-sm font-semibold">
-                    Composer cette salade
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </span>
                 </div>
               </motion.button>}
             </AnimatePresence>
@@ -439,13 +467,13 @@ export default function SaladComposerPage() {
               <>
                 <button
                   onClick={() => { setSlideDir(-1); setSuggestionIdx(i => (i - 1 + suggestions.length) % suggestions.length); }}
-                  className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background border border-border shadow-soft hover:bg-primary hover:border-primary hover:text-primary-foreground text-foreground flex items-center justify-center transition-all duration-200"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background border border-border shadow-soft hover:bg-primary hover:border-primary hover:text-primary-foreground text-foreground flex items-center justify-center transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => { setSlideDir(1); setSuggestionIdx(i => (i + 1) % suggestions.length); }}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background border border-border shadow-soft hover:bg-primary hover:border-primary hover:text-primary-foreground text-foreground flex items-center justify-center transition-all duration-200"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background border border-border shadow-soft hover:bg-primary hover:border-primary hover:text-primary-foreground text-foreground flex items-center justify-center transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -458,7 +486,7 @@ export default function SaladComposerPage() {
               <button
                 key={dotIdx}
                 onClick={() => { setSlideDir(dotIdx > suggestionIdx ? 1 : -1); setSuggestionIdx(dotIdx); }}
-                className={`rounded-full transition-all duration-300 ${dotIdx === suggestionIdx ? 'w-6 h-2 bg-primary' : 'w-2 h-2 bg-border hover:bg-muted-foreground/40'}`}
+                className={`rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ${dotIdx === suggestionIdx ? 'w-6 h-2 bg-primary' : 'w-2 h-2 bg-border hover:bg-muted-foreground/40'}`}
               />
             ))}
           </div>
@@ -479,7 +507,7 @@ export default function SaladComposerPage() {
             <div key={s.key} className="flex items-center">
               <button
                 onClick={() => i < step && setStep(i)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-body transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-body transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                   i === step      ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
                   : i < step      ? 'bg-primary/20 text-primary cursor-pointer hover:bg-primary/30'
                   : 'bg-muted text-muted-foreground cursor-default'
@@ -487,7 +515,7 @@ export default function SaladComposerPage() {
               >
                 {i < step
                   ? <Check className="w-3 h-3 shrink-0" />
-                  : <span className="w-3.5 h-3.5 flex items-center justify-center font-bold text-[10px]">{i + 1}</span>
+                  : <span className="w-3.5 h-3.5 flex items-center justify-center font-semibold text-xs">{i + 1}</span>
                 }
                 <span className="hidden sm:inline">{s.label}</span>
               </button>
@@ -503,12 +531,11 @@ export default function SaladComposerPage() {
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
             {currentStepConfig.categories.length > 0 && (
               <div className="space-y-8">
-                {currentStepConfig.categories.map(cat => {
-                  const catIngredients = ingredients.filter(i => i.category === cat && i.inStock);
+                {stepSections(currentStepConfig.categories, ingredients).map(({ label, items: catIngredients }) => {
                   return (
-                    <div key={cat}>
+                    <div key={label}>
                       {!currentStepConfig.single && (
-                        <h3 className="font-display text-xl text-foreground mb-4">{CATEGORY_LABELS[cat]}</h3>
+                        <h3 className="font-display text-xl text-foreground mb-4">{label}</h3>
                       )}
                       <div className={`grid gap-4 ${currentStepConfig.single ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'}`}>
                         {!ingredientsLoaded
@@ -524,7 +551,7 @@ export default function SaladComposerPage() {
                               layout
                               data-ingredient-card
                               onClick={(e) => toggleIngredient(ingredient, e)}
-                              className={`group relative border overflow-hidden flex flex-col rounded-xl transition-all cursor-pointer ${
+                              className={`group relative border overflow-hidden flex flex-col rounded-xl transition-[color,background-color,border-color,box-shadow,opacity,transform] cursor-pointer ${
                                 isSelected
                                   ? 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-md'
                                   : 'border-border hover:border-primary/40 bg-background hover:shadow-md'
@@ -536,10 +563,9 @@ export default function SaladComposerPage() {
                                 </div>
                               )}
                               <div className="relative aspect-[4/3] overflow-hidden">
-                                <img
-                                  src={ingredient.image}
-                                  alt={ingredient.name}
-                                  className={`w-full h-full object-cover transition-transform duration-700 ${isSelected ? 'scale-105' : 'group-hover:scale-105'}`}
+                                <IngredientImage
+                                  ingredient={ingredient}
+                                  className={`w-full h-full text-4xl ${isSelected ? 'scale-105' : ''}`}
                                 />
                               </div>
                               <div className="p-3 flex flex-col flex-1">
@@ -570,7 +596,7 @@ export default function SaladComposerPage() {
                                       onClick={e => e.stopPropagation()}
                                     >
                                       <button onClick={(e) => changeQuantity(ingredient.id, -1, e)} className="w-7 h-7 flex items-center justify-center rounded bg-primary/10 hover:bg-primary/20 text-foreground text-base transition-colors">−</button>
-                                      <span className="font-body text-sm font-bold text-foreground">{qty}</span>
+                                      <span className="font-body text-sm font-semibold text-foreground">{qty}</span>
                                       <button onClick={(e) => changeQuantity(ingredient.id, 1, e)} className="w-7 h-7 flex items-center justify-center rounded bg-primary/10 hover:bg-primary/20 text-foreground text-base transition-colors">+</button>
                                     </motion.div>
                                   )}
@@ -590,23 +616,27 @@ export default function SaladComposerPage() {
               <div className="bg-background border border-border rounded-2xl p-6 shadow-sm">
                 <h2 className="font-display text-2xl text-foreground mb-6">Votre salade</h2>
                 {selected.size === 0 ? (
-                  <p className="font-body text-sm text-muted-foreground italic text-center py-8">Aucun ingrédient sélectionné</p>
+                  <p className="font-body text-sm text-muted-foreground text-center py-8">Aucun ingrédient sélectionné</p>
                 ) : (
                   <div className="space-y-4 mb-6">
-                    {allCategories.map(cat => {
-                      const selectedInCat = Array.from(selected.entries())
+                    {allCategories.flatMap(cat => {
+                      const inCat = Array.from(selected.entries())
                         .map(([id, qty]) => ({ ingredient: findIngredient(id), qty }))
                         .filter((item): item is { ingredient: Ingredient; qty: number } =>
                           item.ingredient !== undefined && item.ingredient.category === cat
                         );
-                      if (selectedInCat.length === 0) return null;
+                      return [...new Set(inCat.map(({ ingredient }) => labelOf(ingredient)))].map(label => ({
+                        label,
+                        selectedInCat: inCat.filter(({ ingredient }) => labelOf(ingredient) === label),
+                      }));
+                    }).map(({ label, selectedInCat }) => {
                       return (
-                        <div key={cat}>
-                          <p className="font-body text-xs uppercase tracking-wider text-muted-foreground mb-2">{CATEGORY_LABELS[cat]}</p>
+                        <div key={label}>
+                          <p className="font-body text-xs text-muted-foreground mb-2">{label}</p>
                           {selectedInCat.map(({ ingredient: ing, qty }) => (
                             <div key={ing.id} className="flex items-center justify-between py-2.5 border-b border-border/50 last:border-0">
                               <div className="flex items-center gap-3">
-                                <img src={ing.image} alt={ing.name} className="w-9 h-9 rounded-lg object-cover" />
+                                <IngredientImage ingredient={ing} className="w-9 h-9 rounded-lg text-base" />
                                 <span className="font-body text-sm text-foreground">{ing.name} × {qty}</span>
                               </div>
                               <div className="text-right">
@@ -623,18 +653,18 @@ export default function SaladComposerPage() {
                 <div className="border-t border-border pt-4 space-y-2 mb-6">
                   <div className="flex justify-between font-body text-sm">
                     <span className="text-muted-foreground">Calories totales</span>
-                    <span className="font-bold text-foreground">{totalCalories} cal</span>
+                    <span className="font-semibold text-foreground">{totalCalories} cal</span>
                   </div>
                   <div className="flex justify-between font-body text-base">
-                    <span className="font-bold text-foreground">Total</span>
-                    <span className="font-bold text-primary text-lg">{formatPrice(totalPrice)}</span>
+                    <span className="font-semibold text-foreground">Total</span>
+                    <span className="font-semibold text-primary text-lg">{formatPrice(totalPrice)}</span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-3">
                   <button
                     onClick={handleFinaliser}
                     disabled={selected.size === 0}
-                    className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/80 active:scale-[0.98] transition-all shadow-sm hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/80 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] shadow-sm hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <ShoppingCart className="w-4 h-4" />
                     Finaliser
@@ -642,7 +672,7 @@ export default function SaladComposerPage() {
                   <button
                     onClick={handleAddAnother}
                     disabled={selected.size === 0}
-                    className="w-full flex items-center justify-center gap-2 font-body text-sm uppercase tracking-[0.15em] px-6 py-4 rounded-xl border-2 border-primary text-primary bg-transparent hover:bg-primary/8 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full flex items-center justify-center gap-2 font-body text-sm px-6 py-4 rounded-xl border-2 border-primary text-primary bg-transparent hover:bg-primary/8 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <span className="text-base leading-none">+</span>
                     Ajouter un autre produit
@@ -677,6 +707,9 @@ export default function SaladComposerPage() {
         </div>
       </div>
 
+      {/* Barres flottantes (calories / total / suivant) : seulement une fois qu'un ingrédient est choisi.
+          À vide (0 cal, 0 FCFA) elles ne servent à rien et recouvrent le contenu de l'écran d'accueil du parcours. */}
+      {selected.size > 0 && (<>
       {/* Desktop floating calorie summary — cible de l'effet "vol vers le calcul calorique" */}
       <motion.div
         id="composer-summary"
@@ -685,13 +718,13 @@ export default function SaladComposerPage() {
         className={`hidden lg:flex fixed bottom-6 right-6 z-50 items-center gap-5 bg-background border-2 border-primary rounded-2xl shadow-elevated px-6 py-4 transition-shadow duration-500 ${calorieBump ? 'shadow-[0_0_0_6px_hsl(var(--primary)/0.25)]' : ''}`}
       >
         <div className="text-center">
-          <div className="font-body text-[11px] uppercase tracking-wider text-muted-foreground">Calories</div>
-          <div className="font-display text-2xl text-foreground font-bold"><PulseValue value={totalCalories} className="text-2xl" /> <span className="text-sm font-body font-normal text-muted-foreground">cal</span></div>
+          <div className="font-body text-xs text-muted-foreground">Calories</div>
+          <div className="font-display text-2xl text-foreground font-semibold"><PulseValue value={totalCalories} className="text-2xl" /> <span className="text-sm font-body font-normal text-muted-foreground">cal</span></div>
         </div>
         <div className="h-10 w-px bg-border" />
         <div className="text-center">
-          <div className="font-body text-[11px] uppercase tracking-wider text-muted-foreground">Total</div>
-          <div className="font-display text-2xl text-primary font-bold"><PulseValue value={formatPrice(totalPrice)} className="text-2xl" /></div>
+          <div className="font-body text-xs text-muted-foreground">Total</div>
+          <div className="font-display text-2xl text-primary font-semibold"><PulseValue value={formatPrice(totalPrice)} className="text-2xl" /></div>
         </div>
       </motion.div>
 
@@ -707,21 +740,21 @@ export default function SaladComposerPage() {
             <div className="flex items-center gap-4">
               <div className="text-center">
                 <div className="font-body text-xs text-muted-foreground">Calories</div>
-                <div className="font-display text-lg text-foreground font-bold"><PulseValue value={totalCalories} /></div>
+                <div className="font-display text-lg text-foreground font-semibold"><PulseValue value={totalCalories} /></div>
               </div>
               <div className="h-8 w-px bg-border" />
               <div className="text-center">
                 <div className="font-body text-xs text-muted-foreground">Total</div>
-                <div className="font-display text-lg text-primary font-bold"><PulseValue value={formatPrice(totalPrice)} /></div>
+                <div className="font-display text-lg text-primary font-semibold"><PulseValue value={formatPrice(totalPrice)} /></div>
               </div>
             </div>
             {currentStepConfig.key === 'recap' ? (
-              <button onClick={handleFinaliser} disabled={selected.size === 0} className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
+              <button onClick={handleFinaliser} disabled={selected.size === 0} className="flex items-center gap-1.5 font-body text-xs px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
                 <ShoppingCart className="w-3.5 h-3.5" />
                 Finaliser
               </button>
             ) : (
-              <button onClick={() => setStep(s => Math.min(recapStepIndex, s + 1))} disabled={!canGoNext()} className="flex items-center gap-1.5 font-body text-xs uppercase tracking-wider px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
+              <button onClick={() => setStep(s => Math.min(recapStepIndex, s + 1))} disabled={!canGoNext()} className="flex items-center gap-1.5 font-body text-xs px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
                 Suivant
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -734,7 +767,7 @@ export default function SaladComposerPage() {
                 if (!ing) return null;
                 return (
                   <div key={id} className="flex items-center gap-1 bg-muted rounded-full px-2 py-1 shrink-0">
-                    <img src={ing.image} alt={ing.name} className="w-5 h-5 rounded-full object-cover" />
+                    <IngredientImage ingredient={ing} className="w-5 h-5 rounded-full text-xs" />
                     <span className="font-body text-xs text-foreground">×{qty}</span>
                   </div>
                 );
@@ -743,6 +776,7 @@ export default function SaladComposerPage() {
           )}
         </div>
       </motion.div>
+      </>)}
 
       {flyingItems.map(item => (
         <FlyingIngredient key={item.id} item={item} onComplete={removeFlyingItem} />

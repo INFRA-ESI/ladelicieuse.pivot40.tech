@@ -56,13 +56,14 @@ router.patch('/reappro/:id/status', verifyJWT, async (req: Request, res: Respons
 
     reappro.statut = statut as typeof reappro.statut;
 
-    // When received, update ingredient stock levels
+    // À la réception, met à jour les niveaux de stock des ingrédients
     if (statut === 'recue' && articles?.length) {
+      // Une seule requête pour tous les articles, et rien n'est appliqué si un identifiant est invalide
+      // (avant : une requête par article, avec un réapprovisionnement à moitié appliqué en cas d'erreur).
+      await Ingredient.bulkWrite(articles.map(a => ({
+        updateOne: { filter: { _id: a.ingredientId }, update: { $inc: { stock: a.quantiteRecue } } },
+      })));
       for (const a of articles) {
-        await Ingredient.findByIdAndUpdate(
-          a.ingredientId,
-          { $inc: { stock: a.quantiteRecue } }
-        );
         const art = reappro.articles.find(x => x.ingredientId.toString() === a.ingredientId);
         if (art) art.quantiteRecue = a.quantiteRecue;
       }

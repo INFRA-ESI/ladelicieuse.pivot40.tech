@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Check } from 'lucide-react';
+import { X, Check } from '@/components/icons';
 import { useEffect } from 'react';
 import { type Ingredient, formatPrice } from '@/data/products';
 
@@ -7,7 +7,7 @@ const DV = { proteines: 50, glucides: 275, lipides: 78, fibres: 28 };
 const pct = (val: number, ref: number) => Math.min(100, Math.round((val / ref) * 100));
 
 const MACRO_BARS = [
-  { key: 'proteines', label: 'Protéines', unit: 'g', color: 'bg-blue-500',   ref: DV.proteines },
+  { key: 'proteines', label: 'Protéines', unit: 'g', color: 'bg-primary',   ref: DV.proteines },
   { key: 'glucides',  label: 'Glucides',  unit: 'g', color: 'bg-yellow-500', ref: DV.glucides },
   { key: 'lipides',   label: 'Lipides',   unit: 'g', color: 'bg-red-400',    ref: DV.lipides },
   { key: 'fibres',    label: 'Fibres',    unit: 'g', color: 'bg-green-500',  ref: DV.fibres },
@@ -59,7 +59,7 @@ export default function IngredientSheetModal({ ingredient, onClose }: Props) {
           >
             {/* En-tête */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
-              <span className="font-body text-xs uppercase tracking-[0.22em] text-muted-foreground">
+              <span className="font-body text-xs text-muted-foreground">
                 Fiche ingrédient
               </span>
               <button
@@ -82,7 +82,7 @@ export default function IngredientSheetModal({ ingredient, onClose }: Props) {
               {/* Infos principales */}
               <div className="px-5 pt-4 pb-3 space-y-3">
                 <div>
-                  <span className="font-body text-[10px] uppercase tracking-[0.22em] text-primary">{ing.category}</span>
+                  <span className="font-body text-xs text-primary">{ing.category}</span>
                   <h2 className="font-display text-2xl text-foreground mt-0.5">{ing.name}</h2>
                 </div>
 
@@ -111,7 +111,7 @@ export default function IngredientSheetModal({ ingredient, onClose }: Props) {
               {/* Valeurs nutritionnelles */}
               <div className="px-5 py-4 border-t border-border">
                 <h3 className="font-display text-base text-foreground mb-1">Valeurs nutritionnelles</h3>
-                <p className="font-body text-[11px] text-muted-foreground mb-3">Pour une portion · % apports journaliers de référence</p>
+                <p className="font-body text-xs text-muted-foreground mb-3">Pour une portion · % apports journaliers de référence</p>
 
                 <div className="flex items-center justify-between bg-primary/5 rounded-xl px-4 py-3 mb-3 border border-primary/10">
                   <span className="font-body text-sm text-foreground">Énergie</span>
@@ -138,7 +138,7 @@ export default function IngredientSheetModal({ ingredient, onClose }: Props) {
                             />
                           </div>
                           <span className="font-body text-xs font-semibold w-10 text-right tabular-nums">{val}{m.unit}</span>
-                          <span className="font-body text-[10px] text-muted-foreground w-7 text-right tabular-nums">{p}%</span>
+                          <span className="font-body text-xs text-muted-foreground w-7 text-right tabular-nums">{p}%</span>
                         </div>
                       );
                     })}

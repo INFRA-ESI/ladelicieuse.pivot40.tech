@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Minus, Scale, Flame, Beef, Wheat,
   Droplets, Settings2, Plus, Trash2, CheckCircle2, X, ChevronDown,
   Zap, CalendarDays, Target, Activity, AlertCircle,
-} from 'lucide-react';
+} from '@/components/icons';
 import { useUser, TOKEN_KEY } from '@/context/UserContext';
 import { ls } from '@/lib/storage';
 import { toast } from 'sonner';
@@ -269,7 +269,7 @@ export default function SuiviPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // ── Save today's entry ────────────────────────────────────────────────────
+  // ── Enregistrer l'entrée du jour ────────────────────────────────────────────────────
   const handleSaveEntry = async () => {
     const payload: Record<string, unknown> = {};
     if (form.poids)     payload.poids     = parseFloat(form.poids);
@@ -294,7 +294,7 @@ export default function SuiviPage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
-      toast.success('Entrée enregistrée !');
+      toast.success('Entrée enregistrée');
       setShowForm(false);
       setForm({ poids: '', calories: '', proteines: '', glucides: '', lipides: '', eau: '', notes: '' });
       await fetchAll();
@@ -305,7 +305,7 @@ export default function SuiviPage() {
     }
   };
 
-  // ── Save goals ─────────────────────────────────────────────────────────────
+  // ── Enregistrer les objectifs ─────────────────────────────────────────────────────────────
   const handleSaveGoals = async () => {
     setSaving(true);
     const payload: Record<string, number> = {};
@@ -320,7 +320,7 @@ export default function SuiviPage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
-      toast.success('Objectifs mis à jour !');
+      toast.success('Objectifs mis à jour');
       setGoals(data.data);
       setShowGoals(false);
     } catch (err) {
@@ -330,7 +330,7 @@ export default function SuiviPage() {
     }
   };
 
-  // ── Delete entry ───────────────────────────────────────────────────────────
+  // ── Supprimer l'entrée ───────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     try {
       const res = await fetch(`${API}/api/tracking/${id}`, {
@@ -380,7 +380,7 @@ export default function SuiviPage() {
     return (
       <div className="min-h-screen bg-muted/20 flex items-center justify-center p-6 pt-24">
         <div className="text-center max-w-sm">
-          <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-7 h-7 text-red-400" />
           </div>
           <h2 className="font-display text-2xl text-foreground mb-2">Erreur de chargement</h2>
@@ -404,7 +404,7 @@ export default function SuiviPage() {
         <div className="max-w-5xl mx-auto px-6 py-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
-              <p className="font-body text-xs uppercase tracking-[0.2em] text-muted-foreground mb-1">
+              <p className="font-body text-xs text-muted-foreground mb-1">
                 Mon espace santé
               </p>
               <h1 className="font-display text-3xl md:text-4xl text-foreground">Suivi Diététique</h1>
@@ -415,11 +415,11 @@ export default function SuiviPage() {
                     animate={{ scale: 1, opacity: 1 }}
                     className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-body
                       ${streak >= 7
-                        ? 'bg-orange-50 border-orange-200 text-orange-700'
-                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                        ? 'text-amber-700'
+                        : 'text-amber-700'
                       }`}
                   >
-                    <Zap className={`w-3.5 h-3.5 ${streak >= 7 ? 'text-orange-500' : 'text-amber-500'}`} />
+                    <Zap className={`w-3.5 h-3.5 ${streak >= 7 ? 'text-amber-500' : 'text-amber-500'}`} />
                     {streak} jour{streak > 1 ? 's' : ''} consécutif{streak > 1 ? 's' : ''}
                   </motion.div>
                 )}
@@ -429,7 +429,7 @@ export default function SuiviPage() {
                   transition={{ delay: 0.08 }}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-body
                     ${todayDone
-                      ? 'bg-green-50 border-green-200 text-green-700'
+                      ? 'text-primary'
                       : 'bg-muted/60 border-border text-muted-foreground'
                     }`}
                 >
@@ -506,7 +506,7 @@ export default function SuiviPage() {
                             value={goalForm[key] ?? ''}
                             onChange={e => setGoalForm(f => ({ ...f, [key]: e.target.value }))}
                             placeholder="—"
-                            className="w-full font-body text-sm px-3 py-2 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full font-body text-sm px-3 py-2 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-[color,background-color,border-color,box-shadow,opacity,transform]"
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 font-body text-xs text-muted-foreground">
                             {unit}
@@ -586,7 +586,7 @@ export default function SuiviPage() {
                             value={form[key as keyof typeof form]}
                             onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                             placeholder="—"
-                            className="w-full font-body text-sm px-3 py-2.5 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full font-body text-sm px-3 py-2.5 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-[color,background-color,border-color,box-shadow,opacity,transform]"
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 font-body text-xs text-muted-foreground">
                             {unit}
@@ -602,7 +602,7 @@ export default function SuiviPage() {
                       onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                       placeholder="Repas, sensations, contexte du jour…"
                       rows={2}
-                      className="w-full font-body text-sm px-3 py-2.5 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all resize-none"
+                      className="w-full font-body text-sm px-3 py-2.5 border border-border rounded-xl bg-background outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-[color,background-color,border-color,box-shadow,opacity,transform] resize-none"
                     />
                   </div>
                   <div className="flex items-center gap-3 mt-4">
@@ -637,7 +637,7 @@ export default function SuiviPage() {
         {/* ── KPI principales ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
-            icon={<Scale className="w-5 h-5 text-violet-500" />}
+            icon={<Scale className="w-5 h-5 text-primary" />}
             label="Poids"
             value={latest?.poids != null ? `${latest.poids} kg` : '—'}
             trend={trendIcon(latest?.poids, prev?.poids, true)}
@@ -645,7 +645,7 @@ export default function SuiviPage() {
             color="violet"
           />
           <KpiCard
-            icon={<Flame className="w-5 h-5 text-orange-500" />}
+            icon={<Flame className="w-5 h-5 text-amber-500" />}
             label="Calories moy. / semaine"
             value={stats?.weekAvg.calories != null ? `${stats.weekAvg.calories} kcal` : '—'}
             trend={trendIcon(stats?.weekAvg.calories ?? undefined, undefined)}
@@ -670,7 +670,7 @@ export default function SuiviPage() {
             }
           />
           <KpiCard
-            icon={<Droplets className="w-5 h-5 text-blue-500" />}
+            icon={<Droplets className="w-5 h-5 text-primary" />}
             label="Eau moy."
             value={stats?.weekAvg.eau != null ? `${stats.weekAvg.eau} L` : '—'}
             goal={goals.objectifEau ? `objectif ${goals.objectifEau} L` : undefined}
@@ -687,15 +687,15 @@ export default function SuiviPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Streak */}
           <div className={`rounded-2xl p-4 border transition-colors ${
-            streak >= 7 ? 'bg-orange-50 border-orange-200'
-            : streak >= 3 ? 'bg-amber-50 border-amber-200'
+            streak >= 7 ? 'text-amber-700'
+            : streak >= 3 ? 'text-amber-700'
             : 'bg-background border-border'
           }`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${
-              streak >= 7 ? 'bg-orange-100' : streak >= 3 ? 'bg-amber-100' : 'bg-muted'
+              streak >= 7 ? 'bg-muted' : streak >= 3 ? 'bg-muted' : 'bg-muted'
             }`}>
               <Zap className={`w-5 h-5 ${
-                streak >= 7 ? 'text-orange-500' : streak >= 3 ? 'text-amber-500' : 'text-muted-foreground/40'
+                streak >= 7 ? 'text-amber-500' : streak >= 3 ? 'text-amber-500' : 'text-muted-foreground/40'
               }`} />
             </div>
             <p className={`font-display text-2xl leading-tight ${streak > 0 ? 'text-foreground' : 'text-muted-foreground/30'}`}>
@@ -709,7 +709,7 @@ export default function SuiviPage() {
 
           {/* Entrées semaine */}
           <div className="rounded-2xl p-4 border border-border bg-background">
-            <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center mb-3">
+            <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center mb-3">
               <Target className="w-5 h-5 text-green-500" />
             </div>
             <p className="font-display text-2xl text-foreground leading-tight">
@@ -729,8 +729,8 @@ export default function SuiviPage() {
 
           {/* Total 30j */}
           <div className="rounded-2xl p-4 border border-border bg-background">
-            <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center mb-3">
-              <Activity className="w-5 h-5 text-violet-500" />
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+              <Activity className="w-5 h-5 text-primary" />
             </div>
             <p className="font-display text-2xl text-foreground leading-tight">{entries.length}</p>
             <p className="font-body text-xs text-muted-foreground mt-0.5">Entrées (30 jours)</p>
@@ -738,10 +738,10 @@ export default function SuiviPage() {
 
           {/* Aujourd'hui */}
           <div className={`rounded-2xl p-4 border transition-colors ${
-            todayDone ? 'bg-green-50 border-green-200' : 'bg-background border-border'
+            todayDone ? 'text-primary' : 'bg-background border-border'
           }`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${
-              todayDone ? 'bg-green-100' : 'bg-muted'
+              todayDone ? 'bg-muted' : 'bg-muted'
             }`}>
               <CheckCircle2 className={`w-5 h-5 ${todayDone ? 'text-green-500' : 'text-muted-foreground/30'}`} />
             </div>
@@ -760,7 +760,7 @@ export default function SuiviPage() {
               {!todayDone && (
                 <button
                   onClick={() => { setShowForm(true); setShowGoals(false); }}
-                  className="inline-flex items-center gap-1.5 font-body text-xs uppercase tracking-[0.1em] px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-lg"
+                  className="inline-flex items-center gap-1.5 font-body text-xs px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-lg"
                 >
                   <Plus className="w-3 h-3" />
                   Enregistrer l'entrée du jour
@@ -769,11 +769,11 @@ export default function SuiviPage() {
             </div>
             <div className="space-y-4">
               {[
-                { label: 'Calories',  value: latest?.calories,  goal: goals.objectifCalories,  unit: 'kcal', color: 'bg-orange-400' },
+                { label: 'Calories',  value: latest?.calories,  goal: goals.objectifCalories,  unit: 'kcal', color: 'bg-amber-400' },
                 { label: 'Protéines', value: latest?.proteines, goal: goals.objectifProteines, unit: 'g',    color: 'bg-red-400' },
                 { label: 'Glucides',  value: latest?.glucides,  goal: goals.objectifGlucides,  unit: 'g',    color: 'bg-amber-400' },
                 { label: 'Lipides',   value: latest?.lipides,   goal: goals.objectifLipides,   unit: 'g',    color: 'bg-yellow-400' },
-                { label: 'Eau',       value: latest?.eau,       goal: goals.objectifEau,       unit: 'L',    color: 'bg-blue-400' },
+                { label: 'Eau',       value: latest?.eau,       goal: goals.objectifEau,       unit: 'L',    color: 'bg-primary' },
               ].filter(row => row.goal).map(row => {
                 const p = pct(row.value, row.goal);
                 return (
@@ -785,10 +785,10 @@ export default function SuiviPage() {
                           {row.value != null ? row.value : '—'} / {row.goal} {row.unit}
                         </span>
                         {row.value != null && (
-                          <span className={`font-body text-[11px] px-2 py-0.5 rounded-full tabular-nums ${
-                            p >= 100 ? 'bg-green-50 text-green-600'
-                            : p >= 75  ? 'bg-blue-50 text-blue-600'
-                            : p >= 50  ? 'bg-amber-50 text-amber-600'
+                          <span className={`font-body text-xs px-2 py-0.5 rounded-full tabular-nums ${
+                            p >= 100 ? 'text-primary'
+                            : p >= 75  ? 'bg-primary/10 text-primary'
+                            : p >= 50  ? 'text-amber-700'
                             :            'bg-muted text-muted-foreground'
                           }`}>
                             {p}%
@@ -815,23 +815,23 @@ export default function SuiviPage() {
         <div className="space-y-4">
           <div>
             <h2 className="font-display text-2xl text-foreground">Outils de suivi</h2>
-            <p className="font-body text-xs text-muted-foreground mt-0.5 uppercase tracking-wider">Évolution semaine par semaine</p>
+            <p className="font-body text-xs text-muted-foreground mt-0.5">Évolution semaine par semaine</p>
           </div>
 
           {/* Poids — AreaChart full width */}
           <div className="bg-background border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center">
-                  <Scale className="w-4 h-4 text-violet-500" />
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Scale className="w-4 h-4 text-primary" />
                 </div>
                 <div>
                   <h3 className="font-display text-lg text-foreground leading-tight">Évolution du poids</h3>
-                  <p className="font-body text-[11px] text-muted-foreground">Moyenne par semaine (kg)</p>
+                  <p className="font-body text-xs text-muted-foreground">Moyenne par semaine (kg)</p>
                 </div>
               </div>
               {goals.objectifPoids && (
-                <span className="font-body text-xs px-2.5 py-1 bg-green-50 text-green-700 rounded-full border border-green-100">
+                <span className="text-primary font-body text-xs px-2.5 py-1 rounded-full border">
                   Cible : {goals.objectifPoids} kg
                 </span>
               )}
@@ -880,12 +880,12 @@ export default function SuiviPage() {
             {/* Calories par semaine */}
             <div className="bg-background border border-border rounded-2xl p-5">
               <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
-                  <Flame className="w-4 h-4 text-orange-500" />
+                <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
+                  <Flame className="w-4 h-4 text-amber-500" />
                 </div>
                 <div>
                   <h3 className="font-display text-lg text-foreground leading-tight">Calories</h3>
-                  <p className="font-body text-[11px] text-muted-foreground">Moy. hebdomadaire (kcal)</p>
+                  <p className="font-body text-xs text-muted-foreground">Moy. hebdomadaire (kcal)</p>
                 </div>
               </div>
               {weeklyChartData.filter(w => w.calories != null).length >= 2 ? (
@@ -919,12 +919,12 @@ export default function SuiviPage() {
             {/* Macronutriments par semaine */}
             <div className="bg-background border border-border rounded-2xl p-5">
               <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
                   <Beef className="w-4 h-4 text-red-500" />
                 </div>
                 <div>
                   <h3 className="font-display text-lg text-foreground leading-tight">Macronutriments</h3>
-                  <p className="font-body text-[11px] text-muted-foreground">Moy. hebdomadaire (g)</p>
+                  <p className="font-body text-xs text-muted-foreground">Moy. hebdomadaire (g)</p>
                 </div>
               </div>
               {weeklyChartData.filter(w => w.proteines != null || w.glucides != null || w.lipides != null).length >= 2 ? (
@@ -963,16 +963,16 @@ export default function SuiviPage() {
           <div className="bg-background border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Droplets className="w-4 h-4 text-blue-500" />
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Droplets className="w-4 h-4 text-primary" />
                 </div>
                 <div>
                   <h3 className="font-display text-lg text-foreground leading-tight">Hydratation</h3>
-                  <p className="font-body text-[11px] text-muted-foreground">Consommation d'eau moy. (L/j)</p>
+                  <p className="font-body text-xs text-muted-foreground">Consommation d'eau moy. (L/j)</p>
                 </div>
               </div>
               {goals.objectifEau && (
-                <span className="font-body text-xs px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
+                <span className="font-body text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full border border-primary/20">
                   Objectif : {goals.objectifEau} L
                 </span>
               )}
@@ -1065,7 +1065,7 @@ export default function SuiviPage() {
                           {['Date', 'Poids', 'Calories', 'Protéines', 'Glucides', 'Lipides', 'Eau', ''].map((h, i) => (
                             <th
                               key={i}
-                              className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-normal whitespace-nowrap"
+                              className="text-left px-4 py-3 text-xs text-muted-foreground font-normal whitespace-nowrap"
                             >
                               {h}
                             </th>
@@ -1085,7 +1085,7 @@ export default function SuiviPage() {
                                   {formatDate(e.date)}
                                 </span>
                                 {today && (
-                                  <span className="ml-2 font-body text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full">
+                                  <span className="ml-2 font-body text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded-full">
                                     Aujourd'hui
                                   </span>
                                 )}
@@ -1111,7 +1111,7 @@ export default function SuiviPage() {
                               <td className="px-4 py-3">
                                 <button
                                   onClick={() => handleDelete(e._id)}
-                                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500 transition-all"
+                                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500 transition-[color,background-color,border-color,box-shadow,opacity,transform]"
                                   title="Supprimer cette entrée"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1130,7 +1130,7 @@ export default function SuiviPage() {
         </div>
 
         {/* ── CTA consultation ── */}
-        <div className="relative overflow-hidden rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-br from-green-600 to-green-700">
+        <div className="relative overflow-hidden rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-primary">
           <div className="absolute inset-0 pointer-events-none opacity-10">
             <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white" />
             <div className="absolute right-12 bottom-0 w-20 h-20 rounded-full bg-white" />
@@ -1143,7 +1143,7 @@ export default function SuiviPage() {
           </div>
           <Link
             to="/dieteticien"
-            className="relative shrink-0 font-body text-sm uppercase tracking-[0.15em] px-6 py-3 bg-white text-green-700 hover:bg-green-50 transition-colors rounded-xl font-semibold"
+            className="relative shrink-0 font-body text-sm px-6 py-3 bg-white text-green-700 hover:bg-green-50 transition-colors rounded-xl font-semibold"
           >
             Réserver une consultation
           </Link>
@@ -1164,21 +1164,21 @@ function KpiCard({
   progress?: number;
 }) {
   const rings: Record<string, string> = {
-    violet: 'bg-violet-50',
-    orange: 'bg-orange-50',
-    red:    'bg-red-50',
-    blue:   'bg-blue-50',
-    green:  'bg-green-50',
+    violet: 'bg-primary/10',
+    orange: 'bg-muted',
+    red:    'bg-muted',
+    blue:   'bg-primary/10',
+    green:  'bg-muted',
   };
   const bars: Record<string, string> = {
-    violet: 'bg-violet-500',
-    orange: 'bg-orange-400',
+    violet: 'bg-primary',
+    orange: 'bg-amber-400',
     red:    'bg-red-400',
-    blue:   'bg-blue-400',
+    blue:   'bg-primary',
     green:  'bg-green-500',
   };
   return (
-    <div className="rounded-2xl p-4 border border-border bg-background hover:border-primary/20 hover:shadow-sm transition-all">
+    <div className="rounded-2xl p-4 border border-border bg-background hover:border-primary/20 hover:shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform]">
       <div className="flex items-center justify-between mb-2.5">
         <div className={`w-9 h-9 rounded-xl ${rings[color] ?? 'bg-muted'} flex items-center justify-center`}>
           {icon}
@@ -1187,7 +1187,7 @@ function KpiCard({
       </div>
       <p className="font-display text-2xl text-foreground leading-tight">{value}</p>
       <p className="font-body text-xs text-muted-foreground mt-0.5">{label}</p>
-      {goal && <p className="font-body text-[10px] text-muted-foreground/60 mt-1">{goal}</p>}
+      {goal && <p className="font-body text-xs text-muted-foreground/60 mt-1">{goal}</p>}
       {progress != null && (
         <div className="mt-2.5 w-full bg-muted rounded-full h-1.5 overflow-hidden">
           <motion.div
@@ -1213,7 +1213,7 @@ function EmptyChart({
       {onAction && actionLabel && (
         <button
           onClick={onAction}
-          className="inline-flex items-center gap-2 font-body text-xs uppercase tracking-[0.12em] px-5 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
+          className="inline-flex items-center gap-2 font-body text-xs px-5 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
         >
           <Plus className="w-3.5 h-3.5" />
           {actionLabel}

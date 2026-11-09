@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X, Film, Play } from 'lucide-react';
+import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X, Film, Play } from '@/components/icons';
 import { toast } from 'sonner';
+import { passwordError } from '@/lib/password';
 import { adminGet, adminPatch, adminPost, adminUploadImage, adminUploadVideo, adminDeleteUpload } from '@/services/adminApiService';
 
 interface SettingsData {
@@ -41,7 +42,7 @@ const DEFAULTS: SettingsData = {
   videoPresentation: '',
 };
 
-// ─── Sub-components at module level (never re-created on render) ──────────────
+// ─── Sous-composants au niveau du module (jamais recréés à chaque rendu) ──────────────
 
 function Section({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
   return (
@@ -193,7 +194,7 @@ export default function SettingsPage() {
         adminDeleteUpload(oldVideoUrl); // fire-and-forget
       }
       savedVideoUrlRef.current = form.videoPresentation;
-      toast.success('Paramètres enregistrés avec succès !');
+      toast.success('Paramètres enregistrés');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
     } finally {
@@ -210,8 +211,9 @@ export default function SettingsPage() {
       toast.error('Les mots de passe ne correspondent pas');
       return;
     }
-    if (pwForm.nouveauMotDePasse.length < 8) {
-      toast.error('Le nouveau mot de passe doit contenir au moins 8 caractères');
+    const pwdError = passwordError(pwForm.nouveauMotDePasse);
+    if (pwdError) {
+      toast.error(pwdError);
       return;
     }
     setSavingPw(true);
@@ -508,8 +510,8 @@ export default function SettingsPage() {
                     {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {pwForm.nouveauMotDePasse && pwForm.nouveauMotDePasse.length < 8 && (
-                  <p className="font-body text-xs text-destructive mt-1">Au moins 8 caractères requis</p>
+                {pwForm.nouveauMotDePasse && passwordError(pwForm.nouveauMotDePasse) && (
+                  <p className="font-body text-xs text-destructive mt-1">{passwordError(pwForm.nouveauMotDePasse)}</p>
                 )}
               </div>
 

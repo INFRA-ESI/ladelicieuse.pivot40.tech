@@ -6,25 +6,21 @@ import Order from '../models/Order.model.js';
 import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from '../services/email.service.js';
 import { getHistoriqueFidelite, rachatPoints, calculerPointsGagnes } from '../services/fidelite.service.js';
 import { sendPushToUser } from '../services/push.service.js';
-import { rateLimiter } from '../middleware/rateLimiter.js';
+import { rateLimiter, memoryRateLimiter } from '../middleware/rateLimiter.js';
 import { requireClient, ClientRequest } from '../middleware/clientAuth.js';
 import { logger } from '../config/logger.js';
+import { passwordError, loginPasswordError } from '../utils/password.js';
 
 const router = Router();
+
+// Modifications du compte par un client connecté : largement au-dessus d'un usage normal.
+const clientWriteLimit = memoryRateLimiter(30, 60, 'client-write', { perUser: true });
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET manquant dans les variables d\'environnement.');
 const CLIENT_TOKEN_EXPIRY = '7d';
 
-function validatePassword(pwd: string): string | null {
-  if (pwd.length < 8)          return 'Le mot de passe doit contenir au moins 8 caractères.';
-  if (!/[A-Z]/.test(pwd))      return 'Le mot de passe doit contenir au moins une lettre majuscule.';
-  if (!/[0-9]/.test(pwd))      return 'Le mot de passe doit contenir au moins un chiffre.';
-  if (!/[^a-zA-Z0-9]/.test(pwd)) return 'Le mot de passe doit contenir au moins un caractère spécial (@, !, #, $...).';
-  return null;
-}
-
 // ── POST /api/client/register ─────────────────────────────────────────────────
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
+router.post('/register', memoryRateLimiter(10, 900, 'client-register'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { nom, prenoms, email, password, telephone } = req.body;
 
@@ -32,7 +28,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ success: false, message: 'Nom, prénom(s), email et mot de passe sont requis.' });
       return;
     }
-    const pwdError = validatePassword(password);
+    const pwdError = passwordError(password);
     if (pwdError) { res.status(400).json({ success: false, message: pwdError }); return; }
 
     const existing = await User.findOne({ email: email.toLowerCase() });
@@ -99,7 +95,9 @@ router.get('/verify-email', async (req: Request, res: Response): Promise<void> =
 
     try {
       await sendWelcomeEmail(user.email, user.prenoms || user.nom);
-    } catch {}
+    } catch {
+      // L'e-mail de bienvenue est facultatif : son échec ne doit pas bloquer la vérification du compte.
+    }
 
     logger.info('Email vérifié', { email: user.email });
     res.json({ success: true, message: 'Email vérifié avec succès ! Vous pouvez maintenant vous connecter.' });
@@ -127,6 +125,14 @@ router.post('/login', rateLimiter(5, 300, 'client-login'), async (req: Request, 
     const isValid = await user.comparePassword(password);
     if (!isValid) {
       res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
+      return;
+    }
+
+    // La règle s'applique aussi à la connexion. Vérifiée APRÈS le contrôle du mot de passe : un mot de passe faux reste
+    // une erreur d'identifiants, et un ancien compte au mot de passe trop faible est dirigé vers la réinitialisation.
+    const strengthError = loginPasswordError(password);
+    if (strengthError) {
+      res.status(403).json({ success: false, passwordWeak: true, message: strengthError });
       return;
     }
 
@@ -246,7 +252,7 @@ router.post('/resend-verification', rateLimiter(3, 900, 'resend-verification'), 
 });
 
 // ── POST /api/client/reset-password ──────────────────────────────────────────
-router.post('/reset-password', async (req: Request, res: Response): Promise<void> => {
+router.post('/reset-password', memoryRateLimiter(10, 900, 'client-reset-pwd'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { token, password } = req.body;
 
@@ -254,7 +260,7 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<void
       res.status(400).json({ success: false, message: 'Token et nouveau mot de passe requis.' });
       return;
     }
-    const pwdError = validatePassword(password);
+    const pwdError = passwordError(password);
     if (pwdError) { res.status(400).json({ success: false, message: pwdError }); return; }
 
     const user = await User.findOne({
@@ -307,7 +313,7 @@ router.get('/goals', requireClient, async (req: ClientRequest, res: Response): P
 });
 
 // ── PATCH /api/client/goals — Mettre à jour les objectifs nutritionnels ───────
-router.patch('/goals', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+router.patch('/goals', requireClient, clientWriteLimit, async (req: ClientRequest, res: Response): Promise<void> => {
   try {
     const ALLOWED = ['taille', 'objectifPoids', 'objectifCalories', 'objectifProteines', 'objectifGlucides', 'objectifLipides', 'objectifEau'];
     const update: Record<string, number> = {};
@@ -330,7 +336,7 @@ router.patch('/goals', requireClient, async (req: ClientRequest, res: Response):
 });
 
 // ── POST /api/client/fidelite/racheter — Convertir des points en code promo ──
-router.post('/fidelite/racheter', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+router.post('/fidelite/racheter', requireClient, clientWriteLimit, async (req: ClientRequest, res: Response): Promise<void> => {
   try {
     const { points } = req.body as { points: number };
 
@@ -385,7 +391,7 @@ router.get('/orders', requireClient, async (req: ClientRequest, res: Response): 
 });
 
 // ── PATCH /api/client/profile — Mise à jour du profil ────────────────────────
-router.patch('/profile', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+router.patch('/profile', requireClient, clientWriteLimit, async (req: ClientRequest, res: Response): Promise<void> => {
   try {
     const { nom, prenoms, telephone, email } = req.body as { nom?: string; prenoms?: string; telephone?: string; email?: string };
 
@@ -458,7 +464,7 @@ const ALLOWED_PREFERENCES = [
   'halal', 'sans_porc', 'low_carb', 'riche_proteines',
 ] as const;
 
-router.patch('/preferences', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
+router.patch('/preferences', requireClient, clientWriteLimit, async (req: ClientRequest, res: Response): Promise<void> => {
   try {
     const { preferences } = req.body as { preferences?: unknown };
     if (!Array.isArray(preferences)) {
@@ -490,7 +496,7 @@ router.post('/change-password', rateLimiter(5, 900, 'client-change-pwd'), requir
       return;
     }
 
-    const pwdError = validatePassword(newPassword);
+    const pwdError = passwordError(newPassword);
     if (pwdError) { res.status(400).json({ success: false, message: pwdError }); return; }
 
     const user = await User.findById(req.clientId);

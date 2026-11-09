@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Star, Send, CheckCircle2 } from 'lucide-react';
+import { Star, Send, CheckCircle2 } from '@/components/icons';
 import { toast } from 'sonner';
 
 interface Props {
-  page: 'consultations' | 'abonnement';
+  page: 'consultations' | 'abonnement' | 'accueil';
 }
 
 function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
@@ -66,7 +66,7 @@ export default function TestimonialSubmitForm({ page }: Props) {
         className="flex flex-col items-center gap-3 py-8 text-center"
       >
         <CheckCircle2 className="w-10 h-10 text-primary" />
-        <p className="font-display text-xl text-foreground">Merci pour votre témoignage !</p>
+        <p className="font-display text-xl text-foreground">Merci pour votre témoignage</p>
         <p className="font-body text-sm text-muted-foreground">Il sera publié après validation par notre équipe.</p>
       </motion.div>
     );
@@ -76,25 +76,25 @@ export default function TestimonialSubmitForm({ page }: Props) {
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
-          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+          <label className="font-body text-xs text-muted-foreground block mb-1.5">
             Votre nom *
           </label>
           <input
             value={nom}
             onChange={e => setNom(e.target.value)}
-            placeholder="Ex : Marie-Claire O."
+            placeholder="Ex : Eric M."
             className="w-full h-11 px-4 bg-muted border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
         <div>
-          <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+          <label className="font-body text-xs text-muted-foreground block mb-1.5">
             Note
           </label>
           <StarPicker value={note} onChange={setNote} />
         </div>
       </div>
       <div>
-        <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-1.5">
+        <label className="font-body text-xs text-muted-foreground block mb-1.5">
           Votre avis *
         </label>
         <textarea
@@ -108,7 +108,7 @@ export default function TestimonialSubmitForm({ page }: Props) {
       <button
         type="submit"
         disabled={sending}
-        className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
+        className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:bg-primary/90 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-50"
       >
         <Send className="w-4 h-4" />
         {sending ? 'Envoi en cours…' : 'Envoyer mon témoignage'}

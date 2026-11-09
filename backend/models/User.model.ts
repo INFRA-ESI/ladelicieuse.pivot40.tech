@@ -31,7 +31,7 @@ export interface IUser extends Document {
     planId: string;
     planName: string;
     status: 'active' | 'paused' | 'cancelled';
-    billing: 'monthly' | 'annual';
+    billing: 'weekly' | 'monthly' | 'annual'; // 'annual' : abonnements historiques
     startDate: Date;
     endDate: Date;
   };
@@ -74,7 +74,7 @@ const UserSchema = new Schema<IUser>(
       planId:    String,
       planName:  String,
       status:    { type: String, enum: ['active', 'paused', 'cancelled'] },
-      billing:   { type: String, enum: ['monthly', 'annual'] },
+      billing:   { type: String, enum: ['weekly', 'monthly', 'annual'] },
       startDate: Date,
       endDate:   Date,
     },

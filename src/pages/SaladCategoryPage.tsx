@@ -39,7 +39,7 @@ const CATEGORIES = [
     description: 'Concombre, épinard, gingembre, citron — purifiants et énergisants.',
     tag: 'Détoxification',
     image: IMG.detox,
-    href: '/jus#detox',
+    href: '/jus/detox',
     span: 'md:col-span-6',
   },
   {
@@ -48,7 +48,7 @@ const CATEGORIES = [
     description: 'Orange, mangue, ananas, pastèque — pressés à la minute.',
     tag: 'Frais du jour',
     image: IMG.jusFruits,
-    href: '/jus#fruits',
+    href: '/jus/fruits',
     span: 'md:col-span-6',
   },
   {
@@ -57,7 +57,7 @@ const CATEGORIES = [
     description: 'Poulet rôti, ragoût de légumes — mijotés avec soin.',
     tag: 'Plat du jour',
     image: IMG.repasChaud,
-    href: '/repas#chaud',
+    href: '/repas/chaud',
     span: 'md:col-span-4',
   },
   {
@@ -66,7 +66,7 @@ const CATEGORIES = [
     description: 'Moelleuses et garnies : herbes fraîches, poulet-épinards et plus.',
     tag: 'Rapide & nourrissant',
     image: IMG.omelette,
-    href: '/repas#omelette',
+    href: '/repas/omelette',
     span: 'md:col-span-4',
   },
   {
@@ -75,7 +75,7 @@ const CATEGORIES = [
     description: 'Veloutés maison, légumes du jardin, bouillon de poulet.',
     tag: 'Fait maison',
     image: IMG.soupe,
-    href: '/repas#soupe',
+    href: '/repas/soupe',
     span: 'md:col-span-4',
   },
 ];
@@ -101,26 +101,26 @@ export default function SaladCategoryPage() {
           transition={{ duration: 1, delay: 0.3 }}
           className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
         >
-          <span className="font-body text-xs uppercase tracking-[0.3em] text-primary mb-4 block">
+          <span className="font-body text-xs text-primary mb-4 block">
             Notre carte
           </span>
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
             À Commander,<br />
-            <span className="italic">fait avec soin</span>
+            <span>fait avec soin</span>
           </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 italic max-w-xl mb-10">
+          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
             Salades, jus, repas chauds, omelettes et soupes — pressés ou mijotés à la commande.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <a
               href="#menu"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl"
             >
               Explorer la carte
             </a>
             <Link
               to="/jus"
-              className="font-body text-sm uppercase tracking-[0.2em] px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
+              className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl"
             >
               Jus & Détox
             </Link>
@@ -184,22 +184,22 @@ function CategoryCard({ cat, delay }: { cat: typeof CATEGORIES[0]; delay: number
     >
       <Link
         to={cat.href}
-        className="block group relative overflow-hidden rounded-2xl h-64 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+        className="block group relative overflow-hidden rounded-2xl h-64 shadow-md hover:shadow-xl transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300"
       >
         <img
           src={cat.image}
           alt={cat.title}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          className="absolute inset-0 w-full h-full object-cover"
           loading="lazy"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-          <span className="font-body text-[10px] uppercase tracking-[0.2em] text-secondary mb-1 block">
+          <span className="font-body text-xs text-secondary mb-1 block">
             {cat.tag}
           </span>
           <h3 className="font-display text-xl md:text-2xl mb-1">{cat.title}</h3>
           <p className="font-body text-white/70 text-sm leading-relaxed">{cat.description}</p>
-          <span className="inline-block font-body text-xs uppercase tracking-[0.15em] text-white/80 group-hover:text-secondary transition-colors mt-3">
+          <span className="inline-block font-body text-xs text-white/80 group-hover:text-secondary transition-colors mt-3">
             Commander →
           </span>
         </div>

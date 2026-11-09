@@ -3,11 +3,13 @@ import Meal, { slugify } from '../models/Meal.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { verifyJWT } from './auth.routes.js';
 import { cache, invalidateCache } from '../middleware/cache.js';
+import { nutritionFromIngredients } from '../utils/mealNutrition.js';
 
 const router = Router();
 
 const escapeRegex     = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const invalidateMeals = () => invalidateCache('/api/meals');
+// Le menu du jour embarque les plats (populate) : il doit être rafraîchi en même temps.
+const invalidateMeals = () => invalidateCache('/api/meals', '/api/menu');
 
 // Nettoie le tableau de formats de vente reçu du back-office avant persistance.
 // PATCH n'exécute pas les validateurs Mongoose (pas de runValidators) : on filtre donc
@@ -128,6 +130,11 @@ router.post('/', verifyJWT, async (req: Request, res: Response): Promise<void> =
     const body = { ...req.body };
     if (body.nom) body.slug = await uniqueSlug(String(body.nom));
     if (body.formats !== undefined) body.formats = sanitizeFormats(body.formats);
+    // Calories et macros déduites des ingrédients, sauf valeurs saisies à la main (calories > 0).
+    if (!(Number(body.nutrition?.calories) > 0)) {
+      const computed = await nutritionFromIngredients(body.ingredients, body.portions);
+      if (computed) body.nutrition = { ...body.nutrition, ...computed };
+    }
     const meal = new Meal(body);
     await meal.save();
     await logAction(`Repas "${meal.nom}" créé`, 'menu', 'Admin');
@@ -145,6 +152,15 @@ router.patch('/:id', verifyJWT, async (req: Request, res: Response): Promise<voi
     // Régénère le slug si le nom change
     if (body.nom) body.slug = await uniqueSlug(String(body.nom), req.params.id);
     if (body.formats !== undefined) body.formats = sanitizeFormats(body.formats);
+    if (Array.isArray(body.ingredients) && !(Number(body.nutrition?.calories) > 0)) {
+      const portions = body.portions ?? (await Meal.findById(req.params.id).select('portions').lean())?.portions;
+      const computed = await nutritionFromIngredients(body.ingredients, portions);
+      if (computed) {
+        if (body.nutrition && typeof body.nutrition === 'object') body.nutrition = { ...body.nutrition, ...computed };
+        // Clés pointées : ne pas écraser sucres/sodium, que ce payload ne contient pas.
+        else for (const [k, v] of Object.entries(computed)) body[`nutrition.${k}`] = v;
+      }
+    }
     const meal = await Meal.findByIdAndUpdate(req.params.id, { $set: body }, { new: true });
     if (!meal) { res.status(404).json({ success: false, message: 'Repas introuvable' }); return; }
     await logAction(`Repas "${meal.nom}" modifié`, 'menu', 'Admin');

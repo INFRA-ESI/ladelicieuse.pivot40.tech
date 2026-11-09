@@ -4,10 +4,12 @@ import {
   CheckCircle, Clock, AlertCircle, TrendingUp, Users, Zap,
   ChevronUp, ChevronDown, ToggleLeft, ToggleRight, RefreshCw,
   ShieldCheck, Flame, Layers,
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/admin/TablePagination';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,33 +70,33 @@ interface LoyaltyReward { _id: string; nom: string; points: number; description:
 // ─── Config ────────────────────────────────────────────────────────────────────
 
 const OFFER_TYPE_CONFIG: Record<OfferType, { label: string; color: string }> = {
-  pourcentage: { label: 'Pourcentage', color: 'bg-blue-100 text-blue-700' },
-  fixe:        { label: 'Montant fixe', color: 'bg-emerald-100 text-emerald-700' },
-  bundle:      { label: 'Bundle', color: 'bg-violet-100 text-violet-700' },
-  flash:       { label: 'Flash', color: 'bg-orange-100 text-orange-700' },
+  pourcentage: { label: 'Pourcentage', color: 'text-muted-foreground' },
+  fixe:        { label: 'Montant fixe', color: 'text-primary' },
+  bundle:      { label: 'Bundle', color: 'text-muted-foreground' },
+  flash:       { label: 'Flash', color: 'text-amber-700' },
 };
 
 const OFFER_STATUS_CONFIG: Record<OfferStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  active:   { label: 'Active',   color: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle className="w-3 h-3" /> },
+  active:   { label: 'Active',   color: 'text-primary', icon: <CheckCircle className="w-3 h-3" /> },
   inactive: { label: 'Inactive', color: 'bg-muted text-muted-foreground',  icon: <ToggleLeft  className="w-3 h-3" /> },
-  expiree:  { label: 'Expirée',  color: 'bg-red-100 text-red-700',         icon: <AlertCircle className="w-3 h-3" /> },
-  a_venir:  { label: 'À venir',  color: 'bg-amber-100 text-amber-700',     icon: <Clock       className="w-3 h-3" /> },
+  expiree:  { label: 'Expirée',  color: 'text-destructive',         icon: <AlertCircle className="w-3 h-3" /> },
+  a_venir:  { label: 'À venir',  color: 'text-amber-700',     icon: <Clock       className="w-3 h-3" /> },
 };
 
 const CODE_STATUS_CONFIG: Record<CodeStatus, { label: string; color: string }> = {
-  active:   { label: 'Actif',    color: 'bg-emerald-100 text-emerald-700' },
+  active:   { label: 'Actif',    color: 'text-primary' },
   inactive: { label: 'Inactif',  color: 'bg-muted text-muted-foreground' },
-  expiree:  { label: 'Expiré',   color: 'bg-red-100 text-red-700' },
-  epuisee:  { label: 'Épuisé',   color: 'bg-amber-100 text-amber-700' },
+  expiree:  { label: 'Expiré',   color: 'text-destructive' },
+  epuisee:  { label: 'Épuisé',   color: 'text-amber-700' },
 };
 
 const COLOR_PRESETS: Record<string, { color: string; bg: string }> = {
-  bronze:   { color: 'text-amber-700',   bg: 'bg-amber-100'   },
-  argent:   { color: 'text-slate-600',   bg: 'bg-slate-100'   },
-  or:       { color: 'text-yellow-600',  bg: 'bg-yellow-100'  },
-  platine:  { color: 'text-violet-700',  bg: 'bg-violet-100'  },
-  emeraude: { color: 'text-emerald-700', bg: 'bg-emerald-100' },
-  bleu:     { color: 'text-blue-700',    bg: 'bg-blue-100'    },
+  bronze:   { color: 'text-amber-700',   bg: 'bg-muted'   },
+  argent:   { color: 'text-slate-600',   bg: 'bg-muted'   },
+  or:       { color: 'text-yellow-600',  bg: 'bg-muted'  },
+  platine:  { color: 'text-violet-700',  bg: 'bg-muted'  },
+  emeraude: { color: 'text-emerald-700', bg: 'bg-muted' },
+  bleu:     { color: 'text-blue-700',    bg: 'bg-muted'    },
 };
 
 const COLOR_OPTIONS = Object.keys(COLOR_PRESETS);
@@ -526,7 +528,7 @@ function MemberPanel({ member, tiers, rewards, onClose, onAdjustPoints }: {
             </div>
             <div className="bg-muted rounded-lg p-3 text-center">
               <p className="font-body text-xs text-muted-foreground">Statut</p>
-              <span className={`font-body text-xs font-medium px-2 py-0.5 rounded-full ${member.statut === 'actif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+              <span className={`font-body text-xs font-medium px-2 py-0.5 rounded-full ${member.statut === 'actif' ? 'text-primary' : 'text-muted-foreground'}`}>
                 {member.statut === 'actif' ? 'Actif' : 'Inactif'}
               </span>
             </div>
@@ -670,7 +672,7 @@ export default function PromotionsPage() {
   const [memberDir, setMemberDir] = useState<'asc' | 'desc'>('desc');
   const [tierFilter, setTierFilter] = useState<string>('all');
 
-  // ── Load ──────────────────────────────────────────────────────────────────────
+  // ── Chargement ──────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -713,6 +715,7 @@ export default function PromotionsPage() {
 
   const filteredOffers  = useMemo(() => promotions.filter(p => p.nom.toLowerCase().includes(searchOffers.toLowerCase())), [promotions, searchOffers]);
   const filteredCodes   = useMemo(() => codes.filter(c => c.code.toLowerCase().includes(searchCodes.toLowerCase())), [codes, searchCodes]);
+  const codesPagination = usePagination(filteredCodes, searchCodes);
 
   const filteredMembers = useMemo(() => {
     const tierOrder: Record<string, number> = {};
@@ -726,6 +729,7 @@ export default function PromotionsPage() {
       return memberDir === 'desc' ? v(b) - v(a) : v(a) - v(b);
     });
   }, [members, sortedTiers, searchMembers, tierFilter, memberSort, memberDir]);
+  const membersPagination = usePagination(filteredMembers, `${searchMembers}|${tierFilter}|${memberSort}|${memberDir}`);
 
   const tierData = useMemo(() =>
     sortedTiers.map(t => ({ tier: t.nom, count: members.filter(m => m.tier === t.slug).length })),
@@ -882,7 +886,7 @@ export default function PromotionsPage() {
     else deleteTierDef(deleteConfirm.id);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Rendu ────────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -906,10 +910,10 @@ export default function PromotionsPage() {
 
       {/* Global KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Offres actives" value={String(activeOffers.length)} sub={`/${promotions.length} au total`} color="border-l-4 border-l-primary" icon={<Zap className="w-4 h-4" />} />
-        <KpiCard label="Codes actifs" value={String(activeCodes.length)} sub={`/${codes.length} au total`} color="border-l-4 border-l-blue-500" icon={<Tag className="w-4 h-4" />} />
-        <KpiCard label="Utilisations totales" value={fmtK(totalUtils)} sub="offres + codes" color="border-l-4 border-l-emerald-500" icon={<TrendingUp className="w-4 h-4" />} />
-        <KpiCard label="Membres fidélité" value={String(members.length)} sub={`${(totalPoints / 1000).toFixed(0)}k pts en circulation`} color="border-l-4 border-l-violet-500" icon={<Users className="w-4 h-4" />} />
+        <KpiCard label="Offres actives" value={String(activeOffers.length)} sub={`/${promotions.length} au total`} color="" icon={<Zap className="w-4 h-4" />} />
+        <KpiCard label="Codes actifs" value={String(activeCodes.length)} sub={`/${codes.length} au total`} color="" icon={<Tag className="w-4 h-4" />} />
+        <KpiCard label="Utilisations totales" value={fmtK(totalUtils)} sub="offres + codes" color="" icon={<TrendingUp className="w-4 h-4" />} />
+        <KpiCard label="Membres fidélité" value={String(members.length)} sub={`${(totalPoints / 1000).toFixed(0)}k pts en circulation`} color="" icon={<Users className="w-4 h-4" />} />
       </div>
 
       {/* Tabs */}
@@ -991,7 +995,7 @@ export default function PromotionsPage() {
                           <h4 className="font-display text-base text-foreground">{offer.nom}</h4>
                           <span className={`text-xs font-body px-2 py-0.5 rounded-full ${typeCfg.color}`}>{typeCfg.label}</span>
                           <span className={`flex items-center gap-1 text-xs font-body px-2 py-0.5 rounded-full ${statusCfg.color}`}>{statusCfg.icon}{statusCfg.label}</span>
-                          {offer.type === 'flash' && <span className="flex items-center gap-1 text-xs font-body px-2 py-0.5 rounded-full bg-orange-100 text-orange-700"><Flame className="w-3 h-3" />Flash</span>}
+                          {offer.type === 'flash' && <span className="text-amber-700 flex items-center gap-1 text-xs font-body px-2 py-0.5 rounded-full"><Flame className="w-3 h-3" />Flash</span>}
                         </div>
                         <div className="flex flex-wrap gap-4 text-xs font-body text-muted-foreground">
                           <span>{fmtDate(offer.dateDebut)} → {fmtDate(offer.dateFin)}</span>
@@ -1068,7 +1072,7 @@ export default function PromotionsPage() {
                     {[5,6].map(j => <td key={j} className="p-4"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
                     </tr>
                   ))
-                  : filteredCodes.map(code => {
+                  : codesPagination.pageItems.map(code => {
                     const st = codeStatus(code);
                     const cfg = CODE_STATUS_CONFIG[st];
                     const usagePct = code.maxUtilisations ? Math.round((code.utilisations / code.maxUtilisations) * 100) : null;
@@ -1076,7 +1080,7 @@ export default function PromotionsPage() {
                       <tr key={code._id} className={`border-b border-border/50 last:border-0 hover:bg-muted/30 ${st !== 'active' ? 'opacity-60' : ''}`}>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-body font-bold text-foreground tracking-widest">{code.code}</span>
+                            <span className="font-body font-semibold text-foreground tracking-widest">{code.code}</span>
                             <button onClick={() => { navigator.clipboard.writeText(code.code); toast.success('Code copié'); }}
                               className="text-muted-foreground hover:text-foreground"><Copy className="w-3.5 h-3.5" /></button>
                           </div>
@@ -1120,6 +1124,7 @@ export default function PromotionsPage() {
               <p className="text-center py-10 font-body text-sm text-muted-foreground">Aucun code trouvé</p>
             )}
           </div>
+          <TablePagination {...codesPagination} onPageChange={codesPagination.setPage} />
         </div>
       )}
 
@@ -1297,7 +1302,7 @@ export default function PromotionsPage() {
                       {[1,2,3,4,5,6].map(j => <td key={j} className="p-3"><div className="h-4 bg-muted rounded animate-pulse" /></td>)}
                     </tr>
                   ))
-                  : filteredMembers.map(m => (
+                  : membersPagination.pageItems.map(m => (
                     <tr key={m._id} className="border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => setMemberPanel(m)}>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
@@ -1313,7 +1318,7 @@ export default function PromotionsPage() {
                       <td className="p-3"><TierBadge tiers={tiers} slug={m.tier} /></td>
                       <td className="p-3 font-body font-medium text-foreground">{m.points.toLocaleString('fr-FR')}</td>
                       <td className="p-3 hidden md:table-cell">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-body ${m.statut === 'actif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-body ${m.statut === 'actif' ? 'text-primary' : 'text-muted-foreground'}`}>
                           {m.statut === 'actif' ? 'Actif' : 'Inactif'}
                         </span>
                       </td>
@@ -1328,6 +1333,7 @@ export default function PromotionsPage() {
               </tbody>
             </table>
           </div>
+          <TablePagination {...membersPagination} onPageChange={membersPagination.setPage} />
         </div>
       )}
 

@@ -39,6 +39,13 @@ export interface IOrder extends Document {
     adresse: string;
   };
   userId?: Types.ObjectId;
+  /** Identifiant du panier côté paiement (devis) : relie la commande à sa transaction, et la rend idempotente. */
+  refPaiement?: string;
+  /**
+   * Un paiement en ligne réussi, du montant de la commande, a été retrouvé à l'enregistrement.
+   * Absent sur les commandes antérieures à ce contrôle (pas de valeur par défaut, pour éviter de fausses alertes).
+   */
+  paiementVerifie?: boolean;
   items: IOrderItem[];
   statut: OrderStatus;
   priorite: OrderPriority;
@@ -93,6 +100,8 @@ const OrderSchema = new Schema<IOrder>(
       adresse:   { type: String, default: '' },
     },
     userId:        { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    refPaiement:     { type: String },
+    paiementVerifie: { type: Boolean },
     items:         { type: [OrderItemSchema], required: true },
     statut:        { type: String, enum: ['en_attente','confirmee','en_preparation','prete','livree','annulee','remboursee'], default: 'en_attente' },
     priorite:      { type: String, enum: ['normale','haute','urgente'], default: 'normale' },
@@ -115,11 +124,11 @@ const OrderSchema = new Schema<IOrder>(
   { timestamps: true }
 );
 
-// Auto-generate order number before save — compteur atomique, aucune race condition
+// Génération automatique du numéro de commande avant sauvegarde — compteur atomique, aucune race condition
 OrderSchema.pre('save', async function (this: IOrder, next) {
   if (!this.numero) {
     const seq = await nextSequence('order_numero');
-    this.numero = `CMD-${String(seq).padStart(4, '0')}`;
+    this.numero = `LDD-${String(seq).padStart(4, '0')}`;
   }
   if (this.isNew) {
     this.historique = [{ statut: this.statut, date: new Date(), par: 'Système' }];
@@ -132,5 +141,7 @@ OrderSchema.index({ priorite: 1 });
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ 'client.email': 1 });
 OrderSchema.index({ userId: 1 });
+// Un panier ne donne qu'une commande : un renvoi (double clic, réseau instable) ne crée pas de doublon.
+OrderSchema.index({ refPaiement: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<IOrder>('Order', OrderSchema);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Flame, Clock, Users, Check, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Check, AlertTriangle, ChevronLeft, ChevronRight } from '@/components/icons';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiProduct } from '@/types/api.types';
 import { formatPrice, slugifyFormatLabel } from '@/data/products';
@@ -19,12 +19,12 @@ const DV = { proteines: 50, glucides: 275, lipides: 78, fibres: 28, sucres: 50, 
 const pct = (val: number, ref: number) => Math.min(100, Math.round((val / ref) * 100));
 
 const MACRO_BARS = [
-  { key: 'proteines', label: 'Protéines',  unit: 'g',  color: 'bg-blue-500',   ref: DV.proteines },
+  { key: 'proteines', label: 'Protéines',  unit: 'g',  color: 'bg-primary',   ref: DV.proteines },
   { key: 'glucides',  label: 'Glucides',   unit: 'g',  color: 'bg-yellow-500', ref: DV.glucides },
   { key: 'lipides',   label: 'Lipides',    unit: 'g',  color: 'bg-red-400',    ref: DV.lipides },
   { key: 'fibres',    label: 'Fibres',     unit: 'g',  color: 'bg-green-500',  ref: DV.fibres },
-  { key: 'sucres',    label: 'Sucres',     unit: 'g',  color: 'bg-pink-400',   ref: DV.sucres },
-  { key: 'sodium',    label: 'Sodium',     unit: 'mg', color: 'bg-orange-400', ref: DV.sodium },
+  { key: 'sucres',    label: 'Sucres',     unit: 'g',  color: 'bg-primary',   ref: DV.sucres },
+  { key: 'sodium',    label: 'Sodium',     unit: 'mg', color: 'bg-amber-400', ref: DV.sodium },
 ] as const;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
       totalPrice:    unitPrice,
       quantity:      1,
     });
-    toast.success(`${displayName} ajouté au panier !`);
+    toast.success(`${displayName} ajouté au panier`);
     onClose();
   };
 
@@ -116,7 +116,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
 
             {/* ── En-tête ── */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
-              <span className="font-body text-xs uppercase tracking-[0.22em] text-muted-foreground">
+              <span className="font-body text-xs text-muted-foreground">
                 Fiche produit
               </span>
               <button
@@ -161,10 +161,10 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                         />
                         {/* Badges status */}
                         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                          {hasPromo       && <span className="bg-red-500   text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded-full">Promo</span>}
-                          {product.vedette    && <span className="bg-amber-500 text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded-full">Vedette</span>}
-                          {product.recommande && <span className="bg-primary  text-primary-foreground text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded-full">Recommandé</span>}
-                          {product.saisonnier && <span className="bg-emerald-600 text-white text-[10px] font-body uppercase tracking-wider px-2 py-0.5 rounded-full">Saison</span>}
+                          {hasPromo       && <span className="bg-background text-foreground text-xs font-body px-2 py-0.5 rounded-full">Promo</span>}
+                          {product.vedette    && <span className="bg-background text-foreground text-xs font-body px-2 py-0.5 rounded-full">Vedette</span>}
+                          {product.recommande && <span className="bg-primary  text-primary-foreground text-xs font-body px-2 py-0.5 rounded-full">Recommandé</span>}
+                          {product.saisonnier && <span className="bg-emerald-600 text-white text-xs font-body px-2 py-0.5 rounded-full">Saison</span>}
                         </div>
                         {/* Contrôles galerie */}
                         {allImages.length > 1 && (
@@ -186,7 +186,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                                 <button
                                   key={i}
                                   onClick={() => setActiveImg(i)}
-                                  className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeImg ? 'bg-white w-3' : 'bg-white/50'}`}
+                                  className={`w-1.5 h-1.5 rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] ${i === activeImg ? 'bg-white w-3' : 'bg-white/50'}`}
                                 />
                               ))}
                             </div>
@@ -199,7 +199,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                   {/* ── Informations principales ── */}
                   <div className="px-5 pt-4 pb-2 space-y-3">
                     <div>
-                      <span className="font-body text-[10px] uppercase tracking-[0.22em] text-primary">{product.categorie}</span>
+                      <span className="font-body text-xs text-primary">{product.categorie}</span>
                       <h2 className="font-display text-xl sm:text-2xl text-foreground mt-0.5 leading-tight">{product.nom}</h2>
                       {product.descriptionCourte && (
                         <p className="font-body text-sm text-muted-foreground mt-1 leading-relaxed">{product.descriptionCourte}</p>
@@ -267,7 +267,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                     {(product.objectifsSante?.length ?? 0) > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {product.objectifsSante!.map(g => (
-                          <span key={g} className="font-body text-[11px] px-2.5 py-1 rounded-full border border-primary/25 bg-primary/6 text-primary font-medium">
+                          <span key={g} className="font-body text-xs px-2.5 py-1 rounded-full border border-primary/25 bg-primary/6 text-primary font-medium">
                             {g}
                           </span>
                         ))}
@@ -286,7 +286,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                   {product.nutrition.calories > 0 && (
                     <div className="px-5 py-4 border-t border-border">
                       <h3 className="font-display text-base text-foreground mb-1">Valeurs nutritionnelles</h3>
-                      <p className="font-body text-[11px] text-muted-foreground mb-3">Pour une portion · % des apports journaliers de référence</p>
+                      <p className="font-body text-xs text-muted-foreground mb-3">Pour une portion · % des apports journaliers de référence</p>
 
                       {/* Calories en vedette */}
                       <div className="flex items-center justify-between bg-primary/5 rounded-xl px-4 py-3 mb-3 border border-primary/10">
@@ -311,7 +311,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                                 />
                               </div>
                               <span className="font-body text-xs font-semibold w-10 text-right tabular-nums">{val}{m.unit}</span>
-                              <span className="font-body text-[10px] text-muted-foreground w-7 text-right tabular-nums">{p}%</span>
+                              <span className="font-body text-xs text-muted-foreground w-7 text-right tabular-nums">{p}%</span>
                             </div>
                           );
                         })}
@@ -359,13 +359,13 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                         {product.allergenes!.map(a => (
                           <span
                             key={a}
-                            className="font-body text-xs px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-full font-medium"
+                            className="text-amber-700 font-body text-xs px-3 py-1.5 border rounded-full font-medium"
                           >
                             {ALLERGEN_LABELS[a] ?? a}
                           </span>
                         ))}
                       </div>
-                      <p className="font-body text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
+                      <p className="font-body text-xs text-muted-foreground mt-2 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
                         Peut contenir des traces des allergènes mentionnés
                       </p>
@@ -413,7 +413,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                   <button
                     onClick={handleAdd}
                     disabled={!product.disponible}
-                    className="flex-1 py-3 bg-primary text-primary-foreground font-body text-sm uppercase tracking-[0.12em] rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 py-3 bg-primary text-primary-foreground font-body text-sm rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Ajouter au panier
                   </button>

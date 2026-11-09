@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Loader2, AlertCircle, CheckCircle, Smartphone } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Smartphone } from '@/components/icons';
 import {
   Select,
   SelectContent,
@@ -190,8 +190,8 @@ export const MobileMoneyCheckout: React.FC<MobileMoneyCheckoutProps> = ({
           </div>
 
           {provider && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <p className="text-sm text-blue-800">
+            <div className="bg-primary/10 border border-primary/20 rounded-md p-4">
+              <p className="text-sm text-primary">
                 Vous recevrez une demande de confirmation sur votre téléphone{' '}
                 {provider === 'airtel' ? 'Airtel Money' : 'Moov Money'}.
               </p>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Users, RefreshCw, CheckCircle, AlertCircle, Smartphone, Mail, Send } from 'lucide-react';
+import { Bell, Users, RefreshCw, CheckCircle, AlertCircle, Smartphone, Mail, Send } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost } from '@/services/adminApiService';
 

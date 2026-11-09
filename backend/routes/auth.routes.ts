@@ -3,12 +3,14 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { z } from 'zod';
-import { sendLoginOTPEmail } from '../services/email.service.js';
+import { sendLoginOTPEmail, sendAdminPasswordResetEmail } from '../services/email.service.js';
+import { logAction } from '../models/HistoryLog.model.js';
 import { getRedis } from '../config/redis.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { validate } from '../middleware/validate.js';
 import Settings from '../models/Settings.model.js';
 import { logger } from '../config/logger.js';
+import { passwordSchema, loginPasswordError } from '../utils/password.js';
 
 const RequestOTPSchema = z.object({
   email:    z.string().email('Email invalide').max(254),
@@ -31,7 +33,6 @@ const OTP_EXPIRY_S = 5 * 60; // 5 minutes en secondes
 
 const validCredentials = {
   email:    process.env.ADMIN_EMAIL    || 'admin@ladelicieuse.ga',
-  password: process.env.ADMIN_PASSWORD || 'admin123',
   name:     'Administrateur',
   role:     'admin',
 };
@@ -48,6 +49,21 @@ function requireRedis() {
   const redis = getRedis();
   if (!redis) throw new Error('REDIS_UNAVAILABLE');
   return redis;
+}
+
+// Réponse commune aux échecs d'une route d'authentification : Redis indisponible → 503 (fail closed),
+// toute autre erreur → 500 journalisé, sans détail technique pour le client.
+function failAuth(res: Response, error: unknown, route: string, message: string): void {
+  if (error instanceof Error && error.message === 'REDIS_UNAVAILABLE') {
+    logger.error(`Redis indisponible — ${route} refusé (fail closed)`);
+    res.status(503).json({ success: false, message: 'Service temporairement indisponible. Réessayez dans quelques instants.' });
+    return;
+  }
+  logger.error(`Erreur ${route}`, {
+    name:    error instanceof Error ? error.name : undefined,
+    message: error instanceof Error ? error.message : String(error),
+  });
+  res.status(500).json({ success: false, message });
 }
 
 async function storeOTP(email: string, otp: string): Promise<void> {
@@ -105,12 +121,29 @@ router.post(
         return;
       }
 
+      // Même règle que pour les clients, vérifiée APRÈS le contrôle du mot de passe : aucun code n'est envoyé tant que le
+      // mot de passe ne la respecte pas. La sortie de secours est « Mot de passe oublié » (lien envoyé par e-mail).
+      const strengthError = loginPasswordError(password);
+      if (strengthError) {
+        res.status(403).json({ success: false, passwordWeak: true, message: strengthError });
+        return;
+      }
+
       const otp = generateOTP();
       await storeOTP(email, otp);
 
       const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress;
 
-      await sendLoginOTPEmail(email, otp, ip);
+      try {
+        await sendLoginOTPEmail(email, otp, ip);
+      } catch (mailError) {
+        // Un OTP que personne ne peut lire ne doit pas rester valide.
+        await deleteOTP(email).catch(() => undefined);
+        const { code, command, message } = mailError as NodeJS.ErrnoException & { command?: string };
+        logger.error('Envoi email OTP impossible (SMTP)', { code, command, message });
+        res.status(502).json({ success: false, message: "Impossible d'envoyer le code par email. Réessayez dans quelques instants." });
+        return;
+      }
       logger.info('OTP envoyé', { email });
 
       res.json({
@@ -119,17 +152,7 @@ router.post(
         expiresIn: OTP_EXPIRY_S,
       });
     } catch (error) {
-      if (error instanceof Error && error.message === 'REDIS_UNAVAILABLE') {
-        logger.error('Redis indisponible — OTP refusé (fail closed)');
-        res.status(503).json({ success: false, message: 'Service temporairement indisponible. Réessayez dans quelques instants.' });
-        return;
-      }
-      logger.error('Erreur request-otp', { error: error instanceof Error ? error.message : String(error) });
-      res.status(500).json({
-        success: false,
-        message: "Erreur lors de la génération de l'OTP",
-        error: error instanceof Error ? error.message : 'Erreur inconnue',
-      });
+      failAuth(res, error, 'request-otp', "Erreur lors de la génération de l'OTP");
     }
   }
 );
@@ -179,19 +202,100 @@ router.post('/verify-otp', rateLimiter(10, 900, 'otp-verify'), validate(VerifyOT
 
     res.json({ success: true, message: 'Connexion réussie', token, user });
   } catch (error) {
-    if (error instanceof Error && error.message === 'REDIS_UNAVAILABLE') {
-      logger.error('Redis indisponible — verify-otp refusé (fail closed)');
-      res.status(503).json({ success: false, message: 'Service temporairement indisponible. Réessayez dans quelques instants.' });
-      return;
-    }
-    logger.error('Erreur verify-otp', { error: error instanceof Error ? error.message : String(error) });
-    res.status(500).json({
-      success: false,
-      message: "Erreur lors de la vérification de l'OTP",
-      error: error instanceof Error ? error.message : 'Erreur inconnue',
-    });
+    failAuth(res, error, 'verify-otp', "Erreur lors de la vérification de l'OTP");
   }
 });
+
+// ── Mot de passe admin oublié ─────────────────────────────────────────────────
+// Le lien part vers la même adresse que l'OTP : qui reçoit l'OTP peut déjà accéder au compte.
+// Le jeton n'est stocké que haché (Redis, 30 min) et consommé atomiquement à la première utilisation.
+const RESET_EXPIRY_S = 30 * 60;
+
+const ForgotPasswordSchema = z.object({
+  email: z.string().email('Email invalide').max(254),
+});
+
+const ResetPasswordSchema = z.object({
+  token:    z.string().regex(/^[a-f0-9]{64}$/, 'Lien invalide'),
+  password: passwordSchema,
+});
+
+const hashResetToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
+
+// ── POST /api/auth/forgot-password ────────────────────────────────────────────
+router.post(
+  '/forgot-password',
+  rateLimiter(3, 900, 'admin-forgot'),
+  validate(ForgotPasswordSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    // Même réponse que l'adresse soit la bonne ou non : on ne révèle pas l'e-mail du compte admin.
+    const neutral = { success: true, message: "Si cette adresse correspond au compte administrateur, un lien de réinitialisation vient d'être envoyé." };
+    try {
+      const { email } = req.body as z.infer<typeof ForgotPasswordSchema>;
+      if (email !== validCredentials.email) { res.json(neutral); return; }
+
+      // Jamais l'en-tête Origin/Host de la requête : il permettrait d'envoyer un lien piégé à l'admin.
+      const baseUrl = process.env.FRONTEND_URL?.replace(/\/$/, '')
+        ?? (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:5100');
+      if (!baseUrl) {
+        logger.error('forgot-password impossible : FRONTEND_URL non défini en production');
+        res.status(503).json({ success: false, message: 'Service temporairement indisponible. Contactez le support.' });
+        return;
+      }
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const key   = `admin-reset:${hashResetToken(token)}`;
+      await requireRedis().set(key, email, { ex: RESET_EXPIRY_S });
+
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress;
+      try {
+        await sendAdminPasswordResetEmail(email, `${baseUrl}/admin/reset-password?token=${token}`, ip);
+        logger.info('Lien de réinitialisation admin envoyé');
+      } catch (mailError) {
+        await requireRedis().del(key).catch(() => undefined);
+        const { code, command, message } = mailError as NodeJS.ErrnoException & { command?: string };
+        logger.error('Envoi email réinitialisation admin impossible (SMTP)', { code, command, message });
+      }
+      res.json(neutral);
+    } catch (error) {
+      failAuth(res, error, 'forgot-password', 'Erreur lors de la demande de réinitialisation');
+    }
+  }
+);
+
+// ── POST /api/auth/reset-password ─────────────────────────────────────────────
+router.post(
+  '/reset-password',
+  rateLimiter(5, 900, 'admin-reset'),
+  validate(ResetPasswordSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { token, password } = req.body as z.infer<typeof ResetPasswordSchema>;
+
+      // getdel : lecture + suppression atomiques, un même lien ne peut servir qu'une fois.
+      const email = await requireRedis().getdel<string>(`admin-reset:${hashResetToken(token)}`);
+      if (!email) {
+        res.status(400).json({ success: false, message: 'Lien invalide ou expiré. Refaites une demande.' });
+        return;
+      }
+
+      const hash     = await bcrypt.hash(password, 12);
+      const settings = await Settings.findOne().select('+adminPasswordHash');
+      if (settings) {
+        settings.adminPasswordHash = hash;
+        await settings.save();
+      } else {
+        await Settings.create({ adminPasswordHash: hash });
+      }
+
+      await deleteOTP(email); // un OTP émis avec l'ancien mot de passe ne doit plus servir
+      await logAction('Mot de passe administrateur réinitialisé (mot de passe oublié)', 'parametre', 'Admin');
+      res.json({ success: true, message: 'Mot de passe mis à jour. Vous pouvez vous connecter.' });
+    } catch (error) {
+      failAuth(res, error, 'reset-password', 'Erreur lors de la réinitialisation');
+    }
+  }
+);
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
 // Blackliste le token courant dans Redis — invalide le JWT avant son expiration naturelle.

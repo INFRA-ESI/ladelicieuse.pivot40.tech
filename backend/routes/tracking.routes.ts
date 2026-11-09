@@ -1,12 +1,14 @@
 import { Router, Response } from 'express';
 import { requireClient, ClientRequest } from '../middleware/clientAuth.js';
+import { memoryRateLimiter } from '../middleware/rateLimiter.js';
 import ProgressEntry from '../models/ProgressEntry.model.js';
 import { Types } from 'mongoose';
 
 const router = Router();
 
-// All tracking routes require client JWT
+// Toutes les routes de suivi exigent le JWT client
 router.use(requireClient);
+router.use(memoryRateLimiter(120, 60, 'tracking', { perUser: true }));
 
 // ── GET /api/tracking — Entrées de progrès (30 derniers jours par défaut) ─────
 router.get('/', async (req: ClientRequest, res: Response): Promise<void> => {
@@ -69,7 +71,7 @@ router.post('/', async (req: ClientRequest, res: Response): Promise<void> => {
       lipides?: number; eau?: number; notes?: string; date?: string;
     };
 
-    // Normalize to start-of-day (UTC)
+    // Normalise au début de journée (UTC)
     const entryDate = date ? new Date(date) : new Date();
     entryDate.setHours(0, 0, 0, 0);
 

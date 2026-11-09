@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, X, Save } from 'lucide-react';
+import { Plus, Trash2, X, Save } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPatch } from '@/services/adminApiService';
 
