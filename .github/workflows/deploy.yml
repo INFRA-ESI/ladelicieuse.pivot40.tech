@@ -83,6 +83,8 @@ jobs:
           remote_host: ${{ secrets.IP_SERVER }}
           remote_user: ${{ secrets.USER }}
           remote_key: ${{ secrets.PRIVATE_KEY }}
+          remote_key_pass: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
+          remote_port: ${{ secrets.PORT || '22' }}
 
       # ── Backend : git pull + build + PM2 restart ────────────────────────────
       - name: Deploy backend via SSH
@@ -92,6 +94,8 @@ jobs:
           host: ${{ secrets.IP_SERVER }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
+          port: ${{ secrets.PORT || '22' }}
           script: |
             set -e
             cd ${{ secrets.FOLDER }}
