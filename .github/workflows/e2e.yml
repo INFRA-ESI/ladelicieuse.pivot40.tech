@@ -13,7 +13,8 @@ concurrency:
 jobs:
   e2e:
     name: Playwright — Chromium
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Playwright ne prend pas encore en charge Ubuntu 26.04 (ubuntu-latest) : on fixe la version du runner.
     timeout-minutes: 15
 
     steps:
