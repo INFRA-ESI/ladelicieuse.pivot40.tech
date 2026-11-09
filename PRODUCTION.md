@@ -89,6 +89,34 @@ sinon un événement émis par une instance n'atteint pas les navigateurs connec
    Si cela gêne, passer `ALLOW_UNQUOTED_ORDERS=true` le temps du déploiement, puis **repasser à `false` aussitôt** (les prix ne sont pas contrôlés tant que c'est `true`).
 5. Lancer le déploiement (push sur `main` une fois la CI verte, ou lancement manuel).
 
+## 5 bis. Préparation du serveur (une seule fois, par la personne qui administre le VPS)
+
+À faire AVANT d'activer le déploiement automatique. Prérequis : Node.js 20 ou plus, npm, git, pm2, nginx, MongoDB accessible.
+
+```bash
+# 1. Cloner le dépôt dans le dossier du site (ce chemin devient le secret GitHub FOLDER)
+sudo mkdir -p /var/www/ladelicieuse && sudo chown "$USER": /var/www/ladelicieuse
+git clone https://github.com/INFRA-ESI/ladelicieuse.pivot40.tech.git /var/www/ladelicieuse
+
+# 2. Configurer l'API (valeurs : §2)
+cp /var/www/ladelicieuse/backend/.env.example /var/www/ladelicieuse/backend/.env
+nano /var/www/ladelicieuse/backend/.env            # NODE_ENV=production, JWT_SECRET, MONGO_URI, ADMIN_*, FRONTEND_URL…
+
+# 3. Compiler et lancer l'API, une seule instance (§4)
+cd /var/www/ladelicieuse/backend && npm ci && npm run build && npm prune --omit=dev
+pm2 start dist/server.js --name ladelicieuse-api && pm2 save && pm2 startup   # exécuter la commande affichée par pm2 startup
+
+# 4. nginx : configuration du §3 (root = /var/www/ladelicieuse/dist), puis
+sudo nginx -t && sudo systemctl reload nginx
+
+# 5. Contrôle
+curl -fsS http://127.0.0.1:3000/health/live && curl -fsS http://127.0.0.1:3000/health/ready
+```
+
+Le dossier du site doit être modifiable par l'utilisateur SSH du déploiement (secrets `USER`, `IP_SERVER`, `PORT`, `PRIVATE_KEY`, `PASSPHRASE_PRIVATE_KEY`).
+Une fois le serveur prêt, dans GitHub : mettre à jour le secret `FOLDER` si le chemin diffère, puis créer la variable de dépôt `DEPLOY_AUTO` = `true`
+(Settings > Secrets and variables > Actions > Variables). Un lancement manuel du workflow « Deploy » fonctionne sans cette variable.
+
 ## 6. Vérifications après déploiement
 
 - `curl https://ladelicieuse.pivot40.tech/health/live` → 200 ; `/health/ready` → 200 (MongoDB et Redis répondent).

@@ -30,12 +30,22 @@ jobs:
           SSH_USER: ${{ secrets.USER }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           FOLDER: ${{ secrets.FOLDER }}
+          DEPLOY_AUTO: ${{ vars.DEPLOY_AUTO }}
         run: |
           manquants=""
           for nom in IP_SERVER SSH_USER PRIVATE_KEY FOLDER; do
             if [ -z "${!nom}" ]; then manquants="$manquants $nom"; fi
           done
           if [ -z "$manquants" ]; then
+            # Déploiement automatique : réservé au moment où le serveur est prêt (variable de dépôt DEPLOY_AUTO=true).
+            # Un lancement manuel, lui, déploie toujours.
+            if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$DEPLOY_AUTO" != "true" ]; then
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              echo "## Déploiement automatique désactivé" >> "$GITHUB_STEP_SUMMARY"
+              echo "Définir la variable de dépôt DEPLOY_AUTO=true une fois le serveur préparé (voir PRODUCTION.md)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=Déploiement automatique désactivé::variable DEPLOY_AUTO absente (voir PRODUCTION.md)"
+              exit 0
+            fi
             echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -86,13 +96,7 @@ jobs:
             D="${{ secrets.FOLDER }}"
             if [ ! -d "$D/.git" ]; then
               echo "ERREUR : le dossier du secret FOLDER n'existe pas ou n'est pas un dépôt git."
-              echo "Dossiers de dépôt contenant « delicieuse » trouvés sur le serveur :"
-              find /var/www /home /srv /opt -maxdepth 4 -type d -name .git -ipath '*delicieuse*' 2>/dev/null | sed 's#/\.git$##' | head -5
-              echo "Dossier de travail du processus PM2 de l'API :"
-              PID=$(pm2 pid ladelicieuse-api 2>/dev/null | head -1)
-              if [ -n "$PID" ] && [ "$PID" != "0" ]; then readlink "/proc/$PID/cwd"; else echo "(processus PM2 introuvable pour cet utilisateur)"; fi
-              echo "Dossiers contenant backend/package.json :"
-              find /var/www /home /srv /opt -maxdepth 5 -path '*/backend/package.json' -not -path '*/node_modules/*' 2>/dev/null | sed 's#/backend/package.json$##' | head -5
+              echo "Le serveur doit d'abord être préparé (voir « Préparation du serveur » dans PRODUCTION.md)."
               exit 1
             fi
             if [ ! -w "$D" ]; then
