@@ -72,19 +72,21 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
 
-      # ── Copier le dist/ sur le VPS ──────────────────────────────────────────
-      - name: Sync frontend dist to VPS
+      # ── Envoyer le dist/ sur le VPS (tar sur SSH : rien à installer sur le serveur) ─────────────────
+      # Le site est déposé dans dist.new ; la bascule vers dist n'a lieu qu'à l'étape suivante, une fois tout reçu.
+      - name: Upload frontend dist to VPS
         if: steps.config.outputs.ready == 'true'
-        uses: burnett01/rsync-deployments@7.0.1
+        uses: appleboy/scp-action@v1
         with:
-          switches: -avzr --delete
-          path: dist/
-          remote_path: ${{ secrets.FOLDER }}/dist/
-          remote_host: ${{ secrets.IP_SERVER }}
-          remote_user: ${{ secrets.USER }}
-          remote_key: ${{ secrets.PRIVATE_KEY }}
-          remote_key_pass: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
-          remote_port: ${{ secrets.PORT || '22' }}
+          host: ${{ secrets.IP_SERVER }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
+          port: ${{ secrets.PORT || '22' }}
+          source: dist/*
+          target: ${{ secrets.FOLDER }}/dist.new
+          strip_components: 1
+          rm: true
 
       # ── Backend : git pull + build + PM2 restart ────────────────────────────
       - name: Deploy backend via SSH
@@ -99,6 +101,18 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.FOLDER }}
+
+            # Bascule du site : le nouveau dist remplace l'ancien en deux renommages (pas de dossier à moitié copié).
+            if [ -f dist.new/index.html ]; then
+              rm -rf dist.old
+              if [ -d dist ]; then mv dist dist.old; fi
+              mv dist.new dist
+              rm -rf dist.old
+              echo "Site mis à jour"
+            else
+              echo "dist.new/index.html introuvable : envoi du site échoué"
+              exit 1
+            fi
 
             # Aligne le serveur sur main, même si l'historique a été réécrit (un « git pull » échouerait alors).
             git fetch origin main
