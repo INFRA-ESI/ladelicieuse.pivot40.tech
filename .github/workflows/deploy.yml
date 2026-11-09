@@ -1,7 +1,11 @@
 name: Deploy
 
+# Le déploiement ne part qu'une fois la CI (lint, typage, tests, build) terminée AVEC SUCCÈS sur main.
+# Le lancement manuel reste possible (workflow_dispatch).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -14,20 +18,55 @@ jobs:
     name: Deploy to production (VPS)
     runs-on: ubuntu-latest
     environment: production
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
 
     steps:
-      - uses: actions/checkout@v4
+      # Sans la configuration complète du serveur, un déploiement automatique ne doit ni échouer ni écrire au mauvais
+      # endroit : il est ignoré avec un avertissement visible. Un lancement manuel, lui, échoue pour le signaler.
+      - name: Vérifier la configuration de production
+        id: config
+        env:
+          IP_SERVER: ${{ secrets.IP_SERVER }}
+          SSH_USER: ${{ secrets.USER }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          FOLDER: ${{ secrets.FOLDER }}
+        run: |
+          manquants=""
+          for nom in IP_SERVER SSH_USER PRIVATE_KEY FOLDER; do
+            if [ -z "${!nom}" ]; then manquants="$manquants $nom"; fi
+          done
+          if [ -z "$manquants" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "## Déploiement ignoré" >> "$GITHUB_STEP_SUMMARY"
+          echo "Secrets de production manquants :$manquants (Settings > Secrets and variables > Actions)." >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::error title=Déploiement impossible::Secrets manquants :$manquants"
+            exit 1
+          fi
+          echo "::warning title=Déploiement ignoré::Secrets manquants :$manquants"
 
-      - uses: actions/setup-node@v4
+      # Exactement le commit que la CI vient de valider.
+      - uses: actions/checkout@v7
+        if: steps.config.outputs.ready == 'true'
         with:
-          node-version: 20
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v7
+        if: steps.config.outputs.ready == 'true'
+        with:
+          node-version: 22
           cache: npm
 
       # ── Build frontend (avec les secrets GitHub) ────────────────────────────
       - name: Install frontend dependencies
+        if: steps.config.outputs.ready == 'true'
         run: npm ci
 
       - name: Build frontend
+        if: steps.config.outputs.ready == 'true'
         run: npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
@@ -35,6 +74,7 @@ jobs:
 
       # ── Copier le dist/ sur le VPS ──────────────────────────────────────────
       - name: Sync frontend dist to VPS
+        if: steps.config.outputs.ready == 'true'
         uses: burnett01/rsync-deployments@7.0.1
         with:
           switches: -avzr --delete
@@ -46,6 +86,7 @@ jobs:
 
       # ── Backend : git pull + build + PM2 restart ────────────────────────────
       - name: Deploy backend via SSH
+        if: steps.config.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.IP_SERVER }}
@@ -55,13 +96,31 @@ jobs:
             set -e
             cd ${{ secrets.FOLDER }}
 
-            git pull origin main
+            # Aligne le serveur sur main, même si l'historique a été réécrit (un « git pull » échouerait alors).
+            git fetch origin main
+            git reset --hard origin/main
 
             cd backend
-            npm ci --omit=dev
+            # TypeScript (tsc) est une dépendance de développement : il faut l'installer pour compiler, puis la retirer.
+            npm ci
             npm run build
+            npm prune --omit=dev
 
-            pm2 restart ladelicieuse-api || pm2 start dist/index.js --name ladelicieuse-api
+            pm2 restart ladelicieuse-api || pm2 start dist/server.js --name ladelicieuse-api
             pm2 save
 
-            echo "Deployment complete"
+            # Vérifie que le serveur est vraiment reparti (sinon le déploiement est en échec et le journal s'affiche).
+            PORT=$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '\r')
+            PORT=${PORT:-3000}
+            for i in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:${PORT}/health/live" > /dev/null; then
+                echo "Serveur en ligne après ${i} s"
+                curl -fsS "http://127.0.0.1:${PORT}/health/ready" || echo "Attention : /health/ready en échec (MongoDB ou Redis)"
+                echo "Deployment complete"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Le serveur ne répond pas après le redémarrage"
+            pm2 logs ladelicieuse-api --nostream --lines 60
+            exit 1

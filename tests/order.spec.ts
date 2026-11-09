@@ -75,7 +75,8 @@ test.describe('Order placement', () => {
     });
 
     await page.goto('/paiement/succes?order=CMD-2026-001');
-    await expect(page.locator('body')).toBeVisible();
+    // La page est chargée à la demande : on attend son contenu avant de le mesurer.
+    await expect(page.getByRole('heading', { name: /paiement confirmé/i })).toBeVisible();
     const body = await page.textContent('body');
     expect(body?.length).toBeGreaterThan(50);
   });

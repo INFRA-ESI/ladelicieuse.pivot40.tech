@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,12 +17,19 @@ jobs:
     name: Frontend — lint · typecheck · tests · build
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    # Vraie base MongoDB jetable pour les tests d'intégration du backend (modèles, index, migrations).
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
 
-      - uses: actions/setup-node@v4
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -30,17 +38,27 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Le tsconfig.json de la racine ne contient que des références (files: []) : il ne vérifie rien.
       - name: Type check
-        run: npx tsc --noEmit --skipLibCheck
+        run: npx tsc --noEmit -p tsconfig.app.json
 
       - name: Unit tests (Vitest)
         run: npm run test
+
+      # Les tests backend importent les routes : ils ont besoin des dépendances du dossier backend.
+      - name: Install backend dependencies (pour les tests backend)
+        run: npm ci --prefix backend
+
+      - name: Backend tests (Vitest, dont intégration MongoDB)
+        run: npm run test:backend
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017
 
       - name: Build
         run: npm run build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: github.ref == 'refs/heads/main'
         with:
           name: frontend-dist
@@ -56,11 +74,11 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -74,7 +92,7 @@ jobs:
         run: npm run build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: github.ref == 'refs/heads/main'
         with:
           name: backend-dist
@@ -87,11 +105,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Frontend — npm audit
