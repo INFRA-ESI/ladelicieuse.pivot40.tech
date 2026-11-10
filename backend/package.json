@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "seed:test-user": "tsx scripts/seed-test-user.ts"
   },
   "keywords": [
     "express",
