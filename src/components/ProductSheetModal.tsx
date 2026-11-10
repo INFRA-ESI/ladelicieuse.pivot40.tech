@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useUser } from '@/context/UserContext';
+import { dietConflicts } from '@/lib/dietary';
+import { DietChip } from '@/components/DietNotice';
 import { X, Check, AlertTriangle, ChevronLeft, ChevronRight } from '@/components/icons';
 import { publicFetch } from '@/services/publicApiService';
 import { ApiProduct } from '@/types/api.types';
@@ -38,6 +41,7 @@ interface Props {
 
 export default function ProductSheetModal({ productId, onClose }: Props) {
   const { addItem } = useCart();
+  const { preferences } = useUser();
   const [product, setProduct]   = useState<ApiProduct | null>(null);
   const [loading, setLoading]   = useState(false);
   const [activeImg, setActiveImg] = useState(0);
@@ -201,6 +205,7 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                     <div>
                       <span className="font-body text-xs text-primary">{product.categorie}</span>
                       <h2 className="font-display text-xl sm:text-2xl text-foreground mt-0.5 leading-tight">{product.nom}</h2>
+                      {preferences.length > 0 && <div className="mt-2"><DietChip active reasons={dietConflicts({ name: product.nom, ingredients: product.ingredients?.map(i => i.nom), allergenes: product.allergenes, proteines: product.nutrition.proteines, glucides: product.nutrition.glucides }, preferences)} /></div>}
                       {product.descriptionCourte && (
                         <p className="font-body text-sm text-muted-foreground mt-1 leading-relaxed">{product.descriptionCourte}</p>
                       )}

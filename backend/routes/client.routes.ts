@@ -9,6 +9,7 @@ import { sendPushToUser } from '../services/push.service.js';
 import { rateLimiter, memoryRateLimiter } from '../middleware/rateLimiter.js';
 import { requireClient, ClientRequest } from '../middleware/clientAuth.js';
 import { logger } from '../config/logger.js';
+import avatarRouter from './clientAvatar.routes.js';
 import { passwordError, loginPasswordError } from '../utils/password.js';
 
 const router = Router();
@@ -164,6 +165,7 @@ router.post('/login', rateLimiter(5, 300, 'client-login'), async (req: Request, 
         telephone: user.telephone,
         points: user.points,
         tier: user.tier,
+        avatar: user.avatar ?? '',
       },
     });
   } catch (error) {
@@ -172,6 +174,9 @@ router.post('/login', rateLimiter(5, 300, 'client-login'), async (req: Request, 
 });
 
 // ── GET /api/client/me ────────────────────────────────────────────────────────
+// Photo de profil (envoi, remplacement, suppression)
+router.use('/avatar', avatarRouter);
+
 router.get('/me', requireClient, async (req: ClientRequest, res: Response): Promise<void> => {
   try {
     const user = await User.findById(req.clientId).select('-password -emailVerificationToken -passwordResetToken').lean();
@@ -478,9 +483,9 @@ router.patch('/preferences', requireClient, clientWriteLimit, async (req: Client
       res.status(400).json({ success: false, message: 'preferences doit être un tableau.' });
       return;
     }
-    const valid = (preferences as unknown[]).filter(
+    const valid = [...new Set((preferences as unknown[]).filter(
       (p): p is string => typeof p === 'string' && (ALLOWED_PREFERENCES as readonly string[]).includes(p)
-    );
+    ))];
     const user = await User.findByIdAndUpdate(
       req.clientId,
       { $set: { preferences: valid } },

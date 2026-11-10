@@ -1,3 +1,5 @@
+import { isPrefKey, type PrefKey } from '@/lib/dietary';
+
 const API = '/api/client';
 
 export interface ClientUser {
@@ -10,6 +12,7 @@ export interface ClientUser {
   telephone: string;
   points: number;
   tier: 'bronze' | 'argent' | 'or' | 'platine';
+  avatar?: string;
 }
 
 export interface ClientOrder {
@@ -125,4 +128,38 @@ export async function changePassword(token: string, currentPassword: string, new
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.message || 'Erreur changement mot de passe');
+}
+
+export async function getClientPreferences(token: string): Promise<PrefKey[]> {
+  const res = await fetch(`${API}/preferences`, { headers: { Authorization: `Bearer ${token}` } });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.message || 'Préférences indisponibles');
+  return (json.data.preferences as unknown[]).filter(isPrefKey);
+}
+
+/** Enregistre en base et renvoie ce que le serveur a réellement retenu. Lève une erreur si l'enregistrement échoue. */
+export async function saveClientPreferences(token: string, preferences: PrefKey[]): Promise<PrefKey[]> {
+  const res = await fetch(`${API}/preferences`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferences }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.message || "Les préférences n'ont pas pu être enregistrées");
+  return (json.data.preferences as unknown[]).filter(isPrefKey);
+}
+
+export async function uploadClientAvatar(token: string, photo: Blob): Promise<string> {
+  const form = new FormData();
+  form.append('avatar', photo, 'avatar.webp');
+  const res = await fetch(`${API}/avatar`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: form });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.message || "La photo n'a pas pu être enregistrée");
+  return json.data.avatar as string;
+}
+
+export async function deleteClientAvatar(token: string): Promise<void> {
+  const res = await fetch(`${API}/avatar`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.message || "La photo n'a pas pu être retirée");
 }

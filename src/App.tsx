@@ -5,8 +5,10 @@ import { ls } from "@/lib/storage";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CartProvider } from "@/context/CartContext";
-import { UserProvider } from "@/context/UserContext";
+import { UserProvider, useUser } from "@/context/UserContext";
 import Header from "@/components/Header";
+import AppNav from "@/components/AppNav";
+import { useAppNavOffset } from "@/hooks/useAppNavOffset";
 import ContinuationPopup from "@/components/ContinuationPopup";
 import FloatingDietician from "@/components/FloatingDietician";
 import PWAInstall from "@/components/PWAInstall";
@@ -126,6 +128,20 @@ function ScrollToTop() {
   return null;
 }
 
+// Visiteur : barre du haut. Client connecté : plus de barre du haut, navigation latérale (bureau) ou barre du bas (mobile).
+// Le contenu des pages réserve 5 rem sous la barre fixe du haut : on les reprend quand elle n'existe plus.
+function Shell({ children }: { children: ReactNode }) {
+  const { user } = useUser();
+  const offset = useAppNavOffset();
+  if (!user) return <><Header />{children}</>;
+  return (
+    <>
+      <AppNav />
+      <div className={`-mt-20 pb-16 md:pb-0 transition-[padding] duration-200 ${offset}`}>{children}</div>
+    </>
+  );
+}
+
 const App = () => (
   <ErrorBoundary>
     <TooltipProvider>
@@ -139,28 +155,28 @@ const App = () => (
           <PWAInstall />
           <Routes>
             {/* Public routes */}
-            <Route path="/" element={<><Header /><HomePage /></>} />
-            <Route path="/composer" element={<><Header /><PublicSuspense><SaladCategoryPage /></PublicSuspense></>} />
-            <Route path="/composer/:type" element={<><Header /><PublicSuspense><SaladComposerPage /></PublicSuspense></>} />
-            <Route path="/jus" element={<><Header /><PublicSuspense><JuicesPage /></PublicSuspense></>} />
-            <Route path="/jus/:categorie" element={<><Header /><PublicSuspense><JuicesPage /></PublicSuspense></>} />
-            <Route path="/repas" element={<><Header /><PublicSuspense><MealsPage /></PublicSuspense></>} />
-            <Route path="/repas/:categorie" element={<><Header /><PublicSuspense><MealsPage /></PublicSuspense></>} />
-            <Route path="/produit/:slug" element={<><Header /><PublicSuspense><ProductPage /></PublicSuspense></>} />
-            <Route path="/dieteticien" element={<><Header /><PublicSuspense><ConsultationsPage /></PublicSuspense></>} />
-            <Route path="/abonnement" element={<><Header /><PublicSuspense><AbonnementPage /></PublicSuspense></>} />
-            <Route path="/panier" element={<><Header /><PublicSuspense><CartPage /></PublicSuspense></>} />
-            <Route path="/mon-compte" element={<><Header /><PublicSuspense><MonComptePage /></PublicSuspense></>} />
-            <Route path="/suivi" element={<><Header /><PublicSuspense><SuiviPage /></PublicSuspense></>} />
-            <Route path="/connexion" element={<><Header /><PublicSuspense><ConnexionPage /></PublicSuspense></>} />
+            <Route path="/" element={<Shell><HomePage /></Shell>} />
+            <Route path="/composer" element={<Shell><PublicSuspense><SaladCategoryPage /></PublicSuspense></Shell>} />
+            <Route path="/composer/:type" element={<Shell><PublicSuspense><SaladComposerPage /></PublicSuspense></Shell>} />
+            <Route path="/jus" element={<Shell><PublicSuspense><JuicesPage /></PublicSuspense></Shell>} />
+            <Route path="/jus/:categorie" element={<Shell><PublicSuspense><JuicesPage /></PublicSuspense></Shell>} />
+            <Route path="/repas" element={<Shell><PublicSuspense><MealsPage /></PublicSuspense></Shell>} />
+            <Route path="/repas/:categorie" element={<Shell><PublicSuspense><MealsPage /></PublicSuspense></Shell>} />
+            <Route path="/produit/:slug" element={<Shell><PublicSuspense><ProductPage /></PublicSuspense></Shell>} />
+            <Route path="/dieteticien" element={<Shell><PublicSuspense><ConsultationsPage /></PublicSuspense></Shell>} />
+            <Route path="/abonnement" element={<Shell><PublicSuspense><AbonnementPage /></PublicSuspense></Shell>} />
+            <Route path="/panier" element={<Shell><PublicSuspense><CartPage /></PublicSuspense></Shell>} />
+            <Route path="/mon-compte" element={<Shell><PublicSuspense><MonComptePage /></PublicSuspense></Shell>} />
+            <Route path="/suivi" element={<Shell><PublicSuspense><SuiviPage /></PublicSuspense></Shell>} />
+            <Route path="/connexion" element={<Shell><PublicSuspense><ConnexionPage /></PublicSuspense></Shell>} />
             <Route path="/verify-email" element={<PublicSuspense><VerifyEmailPage /></PublicSuspense>} />
-            <Route path="/mot-de-passe-oublie" element={<><Header /><PublicSuspense><ForgotPasswordPage /></PublicSuspense></>} />
-            <Route path="/reset-password" element={<><Header /><PublicSuspense><ResetPasswordPage /></PublicSuspense></>} />
+            <Route path="/mot-de-passe-oublie" element={<Shell><PublicSuspense><ForgotPasswordPage /></PublicSuspense></Shell>} />
+            <Route path="/reset-password" element={<Shell><PublicSuspense><ResetPasswordPage /></PublicSuspense></Shell>} />
             <Route path="/checkout" element={<PublicSuspense><CheckoutPage /></PublicSuspense>} />
             <Route path="/paiement/succes" element={<PublicSuspense><PaymentSuccessPage /></PublicSuspense>} />
             <Route path="/paiement/echec" element={<PublicSuspense><PaymentFailurePage /></PublicSuspense>} />
-            <Route path="/mentions-legales" element={<><Header /><PublicSuspense><MentionsLegalesPage /></PublicSuspense></>} />
-            <Route path="/politique-confidentialite" element={<><Header /><PublicSuspense><PolitiqueConfidentialitePage /></PublicSuspense></>} />
+            <Route path="/mentions-legales" element={<Shell><PublicSuspense><MentionsLegalesPage /></PublicSuspense></Shell>} />
+            <Route path="/politique-confidentialite" element={<Shell><PublicSuspense><PolitiqueConfidentialitePage /></PublicSuspense></Shell>} />
 
             {/* Admin routes — lazy + guard synchrone */}
             <Route path="/admin/login" element={<AdminSuspense><AdminLoginPage /></AdminSuspense>} />
@@ -194,7 +210,7 @@ const App = () => (
               <Route path="parametres"    element={<AdminSuspense><SettingsPage /></AdminSuspense>} />
             </Route>
 
-            <Route path="*" element={<><Header /><PublicSuspense><NotFound /></PublicSuspense></>} />
+            <Route path="*" element={<Shell><PublicSuspense><NotFound /></PublicSuspense></Shell>} />
           </Routes>
         </BrowserRouter>
       </CartProvider>

@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
+import { useUser } from '@/context/UserContext';
 import { motion } from 'framer-motion';
 import Footer from '@/components/Footer';
 import cruditesImg from '@/assets/category-crudites.jpg';
@@ -81,10 +83,23 @@ const CATEGORIES = [
 ];
 
 export default function SaladCategoryPage() {
+  const { user } = useUser();
   return (
     <div className="min-h-screen flex flex-col">
 
       {/* ── Hero plein écran ── */}
+      {user ? (
+        <PageIntro
+          clearBar
+          eyebrow="Notre carte"
+          title="À Commander, fait avec soin"
+          subtitle="Salades, jus, repas chauds, omelettes et soupes — pressés ou mijotés à la commande."
+          actions={<>
+            <a href="#menu" className={introPrimaryClass}>Explorer la carte</a>
+            <Link to="/jus" className={introSecondaryClass}>Jus & Détox</Link>
+          </>}
+        />
+      ) : (
       <section className="relative h-screen flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img
@@ -127,6 +142,7 @@ export default function SaladCategoryPage() {
           </div>
         </motion.div>
       </section>
+      )}
 
       {/* ── Catégories ── */}
       <div id="menu" className="flex-1 bg-muted/30">

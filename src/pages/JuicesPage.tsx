@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useDietFilter } from '@/hooks/useDietFilter';
+import { DietBar, DietChip } from '@/components/DietNotice';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
+import { useUser } from '@/context/UserContext';
 import { Navigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
@@ -32,6 +36,9 @@ function toJuiceProduct(m: ApiMeal): JuiceProduct {
     type:        m.categorie.toLowerCase().includes('detox') || m.categorie.toLowerCase().includes('détox') ? 'detox' : 'fruit',
     image:       m.image || undefined,
     formats:     formats.length > 0 ? formats : undefined,
+    allergenes:  m.allergenes,
+    proteines:   m.nutrition.proteines,
+    glucides:    m.nutrition.glucides,
   };
 }
 
@@ -61,6 +68,9 @@ const cartPrefix = (id: string, formatLabel?: string) =>
   formatLabel ? `jus-${id}-${slugifyFormatLabel(formatLabel)}-` : `jus-${id}-`;
 
 export default function JuicesPage() {
+  const { user } = useUser();
+  const diet = useDietFilter();
+  const dietSubject = (j: JuiceProduct) => ({ name: j.name, ingredients: j.benefits, allergenes: j.allergenes, proteines: j.proteines, glucides: j.glucides });
   const { addItem, removeItem, updateQuantity, items } = useCart();
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [juices, setJuices] = useState<JuiceProduct[]>([]);
@@ -121,6 +131,12 @@ export default function JuicesPage() {
 
   return (
     <div className="min-h-screen pt-24 pb-32 bg-muted/30">
+      {user ? (
+        <PageIntro
+          title={single ? single.label : 'Jus & Détox'}
+          subtitle={single ? single.subtitle : 'Des recettes pensées pour purifier, énergiser et ravir.'}
+        />
+      ) : (
       <section className="relative h-[50vh] mb-16 overflow-hidden">
         <img src={juicesImage} alt="Nos jus détox et fruits" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/50 to-transparent" />
@@ -133,6 +149,16 @@ export default function JuicesPage() {
           <p className="font-body text-foreground/80 text-lg">{single ? single.subtitle : 'Des recettes pensées pour purifier, énergiser et ravir.'}</p>
         </motion.div>
       </section>
+      )}
+
+      {!loading && diet.active && (
+        <div className="max-w-5xl mx-auto px-6 mb-10">
+          <DietBar preferences={diet.preferences} hide={diet.hide} onHideChange={diet.setHide} hiddenCount={juices.filter(j => diet.conflictsOf(dietSubject(j)).length > 0).length} />
+          {diet.hide && juices.every(j => !diet.keep(dietSubject(j))) && (
+            <p className="font-body text-sm text-muted-foreground mt-4">Rien ne correspond à toutes vos préférences. Décochez « Masquer ce qui ne convient pas » pour voir la carte complète.</p>
+          )}
+        </div>
+      )}
 
       <div className="max-w-5xl mx-auto px-6 space-y-20">
         {loading ? (
@@ -148,7 +174,7 @@ export default function JuicesPage() {
           ))
         ) : (
           visibleSections.map(section => {
-            const sectionItems = juices.filter(j => j.type === section.type);
+            const sectionItems = juices.filter(j => j.type === section.type && diet.keep(dietSubject(j)));
             if (sectionItems.length === 0) return null;
             return (
               <div key={section.type} id={section.type} className="scroll-mt-28">
@@ -183,6 +209,8 @@ export default function JuicesPage() {
                       onDecrement={() => handleDecrement(juice)}
                       onSheet={() => setSheetId(juice.id)}
                       delay={i * 0.1}
+                      dietActive={diet.active}
+                      dietReasons={diet.conflictsOf(dietSubject(juice))}
                       getFormatQty={format => getQty(juice, format)}
                       onFormatIncrement={(format, e) => handleIncrement(juice, e, format)}
                       onFormatDecrement={format => handleDecrement(juice, format)}
@@ -214,8 +242,12 @@ function JuiceCard({
   getFormatQty,
   onFormatIncrement,
   onFormatDecrement,
+  dietActive,
+  dietReasons,
 }: {
   juice: JuiceProduct;
+  dietActive: boolean;
+  dietReasons: string[];
   qty: number;
   onIncrement: (e: React.MouseEvent) => void;
   onDecrement: () => void;
@@ -282,6 +314,7 @@ function JuiceCard({
       {/* Contenu texte */}
       <div className="p-5 flex flex-col flex-1">
         <h3 className={`font-display text-xl mb-1.5 ${selected ? 'text-green-700' : 'text-foreground'}`}>{juice.name}</h3>
+        {dietActive && <div className="mb-2"><DietChip active reasons={dietReasons} /></div>}
         <p className="font-body text-sm text-muted-foreground mb-3 flex-1 leading-relaxed line-clamp-3">{juice.description}</p>
         {juice.benefits.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-4">

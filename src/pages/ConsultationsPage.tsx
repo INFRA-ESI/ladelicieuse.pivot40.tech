@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -322,6 +323,18 @@ export default function ConsultationsPage() {
       {/* ══════════════════════════════════════════════════════════
           1. HERO
       ══════════════════════════════════════════════════════════ */}
+      {user ? (
+        <PageIntro
+          clearBar
+          eyebrow={pageLoading ? undefined : `${doctor.nom} · ${doctor.titre}`}
+          title="Nutrition personnalisée"
+          subtitle="Spécialisé en sécurité alimentaire — des conseils sur mesure pour votre santé à Libreville."
+          actions={<>
+            <a href="#consultations" className={introPrimaryClass}>Prendre rendez-vous</a>
+            <a href="#profil" className={introSecondaryClass}>En savoir plus</a>
+          </>}
+        />
+      ) : (
       <section className="relative h-screen flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img src={balancedMealImg} alt="Nutrition équilibrée" className="w-full h-full object-cover" />
@@ -365,6 +378,7 @@ export default function ConsultationsPage() {
           </div>
         </motion.div>
       </section>
+      )}
 
       {/* ══════════════════════════════════════════════════════════
           2. PROFIL DU MÉDECIN
@@ -372,7 +386,7 @@ export default function ConsultationsPage() {
       <section id="profil" className="py-20 md:py-28 px-6 md:px-12">
         <div className="max-w-5xl mx-auto">
           {pageLoading ? (
-            <div className="grid md:grid-cols-12 gap-8 md:gap-16 items-center animate-pulse">
+            <div className="grid md:grid-cols-12 gap-8 md:gap-6 lg:gap-16 items-center animate-pulse">
               <div className="md:col-span-5">
                 <div className="w-full aspect-[4/3] bg-muted rounded-xl" />
               </div>
@@ -399,7 +413,7 @@ export default function ConsultationsPage() {
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
             viewport={{ once: true }}
-            className="grid md:grid-cols-12 gap-8 md:gap-16 items-center"
+            className="grid md:grid-cols-12 gap-8 md:gap-6 lg:gap-16 items-center"
           >
             {/* Image */}
             <div className="md:col-span-5 relative pb-6 md:pb-0">

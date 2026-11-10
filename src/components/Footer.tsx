@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { cachedJson } from '@/services/publicApiService';
+import { useUser } from '@/context/UserContext';
 import { Phone, Mail, MapPin, Clock, Instagram, Facebook } from '@/components/icons';
 import logo from '@/assets/logo.png';
 
@@ -26,10 +27,13 @@ function toDisplay(time: string) {
   return time.replace(':', 'h');
 }
 
+// Un client connecté navigue dans l'espace à barre latérale (AppNav), qui n'a pas de pied de page.
 export default function Footer() {
+  const { user } = useUser();
   const [info, setInfo] = useState<PublicSettings>(FALLBACK);
 
   useEffect(() => {
+    if (user) return;
     cachedJson('/api/settings/public')
       .then(json => {
         if (json.success && json.data) {
@@ -37,7 +41,9 @@ export default function Footer() {
         }
       })
       .catch((err) => { if (err.name !== 'AbortError') console.warn('[Footer] /api/settings :', err); });
-  }, []);
+  }, [user]);
+
+  if (user) return null;
 
   const telHref    = `tel:${info.tel.replace(/\s/g, '')}`;
   const emailHref  = info.email ? `mailto:${info.email}` : '#';

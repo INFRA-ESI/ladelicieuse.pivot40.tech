@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -436,6 +437,18 @@ export default function AbonnementPage() {
       {/* ══════════════════════════════════════════════════════════
           1. HERO — h-screen, texte ancré en bas-gauche
       ══════════════════════════════════════════════════════════ */}
+      {user ? (
+        <PageIntro
+          clearBar
+          eyebrow="Abonnements"
+          title="Mangez bien, chaque semaine"
+          subtitle="Salades, jus et repas préparés avec soin, livrés à votre porte — sans engagement."
+          actions={<>
+            <a href="#formules" className={introPrimaryClass}>Voir les formules</a>
+            <Link to="/composer" className={introSecondaryClass}>Commander à la carte</Link>
+          </>}
+        />
+      ) : (
       <section className="relative h-screen flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img
@@ -481,6 +494,7 @@ export default function AbonnementPage() {
           </div>
         </motion.div>
       </section>
+      )}
 
       {/* ══════════════════════════════════════════════════════════
           2. STATS — 3 colonnes égales, séparateurs visuels
@@ -523,7 +537,7 @@ export default function AbonnementPage() {
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
             viewport={{ once: true }}
-            className="grid md:grid-cols-12 gap-8 md:gap-16 items-center"
+            className="grid md:grid-cols-12 gap-8 md:gap-6 lg:gap-16 items-center"
           >
             {/* Image — padding bas sur mobile pour que le badge ne déborde pas */}
             <div className="md:col-span-5 relative pb-6 md:pb-0">

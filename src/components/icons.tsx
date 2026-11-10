@@ -16,6 +16,7 @@ import {
   Award01Icon,
   BicycleIcon,
   BookOpen01Icon,
+  Camera01Icon,
   Calendar03Icon,
   Call02Icon,
   Cancel01Icon,
@@ -71,6 +72,7 @@ import {
   MedalFirstPlaceIcon,
   Megaphone01Icon,
   Menu01Icon,
+  OrangeIcon,
   MergeIcon,
   Message01Icon,
   Message02Icon,
@@ -212,6 +214,7 @@ export const MapPin = /*#__PURE__*/ creer(Location01Icon, 'MapPin');
 export const Medal = /*#__PURE__*/ creer(MedalFirstPlaceIcon, 'Medal');
 export const Megaphone = /*#__PURE__*/ creer(Megaphone01Icon, 'Megaphone');
 export const Menu = /*#__PURE__*/ creer(Menu01Icon, 'Menu');
+export const Orange = /*#__PURE__*/ creer(OrangeIcon, 'Orange');
 export const Merge = /*#__PURE__*/ creer(MergeIcon, 'Merge');
 export const MessageCircle = /*#__PURE__*/ creer(Message01Icon, 'MessageCircle');
 export const MessageSquare = /*#__PURE__*/ creer(Message02Icon, 'MessageSquare');
@@ -254,6 +257,7 @@ export const Target = /*#__PURE__*/ creer(Target02Icon, 'Target');
 export const Ticket = /*#__PURE__*/ creer(Ticket01Icon, 'Ticket');
 export const ToggleLeft = /*#__PURE__*/ creer(ToggleOffIcon, 'ToggleLeft');
 export const ToggleRight = /*#__PURE__*/ creer(ToggleOnIcon, 'ToggleRight');
+export const Camera = /*#__PURE__*/ creer(Camera01Icon, 'Camera');
 export const Trash2 = /*#__PURE__*/ creer(Delete02Icon, 'Trash2');
 export const TrendingDown = /*#__PURE__*/ creer(ChartDecreaseIcon, 'TrendingDown');
 export const TrendingUp = /*#__PURE__*/ creer(ChartIncreaseIcon, 'TrendingUp');

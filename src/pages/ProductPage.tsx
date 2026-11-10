@@ -12,6 +12,9 @@ import { ApiProduct } from '@/types/api.types';
 import { formatPrice } from '@/data/products';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
+import { useUser } from '@/context/UserContext';
+import { dietConflicts } from '@/lib/dietary';
+import { DietChip } from '@/components/DietNotice';
 
 // ── Référentiels ──────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ export default function ProductPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { addItem } = useCart();
+  const { preferences } = useUser();
 
   const [product, setProduct]     = useState<ApiProduct | null>(null);
   const [similar, setSimilar]     = useState<ApiProduct[]>([]);
@@ -173,6 +177,7 @@ export default function ProductPage() {
             <div>
               <span className="font-body text-xs text-primary">{product.categorie}</span>
               <h1 className="font-display text-3xl md:text-4xl text-foreground mt-1 leading-tight">{product.nom}</h1>
+              {preferences.length > 0 && <div className="mt-2"><DietChip active reasons={dietConflicts({ name: product.nom, ingredients: product.ingredients?.map(i => i.nom), allergenes: product.allergenes, proteines: product.nutrition.proteines, glucides: product.nutrition.glucides }, preferences)} /></div>}
               {product.descriptionCourte && (
                 <p className="font-body text-muted-foreground mt-2 text-base leading-relaxed">{product.descriptionCourte}</p>
               )}

@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useDietFilter } from '@/hooks/useDietFilter';
+import { DietBar, DietChip } from '@/components/DietNotice';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
+import { useUser } from '@/context/UserContext';
 import { Navigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
@@ -53,12 +57,18 @@ function toMealProduct(m: ApiMeal): MealProduct {
     price:             m.prix,
     image:             m.image || undefined,
     category:          m.categorie,
+    allergenes:        m.allergenes,
+    proteines:         m.nutrition.proteines,
+    glucides:          m.nutrition.glucides,
   };
 }
 
 const mealCartPrefix = (id: string) => `repas-${id}-`;
 
 export default function MealsPage() {
+  const { user } = useUser();
+  const diet = useDietFilter();
+  const dietSubject = (m: MealProduct) => ({ name: m.name, ingredients: m.composition, allergenes: m.allergenes, proteines: m.proteines, glucides: m.glucides });
   const { addItem, removeItem, updateQuantity, items } = useCart();
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [meals, setMeals] = useState<MealProduct[]>([]);
@@ -114,6 +124,7 @@ export default function MealsPage() {
 
   const sections = meals
     .filter(meal => !page || meal.category.toLowerCase().includes(page.keyword))
+    .filter(meal => diet.keep(dietSubject(meal)))
     .reduce<{ key: string; meals: MealProduct[] }[]>((acc, meal) => {
       const existing = acc.find(s => s.key === meal.category);
       if (existing) { existing.meals.push(meal); }
@@ -125,6 +136,14 @@ export default function MealsPage() {
 
   return (
     <div className="min-h-screen pt-24 pb-32 bg-muted/30">
+      {user ? (
+        <PageIntro
+          title={page ? (sections[0]?.key ?? page.title) : 'À Commander'}
+          subtitle={page
+            ? (sectionMeta(sections[0]?.key ?? page.title).subtitle)
+            : 'Repas chauds, omelettes, soupes et plats équilibrés préparés avec soin.'}
+        />
+      ) : (
       <section className="relative h-[50vh] mb-16 overflow-hidden">
         <img src={mealImage} alt="Repas du jour" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/50 to-transparent" />
@@ -143,6 +162,16 @@ export default function MealsPage() {
           </p>
         </motion.div>
       </section>
+      )}
+
+      {!loading && diet.active && (
+        <div className="max-w-5xl mx-auto px-6 mb-10">
+          <DietBar preferences={diet.preferences} hide={diet.hide} onHideChange={diet.setHide} hiddenCount={meals.filter(m => diet.conflictsOf(dietSubject(m)).length > 0).length} />
+          {diet.hide && sections.length === 0 && (
+            <p className="font-body text-sm text-muted-foreground mt-4">Rien ne correspond à toutes vos préférences. Décochez « Masquer ce qui ne convient pas » pour voir la carte complète.</p>
+          )}
+        </div>
+      )}
 
       <div className="max-w-5xl mx-auto px-6 space-y-20">
         {loading ? (
@@ -187,6 +216,8 @@ export default function MealsPage() {
                       onDecrement={() => handleDecrement(meal)}
                       onSheet={() => setSheetId(meal.id)}
                       delay={i * 0.08}
+                      dietActive={diet.active}
+                      dietReasons={diet.conflictsOf(dietSubject(meal))}
                     />
                   ))}
                 </div>
@@ -212,8 +243,12 @@ function MealCard({
   onDecrement,
   onSheet,
   delay,
+  dietActive,
+  dietReasons,
 }: {
   meal: MealProduct;
+  dietActive: boolean;
+  dietReasons: string[];
   qty: number;
   onIncrement: (e: React.MouseEvent) => void;
   onDecrement: () => void;
@@ -274,6 +309,7 @@ function MealCard({
       {/* Contenu */}
       <div className="p-5 flex flex-col flex-1">
         <h3 className={`font-display text-xl mb-1.5 ${selected ? 'text-green-700' : 'text-foreground'}`}>{meal.name}</h3>
+        {dietActive && <div className="mb-2"><DietChip active reasons={dietReasons} /></div>}
         <p className="font-body text-sm text-muted-foreground mb-3 flex-1 leading-relaxed line-clamp-3">{meal.description}</p>
 
         {meal.composition.length > 0 && (

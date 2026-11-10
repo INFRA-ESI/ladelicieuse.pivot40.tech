@@ -2,6 +2,9 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
+import { useUser } from '@/context/UserContext';
+import { dietConflicts } from '@/lib/dietary';
+import { DietChip } from '@/components/DietNotice';
 import { INGREDIENTS, CATEGORY_LABELS, formatPrice, type Ingredient, type IngredientCategory } from '@/data/products';
 import { toast } from 'sonner';
 import { FlyingIngredient, type FlyingItem } from '@/components/FlyingIngredient';
@@ -182,6 +185,7 @@ export default function SaladComposerPage() {
   const saladType = (type === 'crudites' || type === 'fruits' ? type : null) as SaladType | null;
 
   const { addItem } = useCart();
+  const { preferences } = useUser();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Map<string, number>>(new Map());
   const [step, setStep] = useState(0);
@@ -583,6 +587,7 @@ export default function SaladComposerPage() {
                                   <span className="font-body text-xs text-muted-foreground">{ingredient.caloriesPerPortion} cal</span>
                                   <span className="font-body text-sm text-primary font-semibold">{formatPrice(ingredient.pricePerPortion)}</span>
                                 </div>
+                                {preferences.length > 0 && <div className="mb-1"><DietChip active reasons={dietConflicts({ name: ingredient.name }, preferences)} /></div>}
                                 {!currentStepConfig.single && ingredient.benefits && (
                                   <p className="font-body text-xs text-muted-foreground leading-relaxed flex-1">{ingredient.benefits}</p>
                                 )}

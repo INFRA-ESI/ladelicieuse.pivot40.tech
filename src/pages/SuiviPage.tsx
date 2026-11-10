@@ -1130,22 +1130,18 @@ export default function SuiviPage() {
         </div>
 
         {/* ── CTA consultation ── */}
-        <div className="relative overflow-hidden rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-primary">
-          <div className="absolute inset-0 pointer-events-none opacity-10">
-            <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white" />
-            <div className="absolute right-12 bottom-0 w-20 h-20 rounded-full bg-white" />
-          </div>
-          <div className="relative">
-            <h3 className="font-display text-xl text-white mb-1">Besoin d'un accompagnement ?</h3>
-            <p className="font-body text-sm text-green-100 leading-relaxed max-w-sm">
-              Nos diététiciens analysent vos données et créent un plan alimentaire sur mesure.
+        <div className="rounded-2xl border border-border bg-background p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-display text-xl text-foreground mb-1">Un doute sur vos résultats ?</h3>
+            <p className="font-body text-sm text-muted-foreground leading-relaxed max-w-md">
+              Parlez-en au diététicien-nutritionniste, à Libreville ou en visio.
             </p>
           </div>
           <Link
             to="/dieteticien"
-            className="relative shrink-0 font-body text-sm px-6 py-3 bg-white text-green-700 hover:bg-green-50 transition-colors rounded-xl font-semibold"
+            className="shrink-0 self-start sm:self-auto font-body text-sm px-6 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl"
           >
-            Réserver une consultation
+            Prendre rendez-vous
           </Link>
         </div>
 

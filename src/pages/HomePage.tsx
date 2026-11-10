@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
+import { useUser } from '@/context/UserContext';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, Play, X, Tag, Calendar, ShoppingCart, FileText } from '@/components/icons';
@@ -60,6 +62,7 @@ function promoLabel(p: ApiPromotion): string {
 }
 
 export default function HomePage() {
+  const { user } = useUser();
   const { addItem, updateQuantity, items } = useCart();
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
   const [videoOpen, setVideoOpen]       = useState(false);
@@ -120,7 +123,7 @@ export default function HomePage() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="fixed top-16 left-0 right-0 z-40 bg-primary text-primary-foreground shadow-sm"
+            className={`fixed right-0 z-40 bg-primary text-primary-foreground shadow-sm ${user ? 'top-0 left-0 md:left-64' : 'top-16 left-0'}`}
           >
             <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide">
@@ -145,6 +148,15 @@ export default function HomePage() {
       </AnimatePresence>
 
       {/* Hero Section */}
+      {user ? (
+        <PageIntro
+          clearBar
+          eyebrow="Accueil"
+          title={<>Bonjour, {(user.prenoms || user.nom).split(' ')[0]}</>}
+          subtitle="Salades à composer, jus pressés et repas équilibrés, livrés à Libreville"
+          actions={<Link to="/composer" className={introPrimaryClass}>Commander</Link>}
+        />
+      ) : (
       <section className="relative h-screen flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img src={heroImage} alt="Salade fraîche préparée avec soin" className="w-full h-full object-cover" />
@@ -172,6 +184,7 @@ export default function HomePage() {
           </div>
         </motion.div>
       </section>
+      )}
 
       {/* ── Menu du Jour (dynamique depuis le back-office) ── */}
       {menuDuJour && menuDuJour.repas && menuDuJour.repas.length > 0 && (
@@ -369,7 +382,7 @@ export default function HomePage() {
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
-            className="grid md:grid-cols-12 gap-8 md:gap-16 items-center"
+            className="grid md:grid-cols-12 gap-8 md:gap-6 lg:gap-16 items-center"
           >
             <div className="md:col-span-5">
               <img

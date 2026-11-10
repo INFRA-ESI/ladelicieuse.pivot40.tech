@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type ChangeEvent, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, Navigate } from 'react-router-dom';
 import { useUser, getTier, TIER_CONFIG, buildTierConfig, type UserOrder } from '@/context/UserContext';
@@ -10,19 +10,21 @@ import { useRealtime } from '@/hooks/useRealtime';
 import OrderStatusBadge from '@/components/OrderStatusBadge';
 import { ORDER_STATUS } from '@/lib/orderStatus';
 import { getClientFidelite, redeemPoints, type FideliteEntry } from '@/services/clientService';
+import type { PrefKey } from '@/lib/dietary';
+import { prepareAvatar } from '@/lib/avatarImage';
+import Avatar from '@/components/Avatar';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { formatPrice } from '@/data/products';
 import { toast } from 'sonner';
 import {
-  LogOut, ShoppingBag, Star, ChevronDown, Medal,
+  ShoppingBag, Star, ChevronDown, Medal,
   CheckCircle,
   Leaf, Zap, Crown, CalendarDays, PauseCircle, XCircle, PlayCircle,
-  Edit3, Check, X, ArrowRight, RefreshCcw, AlertTriangle, Stethoscope,
-  TrendingUp, Lock, Eye, EyeOff, Gift, Loader2,
+  Camera, Edit3, Check, X, ArrowRight, RefreshCcw, AlertTriangle,
+  Lock, Eye, EyeOff, Gift, Loader2,
   BadgeCheck, SlidersHorizontal, Plus, Minus, Home,
   UtensilsCrossed,
 } from '@/components/icons';
-
-const HERO_IMG = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1920&q=80';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 
@@ -82,22 +84,6 @@ const PREF_OPTIONS = [
   { key: 'low_carb',        label: 'Low-carb',          desc: 'Faible en glucides' },
   { key: 'riche_proteines', label: 'Riche en protéines',desc: 'Apport élevé en protéines' },
 ] as const;
-
-type PrefKey = (typeof PREF_OPTIONS)[number]['key'];
-
-async function fetchPreferences(token: string): Promise<PrefKey[]> {
-  const r = await fetch('/api/client/preferences', { headers: { Authorization: `Bearer ${token}` } });
-  const j = await r.json();
-  return j.success ? (j.data.preferences as PrefKey[]) : [];
-}
-
-async function savePreferences(token: string, prefs: PrefKey[]): Promise<void> {
-  await fetch('/api/client/preferences', {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preferences: prefs }),
-  });
-}
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────────
 function OrderSkeleton() {
@@ -261,7 +247,7 @@ function OrderCard({ order, isExpanded, onToggle, onRecommander }: OrderCardProp
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function MonComptePage() {
-  const { user, logout, tiers, updateProfile, cancelSubscription, pauseSubscription, resumeSubscription, refreshOrders, changePassword } = useUser();
+  const { user, tiers, preferences, savePreferences, changeAvatar, updateProfile, cancelSubscription, pauseSubscription, resumeSubscription, refreshOrders, changePassword } = useUser();
   const { addItem } = useCart();
 
   // ── Onglet et état de l'interface ──
@@ -284,6 +270,11 @@ export default function MonComptePage() {
   const [pwdLoading, setPwdLoading]         = useState(false);
   const [profileSaving, setProfileSaving]   = useState(false);
 
+  // ── Photo de profil ──
+  const avatarInput = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+
   // ── Données de fidélité ──
   const [fideliteLoading, setFideliteLoading] = useState(false);
   const [fideliteHist, setFideliteHist]       = useState<FideliteEntry[]>([]);
@@ -292,9 +283,9 @@ export default function MonComptePage() {
   const [lastCode, setLastCode]               = useState<{ code: string; valeurFCFA: number } | null>(null);
 
   // ── Dietary preferences ──
-  const [prefSelected, setPrefSelected]   = useState<PrefKey[]>([]);
-  const [prefLoading, setPrefLoading]     = useState(false);
+  const [prefSelected, setPrefSelected]   = useState<PrefKey[]>(preferences);
   const [prefSaving, setPrefSaving]       = useState(false);
+  const prefDirty = prefSelected.length !== preferences.length || prefSelected.some(k => !preferences.includes(k));
 
   // ── Effects — AVANT le guard !user (règle des hooks) ──
   // user?.id et non user — refreshOrders() crée un nouvel objet user à chaque appel,
@@ -340,30 +331,20 @@ export default function MonComptePage() {
       .finally(() => setFideliteLoading(false));
   }, [activeTab, user?.id]);
 
-  useEffect(() => {
-    if (!user?.id || activeTab !== 'preferences') return;
-    const token = ls.get(TOKEN_KEY);
-    if (!token) return;
-    setPrefLoading(true);
-    fetchPreferences(token)
-      .then(p => setPrefSelected(p))
-      .catch(() => {})
-      .finally(() => setPrefLoading(false));
-  }, [activeTab, user?.id]);
+  // Les préférences viennent du compte (base de données) : on recale la sélection quand elles arrivent du serveur.
+  useEffect(() => { setPrefSelected(preferences); }, [preferences]);
 
   const togglePref = useCallback((key: PrefKey) => {
     setPrefSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   }, []);
 
   const handleSavePreferences = async () => {
-    const token = ls.get(TOKEN_KEY);
-    if (!token) return;
     setPrefSaving(true);
     try {
-      await savePreferences(token, prefSelected);
-      toast.success('Préférences enregistrées');
-    } catch {
-      toast.error('Erreur lors de la sauvegarde');
+      await savePreferences(prefSelected);
+      toast.success('Préférences enregistrées : le menu en tient compte');
+    } catch (e) {
+      toast.error((e as Error).message);
     } finally {
       setPrefSaving(false);
     }
@@ -385,7 +366,6 @@ export default function MonComptePage() {
     return nk ? TIER_CONFIG[nk] : null;
   })();
   const pct       = nextTier ? Math.min(100, ((user.points - tierCfg.min) / (nextTier.min - tierCfg.min)) * 100) : 100;
-  const initials  = [(user.prenoms || '')[0], (user.nom || '')[0]].filter(Boolean).join('').toUpperCase();
   const firstName = (user.prenoms || user.nom).split(' ')[0];
   const PlanIcon  = user.subscription ? (PLAN_ICONS[user.subscription.planId] ?? Leaf) : Leaf;
   const redeemValue = redeemQty * 5;
@@ -448,6 +428,35 @@ export default function MonComptePage() {
     }
   };
 
+  const handleAvatarPick = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permet de rechoisir la même photo
+    if (!file) return;
+    setAvatarBusy(true);
+    try {
+      await changeAvatar(await prepareAvatar(file));
+      toast.success('Photo de profil mise à jour');
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    setAvatarBusy(true);
+    try {
+      await changeAvatar(null);
+      toast.success('Photo retirée');
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const changeFromViewer = () => { setAvatarOpen(false); avatarInput.current?.click(); };
+
   const handleRecommander = (order: UserOrder) => {
     order.items.forEach(item => {
       addItem({
@@ -493,86 +502,93 @@ export default function MonComptePage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-muted/20 pb-20">
+      <div className="max-w-5xl mx-auto px-6 pt-28">
+          <div className="flex flex-col gap-5">
 
-      {/* ══ Hero ══ */}
-      <section className="relative h-screen flex items-end overflow-hidden">
-        <div className="absolute inset-0">
-          <img src={HERO_IMG} alt="Mon espace" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-foreground/85 via-foreground/30 to-transparent" />
-        </div>
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
-        >
-          <span className="font-body text-xs text-primary mb-4 block">Mon espace</span>
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
-            Bonjour,<br /><span>{firstName}</span>
-          </h1>
-          <p className="font-display text-xl md:text-2xl text-primary-foreground/75 max-w-xl mb-10">
-            {tierCfg.label} · {user.points.toLocaleString('fr-FR')} points fidélité
-          </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <a href="#compte" className="font-body text-sm px-8 py-4 bg-primary text-primary-foreground hover:bg-tomato-dark transition-colors rounded-xl">
-              Voir mon compte
-            </a>
-            {commandes.length > 0 && (
-              <a href="#compte" className="font-body text-sm px-8 py-4 border border-white/40 text-white hover:bg-white/10 transition-colors rounded-xl">
-                {commandes.length} commande{commandes.length > 1 ? 's' : ''}
-              </a>
-            )}
-          </div>
-        </motion.div>
-      </section>
+              <div>
+                <h1 className="font-display text-3xl md:text-4xl text-foreground">Bonjour, {firstName}</h1>
+                <p className="font-body text-sm text-muted-foreground mt-1">
+                  {tierCfg.label} · {user.points.toLocaleString('fr-FR')} points fidélité
+                </p>
+              </div>
 
-      {/* ══ Contenu ══ */}
-      <div id="compte" className="bg-muted/20 pb-20">
-        <div className="max-w-5xl mx-auto px-6 pt-16">
-          <div className="flex flex-col md:flex-row gap-6 items-start">
-
-            {/* ══════════════════════════════════════
-                SIDEBAR
-            ══════════════════════════════════════ */}
-            <aside className="w-full md:w-72 shrink-0 flex flex-col gap-4 md:sticky md:top-28">
+              <div className="grid gap-4 lg:grid-cols-3 items-stretch">
 
               {/* ── Profile card ── */}
-              <div className="bg-background border border-border rounded-2xl overflow-hidden">
-                <div className={`h-1.5 w-full ${
-                  tier === 'bronze' ? 'bg-amber-400' :
-                  tier === 'argent' ? 'bg-slate-400' :
-                  tier === 'or'     ? 'bg-yellow-400' :
-                                      'bg-primary'
-                }`} />
-                <div className="p-6">
+              <div className="lg:col-span-2 bg-background border border-border rounded-2xl overflow-hidden">
+                <div className="p-6 relative flex flex-col sm:flex-row gap-5 sm:gap-6">
 
-                  {/* Avatar */}
-                  <div className="flex items-start justify-between mb-5">
-                    <motion.div
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ duration: 0.2, ease: 'easeOut' }}
-                      className={`w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center ring-4 ring-offset-2 ring-offset-background ${TIER_RING[tier]}`}
-                    >
-                      <span className={`font-display text-xl ${tierCfg.color}`}>{initials}</span>
-                    </motion.div>
-                    {!isEditing && (
-                      <button onClick={startEditing} className="flex items-center gap-1.5 font-body text-xs text-muted-foreground hover:text-primary transition-colors mt-1">
-                        <Edit3 className="w-3.5 h-3.5" />Modifier
+                  <div className="flex flex-col items-center gap-2 shrink-0 self-start">
+                    <div className="relative">
+                      <motion.div
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        className="rounded-full"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => (user.avatar ? setAvatarOpen(true) : avatarInput.current?.click())}
+                          aria-label={user.avatar ? 'Voir la photo de profil' : 'Ajouter une photo de profil'}
+                          className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        >
+                          <Avatar user={user} className={`w-20 h-20 ${user.avatar ? 'cursor-zoom-in' : ''}`} textClassName={`text-2xl ${tierCfg.color}`} />
+                        </button>
+                      </motion.div>
+                      <button
+                        type="button"
+                        onClick={() => avatarInput.current?.click()}
+                        disabled={avatarBusy}
+                        aria-label={user.avatar ? 'Changer la photo de profil' : 'Ajouter une photo de profil'}
+                        className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-primary-foreground border-2 border-background flex items-center justify-center hover:bg-primary/90 disabled:opacity-60 transition-colors"
+                      >
+                        {avatarBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                      </button>
+                      <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarPick} />
+                      <Dialog open={avatarOpen} onOpenChange={setAvatarOpen}>
+                        <DialogContent className="max-w-[min(92vw,30rem)] p-3 pt-12 sm:p-4 sm:pt-12 gap-3">
+                          <DialogTitle className="sr-only">Photo de profil</DialogTitle>
+                          <DialogDescription className="sr-only">Votre photo de profil en grand</DialogDescription>
+                          {user.avatar && <img src={user.avatar} alt={`Photo de profil de ${user.prenoms} ${user.nom}`} className="w-full aspect-square object-cover rounded-xl" />}
+                          <button type="button" onClick={changeFromViewer} className="font-body text-sm py-2.5 border border-border rounded-xl text-foreground hover:bg-muted transition-colors">
+                            Changer la photo
+                          </button>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                    {user.avatar && (
+                      <button type="button" onClick={handleAvatarRemove} disabled={avatarBusy} className="font-body text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-60">
+                        Retirer
                       </button>
                     )}
                   </div>
 
+                  <div className="flex-1 min-w-0">
+                  {!isEditing && (
+                    <button onClick={startEditing} className="absolute top-5 right-5 flex items-center gap-1.5 font-body text-xs text-muted-foreground hover:text-primary transition-colors">
+                      <Edit3 className="w-3.5 h-3.5" />Modifier
+                    </button>
+                  )}
+
                   <AnimatePresence mode="wait">
                     {!isEditing ? (
-                      <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-5">
-                        <h2 className="font-display text-xl text-foreground">{user.prenoms} {user.nom}</h2>
-                        <p className="font-body text-sm text-muted-foreground mt-0.5">{user.telephone}</p>
-                        <p className="font-body text-sm text-muted-foreground">{user.email}</p>
-                        <p className="font-body text-xs text-muted-foreground/50 mt-2">
-                          Client depuis le {user.dateInscription}
-                        </p>
+                      <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <h2 className="font-display text-2xl text-foreground pr-20">{user.prenoms} {user.nom}</h2>
+                        <dl className="mt-4 grid sm:grid-cols-2 gap-x-6 gap-y-3">
+                          <div>
+                            <dt className="font-body text-xs text-muted-foreground">Téléphone</dt>
+                            <dd className="font-body text-sm text-foreground mt-0.5">{user.telephone || '—'}</dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="font-body text-xs text-muted-foreground">E-mail</dt>
+                            <dd className="font-body text-sm text-foreground mt-0.5 break-all">{user.email}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-body text-xs text-muted-foreground">Client depuis</dt>
+                            <dd className="font-body text-sm text-foreground mt-0.5">{user.dateInscription}</dd>
+                          </div>
+                        </dl>
                       </motion.div>
                     ) : (
                       <motion.form
@@ -581,7 +597,7 @@ export default function MonComptePage() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onSubmit={handleEditSubmit}
-                        className="mb-5 flex flex-col gap-3"
+                        className="flex flex-col gap-3 max-w-md"
                       >
                         {/* Infos de base */}
                         <div className="grid grid-cols-2 gap-2">
@@ -686,107 +702,62 @@ export default function MonComptePage() {
                       </motion.form>
                     )}
                   </AnimatePresence>
+                  </div>
+                </div>
+              </div>
 
-                  {/* Loyalty mini */}
-                  <div className={`rounded-xl px-4 py-3 ${tierCfg.bg}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Medal className={`w-4 h-4 ${tierCfg.color}`} />
-                        <span className={`font-display text-base ${tierCfg.color}`}>{tierCfg.label}</span>
-                      </div>
-                      <span className={`font-body text-xs font-semibold ${tierCfg.color}`}>
-                        {user.points.toLocaleString('fr-FR')} pts
-                      </span>
+              {/* ── Fidélité ── */}
+              <div className={`rounded-2xl border border-border p-6 flex flex-col justify-between gap-5 ${tierCfg.bg}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Medal className={`w-5 h-5 ${tierCfg.color}`} />
+                    <span className={`font-display text-xl ${tierCfg.color}`}>{tierCfg.label}</span>
+                  </div>
+                  <span className={`font-body text-sm font-semibold ${tierCfg.color}`}>
+                    {user.points.toLocaleString('fr-FR')} pts
+                  </span>
+                </div>
+                {nextTier ? (
+                  <div>
+                    <div className="w-full bg-white/60 rounded-full h-2 mb-2 overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.9, delay: 0.4 }}
+                        className={`h-full rounded-full ${tierCfg.color.replace('text-', 'bg-')}`}
+                      />
                     </div>
-                    {nextTier ? (
-                      <>
-                        <div className="w-full bg-white/60 rounded-full h-1.5 mb-1.5 overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.9, delay: 0.4 }}
-                            className={`h-full rounded-full ${tierCfg.color.replace('text-', 'bg-')}`}
-                          />
-                        </div>
-                        <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>
-                          {(nextTier.min - user.points).toLocaleString('fr-FR')} pts pour {nextTier.label}
-                        </p>
-                      </>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <Star className={`w-3.5 h-3.5 fill-current ${tierCfg.color}`} />
-                        <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>Niveau maximum</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={logout}
-                    className="mt-2 w-full flex items-center justify-center gap-2 font-body text-xs px-3 py-2.5 border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors rounded-xl"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />Se déconnecter
-                  </button>
-                </div>
-              </div>
-
-              {/* ── Stats ── */}
-              <div className="bg-background border border-border rounded-2xl px-5 py-4">
-                <div className="grid grid-cols-3 text-center divide-x divide-border">
-                  <div className="pr-3">
-                    <p className="font-display text-2xl text-foreground">{(user.commandes ?? []).length}</p>
-                    <p className="font-body text-xs text-muted-foreground mt-0.5">Commandes</p>
-                  </div>
-                  <div className="px-3">
-                    <p className={`font-display text-2xl ${tierCfg.color}`}>{user.points.toLocaleString('fr-FR')}</p>
-                    <p className="font-body text-xs text-muted-foreground mt-0.5">Points</p>
-                  </div>
-                  <div className="pl-3">
-                    <p className="font-display text-2xl text-foreground">
-                      {(user.commandes ?? []).length > 0
-                        ? ((user.commandes ?? []).reduce((s, o) => s + (o.total ?? 0), 0) / 1000).toFixed(0) + 'k'
-                        : '0'}
+                    <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>
+                      {(nextTier.min - user.points).toLocaleString('fr-FR')} pts pour {nextTier.label}
                     </p>
-                    <p className="font-body text-xs text-muted-foreground mt-0.5">FCFA dépensés</p>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Star className={`w-3.5 h-3.5 fill-current ${tierCfg.color}`} />
+                    <p className={`font-body text-xs ${tierCfg.color} opacity-70`}>Niveau maximum</p>
+                  </div>
+                )}
+              </div>
               </div>
 
-              {/* ── Quick actions ── */}
-              <div className="bg-background border border-border rounded-2xl p-4">
-                <p className="font-body text-xs text-muted-foreground mb-3 px-1">Accès rapide</p>
-                <div className="flex flex-col gap-1">
-                  {[
-                    { to: '/composer',    icon: ShoppingBag, label: 'À Commander',  sub: 'Salades, jus, repas',        bg: 'bg-primary/10', text: 'text-primary'  },
-                    { to: '/abonnement',  icon: Zap,         label: 'Abonnements',  sub: 'Plans hebdomadaires',        bg: 'bg-muted',  text: 'text-amber-600' },
-                    { to: '/suivi',       icon: TrendingUp,  label: 'Mon suivi',    sub: 'Poids, calories, objectifs', bg: 'bg-muted',  text: 'text-green-600' },
-                    { to: '/dieteticien', icon: Stethoscope, label: 'Diététicien',  sub: 'Conseil nutritionnel',       bg: 'bg-primary/10', text: 'text-primary' },
-                  ].map(({ to, icon: Icon, label, sub, bg, text }) => (
-                    <Link key={to} to={to} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/50 transition-colors">
-                      <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
-                        <Icon className={`w-4 h-4 ${text}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-body text-sm text-foreground leading-tight">{label}</p>
-                        <p className="font-body text-xs text-muted-foreground">{sub}</p>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" />
-                    </Link>
-                  ))}
-                </div>
+              {/* ── Chiffres clés ── */}
+              <div className="grid grid-cols-3 gap-3 sm:gap-4">
+                {[
+                  { label: 'Commandes', value: String(commandes.length), color: 'text-foreground' },
+                  { label: 'Points', value: user.points.toLocaleString('fr-FR'), color: tierCfg.color },
+                  { label: 'FCFA dépensés', value: commandes.length > 0 ? (commandes.reduce((sum, o) => sum + (o.total ?? 0), 0) / 1000).toFixed(0) + 'k' : '0', color: 'text-foreground' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-background border border-border rounded-2xl px-3 py-5 text-center">
+                    <p className={`font-display text-2xl sm:text-3xl ${color}`}>{value}</p>
+                    <p className="font-body text-xs text-muted-foreground mt-1">{label}</p>
+                  </div>
+                ))}
               </div>
-            </aside>
 
             {/* ══════════════════════════════════════
                 MAIN
             ══════════════════════════════════════ */}
             <main className="flex-1 min-w-0 flex flex-col gap-4">
-
-              <div className="flex items-baseline justify-between">
-                <h2 className="font-display text-3xl md:text-4xl text-foreground">Mon espace</h2>
-                <span className="font-body text-xs text-muted-foreground">
-                  Client depuis le {user.dateInscription}
-                </span>
-              </div>
 
               {/* ── Tabs ── */}
               <div className="bg-background border border-border rounded-2xl overflow-hidden">
@@ -1197,16 +1168,11 @@ export default function MonComptePage() {
                         <div>
                           <h3 className="font-display text-xl text-foreground">Préférences alimentaires</h3>
                           <p className="font-body text-sm text-muted-foreground mt-0.5 leading-relaxed">
-                            Indiquez vos restrictions et préférences. Elles nous permettent de mieux vous conseiller.
+                            Le menu s'adapte à ces choix : ce qui ne convient pas est signalé, et masqué sur demande. Le résultat se base sur la composition indiquée pour chaque plat.
                           </p>
                         </div>
                       </div>
 
-                      {prefLoading ? (
-                        <div className="flex items-center justify-center py-10">
-                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {PREF_OPTIONS.map(opt => {
                             const active = prefSelected.includes(opt.key);
@@ -1234,15 +1200,14 @@ export default function MonComptePage() {
                             );
                           })}
                         </div>
-                      )}
 
                       <button
                         onClick={handleSavePreferences}
-                        disabled={prefSaving || prefLoading}
+                        disabled={prefSaving || !prefDirty}
                         className="w-full flex items-center justify-center gap-2 font-body text-sm py-3.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors rounded-xl"
                       >
                         {prefSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        Enregistrer mes préférences
+                        {prefDirty ? 'Enregistrer mes préférences' : 'Préférences à jour'}
                       </button>
                     </motion.div>
                   )}
@@ -1261,7 +1226,6 @@ export default function MonComptePage() {
               </div>
             </main>
           </div>
-        </div>
       </div>
     </div>
   );

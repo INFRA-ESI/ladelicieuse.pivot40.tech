@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { cachedJson } from '@/services/publicApiService';
-import { loginClient, registerClient, fetchMe, getClientOrders, updateClientProfile, changePassword as apiChangePassword } from '@/services/clientService';
+import { loginClient, registerClient, fetchMe, getClientOrders, updateClientProfile, changePassword as apiChangePassword, getClientPreferences, saveClientPreferences, uploadClientAvatar, deleteClientAvatar } from '@/services/clientService';
+import { isPrefKey, type PrefKey } from '@/lib/dietary';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { ls } from '@/lib/storage';
 
@@ -48,6 +49,8 @@ export interface User {
   commandes: UserOrder[];
   dateInscription: string;
   subscription?: Subscription;
+  /** Photo de profil (chemin public) ; absente ou vide = initiales. */
+  avatar?: string;
 }
 
 const TIER_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -90,6 +93,7 @@ export const TIER_CONFIG: TierConfig = {
 
 const STORAGE_KEY = 'ladelicieuse_user';
 export const TOKEN_KEY = 'ladelicieuse_token';
+const PREFS_KEY = 'ladelicieuse_prefs';
 
 export function loadStoredUser(): User | null {
   try {
@@ -127,6 +131,11 @@ interface UserContextType {
   updateProfile: (data: { nom: string; prenoms: string; telephone: string; email: string }) => Promise<void>;
   refreshOrders: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  /** Préférences alimentaires du compte (enregistrées en base), appliquées au menu. */
+  preferences: PrefKey[];
+  savePreferences: (preferences: PrefKey[]) => Promise<void>;
+  /** Envoie la photo de profil (déjà recadrée) ou la retire (null). */
+  changeAvatar: (photo: Blob | null) => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -143,6 +152,40 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   usePushNotifications(user?.id);
+
+  // La base fait foi ; la copie locale évite de réafficher tout le menu le temps de la requête.
+  const [preferences, setPreferences] = useState<PrefKey[]>(() => {
+    try { return (JSON.parse(ls.get(PREFS_KEY) ?? '[]') as unknown[]).filter(isPrefKey); } catch { return []; }
+  });
+  const rememberPreferences = (prefs: PrefKey[]) => { setPreferences(prefs); ls.set(PREFS_KEY, JSON.stringify(prefs)); };
+
+  useEffect(() => {
+    const token = ls.get(TOKEN_KEY);
+    if (!user?.id || !token) { setPreferences([]); ls.remove(PREFS_KEY); return; }
+    getClientPreferences(token).then(rememberPreferences).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const changeAvatar = useCallback(async (photo: Blob | null): Promise<void> => {
+    const token = ls.get(TOKEN_KEY);
+    if (!token) throw new Error('Non authentifié.');
+    let avatar = '';
+    if (photo) avatar = await uploadClientAvatar(token, photo);
+    else await deleteClientAvatar(token);
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, avatar };
+      saveUser(updated);
+      return updated;
+    });
+  }, []);
+
+  const savePreferences = useCallback(async (prefs: PrefKey[]): Promise<void> => {
+    const token = ls.get(TOKEN_KEY);
+    if (!token) throw new Error('Non authentifié.');
+    rememberPreferences(await saveClientPreferences(token, prefs));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persist = (u: User | null) => { setUser(u); saveUser(u); };
 
@@ -163,6 +206,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           email: apiUser.email,
           telephone: apiUser.telephone || '',
           points: apiUser.points || 0,
+          avatar: apiUser.avatar || '',
           commandes: [], // toujours vide — MonComptePage charge depuis l'API
           dateInscription: existing?.dateInscription || new Date().toLocaleDateString('fr-FR'),
           subscription: existing?.subscription,
@@ -217,6 +261,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       email: res.user.email,
       telephone: res.user.telephone || '',
       points: res.user.points || 0,
+      avatar: res.user.avatar || '',
       commandes: [], // toujours vide — MonComptePage charge depuis l'API
       dateInscription: existing?.dateInscription || new Date().toLocaleDateString('fr-FR'),
       subscription: existing?.subscription,
@@ -311,7 +356,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <UserContext.Provider value={{ user, loading, tiers, register, login, loginWithPassword, registerAccount, logout, addOrder, subscribe, cancelSubscription, pauseSubscription, resumeSubscription, updateProfile, refreshOrders, changePassword }}>
+    <UserContext.Provider value={{ user, loading, tiers, register, login, loginWithPassword, registerAccount, logout, addOrder, subscribe, cancelSubscription, pauseSubscription, resumeSubscription, updateProfile, refreshOrders, changePassword, preferences, savePreferences, changeAvatar }}>
       {children}
     </UserContext.Provider>
   );

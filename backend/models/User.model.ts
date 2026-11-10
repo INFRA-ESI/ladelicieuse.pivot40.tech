@@ -37,6 +37,8 @@ export interface IUser extends Document {
   };
   // Préférences alimentaires (libres, non chiffrées)
   preferences?: string[];
+  /** Photo de profil : chemin public sous /uploads/avatars/, vide si aucune. */
+  avatar?: string;
   // Suivi diététique — chiffrés AES-256-GCM en base, exposés comme number
   taille?:            number;
   objectifPoids?:     number;
@@ -79,6 +81,7 @@ const UserSchema = new Schema<IUser>(
       endDate:   Date,
     },
     preferences: { type: [String], default: [] },
+    avatar:      { type: String, default: '' },
     // Stockés chiffrés → type Mixed (string chiffrée en production, number legacy possible)
     taille:            { type: Schema.Types.Mixed },
     objectifPoids:     { type: Schema.Types.Mixed },

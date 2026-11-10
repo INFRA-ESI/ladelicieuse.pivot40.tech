@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ls, ss } from '@/lib/storage';
 import { useCart } from '@/context/CartContext';
@@ -874,6 +875,24 @@ export default function CartPage() {
     <div className="min-h-screen">
 
       {/* Hero */}
+      {user ? (
+        <PageIntro
+          clearBar
+          eyebrow={isEmpty ? 'Panier' : `${totalItems} article${totalItems > 1 ? 's' : ''} sélectionné${totalItems > 1 ? 's' : ''}`}
+          title={isEmpty ? 'Le plaisir commence ici' : 'Finalisez votre commande'}
+          subtitle={isEmpty
+            ? 'Choisissez parmi nos salades, jus, repas chauds, omelettes et soupes.'
+            : `${formatPrice(totalPrice)} · Livraison calculée selon votre zone`}
+          actions={isEmpty ? (
+            <Link to="/composer" className={introPrimaryClass}>Découvrir la carte</Link>
+          ) : (
+            <>
+              <a href="#panier" className={introPrimaryClass}>Voir mon panier</a>
+              <button onClick={openCheckout} className={introSecondaryClass}>Commander</button>
+            </>
+          )}
+        />
+      ) : (
       <section className="relative h-screen flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img src={CART_HERO} alt="Votre panier" className="w-full h-full object-cover" />
@@ -918,6 +937,7 @@ export default function CartPage() {
           </div>
         </motion.div>
       </section>
+      )}
 
       {isEmpty ? (
         <div className="bg-muted/20 pb-20">

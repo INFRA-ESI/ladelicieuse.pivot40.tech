@@ -43,6 +43,10 @@ export interface JuiceProduct {
   type: 'detox' | 'fruit';
   image?: string;
   formats?: JuiceFormat[];
+  /** Pour les préférences alimentaires (voir lib/dietary). */
+  allergenes?: string[];
+  proteines?: number;
+  glucides?: number;
 }
 
 // Identifiant stable pour une pastille de format côté panier/URL (sans accents, sans espaces).
@@ -64,6 +68,10 @@ export interface MealProduct {
   price: number;
   image?: string;
   category: string;
+  /** Pour les préférences alimentaires (voir lib/dietary). */
+  allergenes?: string[];
+  proteines?: number;
+  glucides?: number;
 }
 
 export interface CartItem {
