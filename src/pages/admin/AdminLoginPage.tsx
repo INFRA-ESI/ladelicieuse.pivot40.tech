@@ -15,8 +15,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { OTPInputField } from '@/components/admin/OTPInputField';
 import { cn } from '@/lib/utils';
 import { loginPasswordError } from '@/lib/password';
-import loginBg from '@/assets/admin-login-bg.jpg';
-import logo from '@/assets/logo.png';
+import loginBg from '@/assets/admin-login-bg.webp';
+import logo from '@/assets/logo.webp';
 
 type LoginStep = 'credentials' | 'otp';
 

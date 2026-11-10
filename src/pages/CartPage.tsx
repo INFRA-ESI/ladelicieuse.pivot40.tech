@@ -893,7 +893,7 @@ export default function CartPage() {
           )}
         />
       ) : (
-      <section className="relative h-screen flex items-end overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[64vh] pt-28 flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img src={CART_HERO} alt="Votre panier" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/25 to-transparent" />
@@ -902,12 +902,12 @@ export default function CartPage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
+          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-10 md:pb-14"
         >
           <span className="font-body text-xs text-primary mb-4 block">
             {isEmpty ? 'Panier' : `${totalItems} article${totalItems > 1 ? 's' : ''} sélectionné${totalItems > 1 ? 's' : ''}`}
           </span>
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
+          <h1 className="font-display text-4xl md:text-6xl lg:text-7xl text-primary-foreground leading-[0.95] mb-6">
             {isEmpty ? (
               <>Le plaisir<br /><span>commence ici</span></>
             ) : (

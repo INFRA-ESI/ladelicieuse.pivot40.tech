@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, XCircle, Loader2, Leaf } from '@/components/icons';
-import logo from '@/assets/logo.png';
+import logo from '@/assets/logo.webp';
 
 type State = 'loading' | 'success' | 'error';
 

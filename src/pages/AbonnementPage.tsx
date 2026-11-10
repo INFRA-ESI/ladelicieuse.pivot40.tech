@@ -13,11 +13,11 @@ import { ls, ss } from '@/lib/storage';
 import { formatPrixFcfa as fmt } from '@/lib/fcfa';
 import { PaymentMethods } from '@/components/payment';
 import Footer from '@/components/Footer';
-import prepImage from '@/assets/preparation.jpg';
-import prepCloseImage from '@/assets/preparation-close.jpg';
+import prepImage from '@/assets/preparation.webp';
+import prepCloseImage from '@/assets/preparation-close.webp';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
 import { cachedJson } from '@/services/publicApiService';
-import juicesImage from '@/assets/juices.jpg';
+import juicesImage from '@/assets/juices.webp';
 
 // ─── Tokens de layout uniformes ───────────────────────────────────────────────
 // section standard   : py-20 md:py-28 px-6 md:px-12
@@ -449,7 +449,7 @@ export default function AbonnementPage() {
           </>}
         />
       ) : (
-      <section className="relative h-screen flex items-end overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[64vh] pt-28 flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img
             src={prepImage}
@@ -465,12 +465,12 @@ export default function AbonnementPage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
+          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-10 md:pb-14"
         >
           <span className="font-body text-xs text-primary mb-4 block">
             Abonnements
           </span>
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
+          <h1 className="font-display text-4xl md:text-6xl lg:text-7xl text-primary-foreground leading-[0.95] mb-6">
             Mangez bien,<br />
             <span>chaque semaine</span>
           </h1>

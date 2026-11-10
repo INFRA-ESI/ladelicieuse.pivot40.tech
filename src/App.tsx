@@ -8,6 +8,7 @@ import { CartProvider } from "@/context/CartContext";
 import { UserProvider, useUser } from "@/context/UserContext";
 import Header from "@/components/Header";
 import AppNav from "@/components/AppNav";
+import { BackBar } from "@/components/BackButton";
 import { useAppNavOffset } from "@/hooks/useAppNavOffset";
 import ContinuationPopup from "@/components/ContinuationPopup";
 import FloatingDietician from "@/components/FloatingDietician";
@@ -137,6 +138,7 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <>
       <AppNav />
+      <BackBar className={offset} />
       <div className={`-mt-20 pb-16 md:pb-0 transition-[padding] duration-200 ${offset}`}>{children}</div>
     </>
   );

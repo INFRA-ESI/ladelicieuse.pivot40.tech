@@ -4,8 +4,9 @@ import { Stethoscope } from '@/components/icons';
 
 export default function FloatingDietician() {
   const { pathname } = useLocation();
-  // Pas sur la page diététicien elle-même, ni pendant la composition d'une salade où il masque le contenu.
-  if (pathname === '/dieteticien' || pathname.startsWith('/composer/')) return null;
+  // Pas sur la page diététicien elle-même, ni pendant la composition d'une salade où il masque le contenu,
+  // ni dans le back office où il recouvre la pagination et les actions.
+  if (pathname === '/dieteticien' || pathname.startsWith('/composer/') || pathname.startsWith('/admin')) return null;
 
   return (
     <motion.div

@@ -1,9 +1,10 @@
 import {
   Search, UserCheck, UserX, Eye, X, Mail, Phone, Star, Award,
-  Trash2, AlertTriangle, ChevronLeft, ChevronRight, ShoppingBag, Loader2,
+  Trash2, AlertTriangle, ShoppingBag, Loader2,
   MailCheck, MailX, ShieldAlert,
 } from '@/components/icons';
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import TablePagination from '@/components/admin/TablePagination';
 import { toast } from 'sonner';
 import { adminGet, adminDelete } from '@/services/adminApiService';
 import { formatPrixFcfa as fmtPrice } from '@/lib/fcfa';
@@ -301,43 +302,7 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {/* Pagination */}
-      {pages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="font-body text-xs text-muted-foreground">
-            Page {page} / {pages} · {total} résultats
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-body border border-border rounded-md hover:bg-muted disabled:opacity-40 transition-colors"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />Préc.
-            </button>
-            {Array.from({ length: Math.min(5, pages) }, (_, i) => {
-              const start = Math.max(1, Math.min(page - 2, pages - 4));
-              const p = start + i;
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-8 h-8 text-xs font-body rounded-md transition-colors ${p === page ? 'bg-primary text-primary-foreground' : 'border border-border hover:bg-muted text-foreground'}`}
-                >
-                  {p}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              disabled={page >= pages || loading}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-body border border-border rounded-md hover:bg-muted disabled:opacity-40 transition-colors"
-            >
-              Suiv.<ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
+      <TablePagination page={page} pageCount={pages} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
 
       {/* Confirmation suppression */}
       {confirmDeleteId && (

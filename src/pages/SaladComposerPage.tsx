@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
@@ -92,7 +93,7 @@ function stepSections(keys: IngredientCategory[], ingredients: Ingredient[]): { 
 // Photo de l'ingrédient, ou une pastille avec son initiale quand il n'en a pas (au lieu d'une image cassée).
 function IngredientImage({ ingredient, className }: { ingredient: Pick<Ingredient, 'image' | 'name'>; className: string }) {
   if (ingredient.image) {
-    return <img src={ingredient.image} alt={ingredient.name} loading="lazy" className={`${className} object-cover object-center`} />;
+    return <SmartImage src={ingredient.image} alt={ingredient.name} sizes="96px" widths={[96, 192]} className={`${className} object-cover object-center`} />;
   }
   return (
     <div role="img" aria-label={ingredient.name} className={`${className} bg-primary/10 text-primary font-display flex items-center justify-center select-none`}>
@@ -447,7 +448,7 @@ export default function SaladComposerPage() {
                 className="relative w-full h-60 md:h-72 rounded-2xl overflow-hidden group shadow-elevated block active:scale-[0.99] transition-transform duration-100"
               >
                 {activeCover ? (
-                  <img src={activeCover} alt={activeSuggestion.name} className="absolute inset-0 w-full h-full object-cover" />
+                  <SmartImage src={activeCover} alt={activeSuggestion.name} className="absolute inset-0 w-full h-full object-cover" sizes="(min-width: 768px) 50vw, 100vw" priority />
                 ) : (
                   <div className="absolute inset-0 bg-primary/30" />
                 )}

@@ -1,11 +1,12 @@
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useCart } from '@/context/CartContext';
 import { useUser } from '@/context/UserContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { CircleUser, ShoppingBag, Menu, X } from '@/components/icons';
+import { CircleUser, ShoppingBag, Menu, X, Home, Leaf, Orange, UtensilsCrossed, CalendarDays, Stethoscope } from '@/components/icons';
 import { cn } from '@/lib/utils';
-import logo from '@/assets/logo.png';
+import { BackIconButton } from '@/components/BackButton';
+import logo from '@/assets/logo.webp';
 
 export default function Header() {
   const { totalItems } = useCart();
@@ -38,24 +39,29 @@ export default function Header() {
       )}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <img
-            src={logo}
-            alt="La Délicieuse Diète"
-            className="h-14 sm:h-16 w-auto shrink-0"
-          />
-          <span className="font-display text-xl sm:text-2xl md:text-3xl font-semibold text-foreground tracking-tight truncate">
-            La Délicieuse Diète
-          </span>
-        </Link>
+        <div className="flex items-center gap-2 min-w-0">
+          <BackIconButton className="lg:hidden" />
+          <Link to="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <img
+              src={logo}
+              alt="La Délicieuse Diète"
+              className="h-14 sm:h-16 w-auto shrink-0"
+            />
+            <span className="font-display text-xl sm:text-2xl md:text-3xl font-semibold text-foreground tracking-tight truncate">
+              La Délicieuse Diète
+            </span>
+          </Link>
         
+        </div>
+
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-6 lg:gap-8">
-          <NavItem to="/composer" label="Salades" />
-          <NavItem to="/jus" label="Jus & Détox" />
-          <NavItem to="/repas" label="Repas" />
-          <NavItem to="/abonnement" label="Abonnement" />
-          <NavItem to="/dieteticien" label="Diététicien" />
+        <nav className="hidden md:flex items-center gap-4 lg:gap-6 xl:gap-8">
+          <NavItem to="/" label="Accueil" icon={Home} end />
+          <NavItem to="/composer" label="Salades" icon={Leaf} />
+          <NavItem to="/jus" label="Jus & Détox" icon={Orange} />
+          <NavItem to="/repas" label="Repas" icon={UtensilsCrossed} />
+          <NavItem to="/abonnement" label="Abonnement" icon={CalendarDays} />
+          <NavItem to="/dieteticien" label="Diététicien" icon={Stethoscope} />
           {user ? (
             <Link
               to="/mon-compte"
@@ -121,16 +127,17 @@ export default function Header() {
             className="md:hidden overflow-hidden bg-white border-b border-border"
           >
             <div className="px-6 py-6 flex flex-col gap-4">
-              <MobileNavItem to="/composer" label="Salades" onClick={() => setMenuOpen(false)} />
-              <MobileNavItem to="/jus" label="Jus & Détox" onClick={() => setMenuOpen(false)} />
-              <MobileNavItem to="/repas" label="Repas" onClick={() => setMenuOpen(false)} />
-              <MobileNavItem to="/abonnement" label="Abonnement" onClick={() => setMenuOpen(false)} />
-              <MobileNavItem to="/dieteticien" label="Diététicien" onClick={() => setMenuOpen(false)} />
-              <MobileNavItem to="/panier" label={`Panier (${totalItems})`} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/" label="Accueil" icon={Home} end onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/composer" label="Salades" icon={Leaf} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/jus" label="Jus & Détox" icon={Orange} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/repas" label="Repas" icon={UtensilsCrossed} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/abonnement" label="Abonnement" icon={CalendarDays} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/dieteticien" label="Diététicien" icon={Stethoscope} onClick={() => setMenuOpen(false)} />
+              <MobileNavItem to="/panier" label={`Panier (${totalItems})`} icon={ShoppingBag} onClick={() => setMenuOpen(false)} />
               {user ? (
-                <MobileNavItem to="/mon-compte" label="Mon Compte" onClick={() => setMenuOpen(false)} />
+                <MobileNavItem to="/mon-compte" label="Mon Compte" icon={CircleUser} onClick={() => setMenuOpen(false)} />
               ) : (
-                <MobileNavItem to="/connexion" label="Connexion" onClick={() => setMenuOpen(false)} />
+                <MobileNavItem to="/connexion" label="Connexion" icon={CircleUser} onClick={() => setMenuOpen(false)} />
               )}
             </div>
           </motion.nav>
@@ -140,25 +147,37 @@ export default function Header() {
   );
 }
 
-function NavItem({ to, label }: { to: string; label: string }) {
+type IconType = React.ElementType;
+
+function NavItem({ to, label, icon: Icon, end }: { to: string; label: string; icon: IconType; end?: boolean }) {
   return (
-    <Link 
-      to={to} 
-      className="font-body text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => cn(
+        'flex items-center gap-1.5 font-body text-sm font-medium transition-colors hover:text-primary whitespace-nowrap',
+        isActive ? 'text-primary' : 'text-muted-foreground',
+      )}
     >
+      <Icon className="w-4 h-4 shrink-0" />
       {label}
-    </Link>
+    </NavLink>
   );
 }
 
-function MobileNavItem({ to, label, onClick }: { to: string; label: string; onClick: () => void }) {
+function MobileNavItem({ to, label, icon: Icon, end, onClick }: { to: string; label: string; icon: IconType; end?: boolean; onClick: () => void }) {
   return (
-    <Link 
-      to={to} 
+    <NavLink
+      to={to}
+      end={end}
       onClick={onClick}
-      className="font-display text-2xl text-foreground hover:text-primary transition-colors"
+      className={({ isActive }) => cn(
+        'flex items-center gap-3 font-display text-2xl transition-colors hover:text-primary',
+        isActive ? 'text-primary' : 'text-foreground',
+      )}
     >
+      <Icon className="w-6 h-6 shrink-0" />
       {label}
-    </Link>
+    </NavLink>
   );
 }

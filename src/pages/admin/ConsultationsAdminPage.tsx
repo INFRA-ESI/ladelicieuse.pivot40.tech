@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, CalendarDays, ChevronLeft, ChevronRight, AlertTriangle } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
@@ -400,7 +401,7 @@ export default function ConsultationsAdminPage() {
           {items.map(c => (
             <div key={c._id} className={`bg-background border rounded-lg overflow-hidden flex flex-col gap-0 ${c.actif ? 'border-border' : 'border-border opacity-60'}`}>
               {c.image ? (
-                <img src={c.image} alt={c.titre} className="w-full h-36 object-cover" />
+                <SmartImage src={c.image} alt={c.titre} className="w-full h-36 object-cover" sizes="(min-width: 1024px) 33vw, 100vw" widths={[320, 480, 640]} />
               ) : (
                 <div className="w-full h-36 bg-muted flex items-center justify-center">
                   <ImagePlus className="w-8 h-8 text-muted-foreground/40" />

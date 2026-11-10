@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useCart } from '@/context/CartContext';
 import { useUser } from '@/context/UserContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSidebarCollapse } from '@/hooks/useSidebarCollapse';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import {
-  Home, Leaf, Orange, UtensilsCrossed, Zap, Stethoscope, TrendingUp,
+  Home, Leaf, Orange, UtensilsCrossed, CalendarDays, Stethoscope, TrendingUp,
   ShoppingBag, Menu, LogOut, CircleUser, ArrowRight, PanelLeft,
 } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import Avatar from '@/components/Avatar';
-import logo from '@/assets/logo.png';
+import logo from '@/assets/logo.webp';
 
 import { CLIENT_SIDEBAR_KEY } from '@/lib/sidebarKeys';
 
@@ -22,7 +22,7 @@ const ITEMS: Item[] = [
   { to: '/composer',    label: 'Salades',      icon: Leaf },
   { to: '/jus',         label: 'Jus & Détox',  icon: Orange },
   { to: '/repas',       label: 'Repas',        icon: UtensilsCrossed },
-  { to: '/abonnement',  label: 'Abonnement',   icon: Zap },
+  { to: '/abonnement',  label: 'Abonnement',   icon: CalendarDays },
   { to: '/dieteticien', label: 'Diététicien',  icon: Stethoscope },
   { to: '/suivi',       label: 'Mon suivi',    icon: TrendingUp },
 ];
@@ -122,9 +122,16 @@ function LegalLinks({ className, onClick }: { className?: string; onClick?: () =
   );
 }
 
+// Se déconnecter ramène toujours à l'accueil, quelle que soit la page où l'on se trouvait.
+function useSignOut() {
+  const { logout } = useUser();
+  const navigate = useNavigate();
+  return () => { navigate('/', { replace: true }); logout(); };
+}
+
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { totalItems } = useCart();
-  const { logout } = useUser();
+  const signOut = useSignOut();
   return (
     <aside className={cn(
       'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-border bg-background transition-[width] duration-200',
@@ -141,7 +148,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         <Row to="/panier" label="Panier" icon={ShoppingBag} badge={totalItems} cartId compact={collapsed} />
       </nav>
       <div className="border-t border-border p-3 flex flex-col gap-0.5">
-        <LogoutButton onClick={logout} compact={collapsed} />
+        <LogoutButton onClick={signOut} compact={collapsed} />
         <button
           onClick={onToggle}
           aria-expanded={!collapsed}
@@ -163,7 +170,7 @@ function BottomBar() {
   const { totalItems } = useCart();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { logout } = useUser();
+  const signOut = useSignOut();
   const close = () => setMenuOpen(false);
 
   // Le composeur de salade a sa propre barre fixe en bas (calories + validation) : on ne la double pas.
@@ -204,7 +211,7 @@ function BottomBar() {
             <Row to="/panier" label="Panier" icon={ShoppingBag} badge={totalItems} onClick={close} />
           </nav>
           <div className="border-t border-border pt-3">
-            <LogoutButton onClick={() => { close(); logout(); }} />
+            <LogoutButton onClick={() => { close(); signOut(); }} />
             <LegalLinks className="pt-3" onClick={close} />
           </div>
         </SheetContent>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { useDietFilter } from '@/hooks/useDietFilter';
 import { DietBar, DietChip } from '@/components/DietNotice';
 import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
@@ -8,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { JUICES, JuiceProduct, JuiceFormat, formatPrice, slugifyFormatLabel } from '@/data/products';
 import { toast } from 'sonner';
-import juicesImage from '@/assets/juices.jpg';
+import juicesImage from '@/assets/juices.webp';
 import { useFlyToCart } from '@/hooks/useFlyToCart';
 import { FlyingIngredient } from '@/components/FlyingIngredient';
 import { publicFetch } from '@/services/publicApiService';
@@ -137,8 +138,8 @@ export default function JuicesPage() {
           subtitle={single ? single.subtitle : 'Des recettes pensées pour purifier, énergiser et ravir.'}
         />
       ) : (
-      <section className="relative h-[50vh] mb-16 overflow-hidden">
-        <img src={juicesImage} alt="Nos jus détox et fruits" className="w-full h-full object-cover" />
+      <section className="relative h-[42vh] min-h-[20rem] mb-16 overflow-hidden">
+        <SmartImage src={juicesImage} alt="Nos jus détox et fruits" className="w-full h-full object-cover" priority />
         <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/50 to-transparent" />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -185,7 +186,7 @@ export default function JuicesPage() {
                   className="flex items-center gap-6 mb-10 pb-6 border-b border-border"
                 >
                   <div className="relative w-24 h-24 md:w-32 md:h-32 flex-shrink-0 rounded-2xl overflow-hidden shadow-md">
-                    <img src={section.sectionImg} alt={section.label} className="w-full h-full object-cover" loading="lazy" />
+                    <SmartImage src={section.sectionImg} alt={section.label} className="w-full h-full object-cover" sizes="128px" widths={[192, 320]} />
                     <div className="absolute inset-0 bg-black/10" />
                   </div>
                   <div>
@@ -275,11 +276,12 @@ function JuiceCard({
       {/* Image */}
       <div className="relative h-52 overflow-hidden bg-muted shrink-0">
         {juice.image ? (
-          <img
+          <SmartImage
             src={juice.image}
             alt={juice.name}
             className="w-full h-full object-cover"
-            loading="lazy"
+            sizes="(min-width: 768px) 33vw, 100vw"
+            fallback={<div className="w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20" />}
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20" />

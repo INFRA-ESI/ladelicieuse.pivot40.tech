@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -142,7 +143,7 @@ export default function ProductPage() {
               onClick={() => allImages.length > 0 && setLightbox(true)}
             >
               {allImages[activeImg] ? (
-                <img src={allImages[activeImg]} alt={product.nom} className="w-full h-full object-cover" />
+                <SmartImage src={allImages[activeImg]} alt={product.nom} className="w-full h-full object-cover" sizes="(min-width: 1024px) 50vw, 100vw" priority />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                   <Leaf className="w-16 h-16 opacity-30" />
@@ -165,7 +166,7 @@ export default function ProductPage() {
                     onClick={() => setActiveImg(i)}
                     className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${i === activeImg ? 'border-primary' : 'border-border hover:border-primary/50'}`}
                   >
-                    <img src={img} alt="" className="w-full h-full object-cover" />
+                    <SmartImage src={img} alt="" className="w-full h-full object-cover" sizes="96px" widths={[96, 192]} />
                   </button>
                 ))}
               </div>
@@ -389,7 +390,7 @@ export default function ProductPage() {
               <Link key={p._id} to={`/produit/${p.slug ?? p._id}`} className="group border border-border rounded-xl overflow-hidden bg-background hover:shadow-md transition-shadow">
                 <div className="h-36 bg-muted overflow-hidden">
                   {p.image ? (
-                    <img src={p.image} alt={p.nom} className="w-full h-full object-cover" loading="lazy" />
+                    <SmartImage src={p.image} alt={p.nom} className="w-full h-full object-cover" sizes="(min-width: 768px) 25vw, 50vw" widths={[192, 320, 480]} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center"><Leaf className="w-8 h-8 text-muted-foreground/30" /></div>
                   )}
@@ -440,10 +441,13 @@ export default function ProductPage() {
                 </button>
               </>
             )}
-            <img
+            <SmartImage
               src={allImages[activeImg]}
               alt={product.nom}
               className="max-w-3xl max-h-[80vh] w-full object-contain rounded-xl"
+              sizes="(min-width: 768px) 768px, 100vw"
+              widths={[640, 960, 1280]}
+              priority
               onClick={e => e.stopPropagation()}
             />
           </motion.div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '@/context/UserContext';
 import { dietConflicts } from '@/lib/dietary';
@@ -158,10 +159,13 @@ export default function ProductSheetModal({ productId, onClose }: Props) {
                   {allImages.length > 0 && (
                     <div className="relative">
                       <div className="h-60 sm:h-72 overflow-hidden bg-muted">
-                        <img
+                        <SmartImage
                           src={allImages[activeImg]}
                           alt={product.nom}
                           className="w-full h-full object-cover"
+                          sizes="(min-width: 640px) 512px, 100vw"
+                          widths={[480, 640, 960]}
+                          priority
                         />
                         {/* Badges status */}
                         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">

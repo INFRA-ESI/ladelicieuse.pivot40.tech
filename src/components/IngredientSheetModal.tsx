@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import SmartImage from '@/components/SmartImage';
 import { X, Check } from '@/components/icons';
 import { useEffect } from 'react';
 import { type Ingredient, formatPrice } from '@/data/products';
@@ -75,7 +76,7 @@ export default function IngredientSheetModal({ ingredient, onClose }: Props) {
               {/* Image */}
               {ing.image && (
                 <div className="h-52 overflow-hidden bg-muted">
-                  <img src={ing.image} alt={ing.name} className="w-full h-full object-cover" />
+                  <SmartImage src={ing.image} alt={ing.name} className="w-full h-full object-cover" sizes="(min-width: 640px) 512px, 100vw" widths={[320, 480, 640]} />
                 </div>
               )}
 

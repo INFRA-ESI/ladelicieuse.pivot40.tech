@@ -7,7 +7,7 @@ import { ADMIN_SIDEBAR_KEY } from '@/lib/sidebarKeys';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import { logout as logoutAdmin } from '@/services/authService';
-import logo from '@/assets/logo.png';
+import logo from '@/assets/logo.webp';
 import {
   LayoutDashboard, ShoppingCart, FolderTree, Carrot, Users, FileText,
   History, Settings, MessageCircle, LogOut, Menu, X, ChefHat, Utensils,

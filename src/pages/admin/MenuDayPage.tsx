@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import SmartImage from '@/components/SmartImage';
 import {
   Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight,
   Flame, Eye, EyeOff, Search, GripVertical, ImagePlus, Loader2,
@@ -189,7 +190,7 @@ function MealCard({ meal, libMap, onEdit, onDelete, onToggle }: {
     <div className={`bg-background border rounded-xl overflow-hidden transition-opacity ${!meal.disponible ? 'opacity-60' : ''}`}>
       {meal.image && (
         <div className="w-full h-40 overflow-hidden">
-          <img src={meal.image} alt={meal.nom} className="w-full h-full object-cover" />
+          <SmartImage src={meal.image} alt={meal.nom} className="w-full h-full object-cover" sizes="(min-width: 1024px) 33vw, 100vw" widths={[320, 480, 640]} />
         </div>
       )}
       <div className="p-5">
@@ -1269,7 +1270,7 @@ export default function MenuDayPage() {
                     return (
                       <div key={m._id} className={`flex items-center gap-4 p-4 rounded-xl border transition-all ${alreadyIn ? 'border-border/50 bg-muted/30 opacity-60' : 'border-border bg-background hover:border-primary/40'}`}>
                         {m.image && (
-                          <img src={m.image} alt={m.nom} className="w-16 h-16 rounded-lg object-cover shrink-0" />
+                          <SmartImage src={m.image} alt={m.nom} className="w-16 h-16 rounded-lg object-cover shrink-0" sizes="64px" widths={[96, 192]} />
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-0.5">

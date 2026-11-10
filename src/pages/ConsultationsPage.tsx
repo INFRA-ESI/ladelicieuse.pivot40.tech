@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import SmartImage from '@/components/SmartImage';
 import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -13,16 +14,16 @@ import { ls } from '@/lib/storage';
 import { formatPrixFcfa as fmt } from '@/lib/fcfa';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
-import balancedMealImg from '@/assets/balanced-meal.jpg';
+import balancedMealImg from '@/assets/balanced-meal.webp';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
 import { cachedJson } from '@/services/publicApiService';
 import { STORE_WHATSAPP } from '@/lib/config';
-import bilanSuiviImg from '@/assets/consultations/bilan-suivi.jpg';
-import pertePoids from '@/assets/consultations/perte-poids.jpg';
-import prisePoids from '@/assets/consultations/prise-poids.jpg';
-import maladieChroniqueImg from '@/assets/consultations/maladie-chronique.jpg';
-import femmeEnceinteImg from '@/assets/consultations/femme-enceinte.jpg';
-import expressImg from '@/assets/consultations/express.jpg';
+import bilanSuiviImg from '@/assets/consultations/bilan-suivi.webp';
+import pertePoids from '@/assets/consultations/perte-poids.webp';
+import prisePoids from '@/assets/consultations/prise-poids.webp';
+import maladieChroniqueImg from '@/assets/consultations/maladie-chronique.webp';
+import femmeEnceinteImg from '@/assets/consultations/femme-enceinte.webp';
+import expressImg from '@/assets/consultations/express.webp';
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -335,7 +336,7 @@ export default function ConsultationsPage() {
           </>}
         />
       ) : (
-      <section className="relative h-screen flex items-end overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[64vh] pt-28 flex items-end overflow-hidden">
         <div className="absolute inset-0">
           <img src={balancedMealImg} alt="Nutrition équilibrée" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/25 to-transparent" />
@@ -345,7 +346,7 @@ export default function ConsultationsPage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
+          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-10 md:pb-14"
         >
           {pageLoading ? (
             <div className="h-10 w-80 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full mb-6 animate-pulse" />
@@ -355,7 +356,7 @@ export default function ConsultationsPage() {
               <span className="font-body text-sm">{doctor.nom} · {doctor.titre}</span>
             </div>
           )}
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
+          <h1 className="font-display text-4xl md:text-6xl lg:text-7xl text-primary-foreground leading-[0.95] mb-6">
             Nutrition<br />
             <span>personnalisée</span>
           </h1>
@@ -627,10 +628,11 @@ export default function ConsultationsPage() {
               >
                 {/* Image */}
                 <div className="relative aspect-[4/3] overflow-hidden">
-                  <img
+                  <SmartImage
                     src={c.image}
                     alt={c.title}
                     className="w-full h-full object-cover"
+                    sizes="(min-width: 768px) 33vw, 100vw"
                   />
                   {/* Tag */}
                   {c.tag && (

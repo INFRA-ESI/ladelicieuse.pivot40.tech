@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
+import SmartImage from '@/components/SmartImage';
 import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { useUser } from '@/context/UserContext';
 import { motion } from 'framer-motion';
 import Footer from '@/components/Footer';
-import cruditesImg from '@/assets/category-crudites.jpg';
-import fruitsImg from '@/assets/category-fruits.jpg';
-import heroImg from '@/assets/hero-salad.jpg';
+import cruditesImg from '@/assets/category-crudites.webp';
+import fruitsImg from '@/assets/category-fruits.webp';
+import heroImg from '@/assets/hero-salad.webp';
 
 // Images représentatives par catégorie (Unsplash)
 const IMG = {
@@ -100,12 +101,13 @@ export default function SaladCategoryPage() {
           </>}
         />
       ) : (
-      <section className="relative h-screen flex items-end overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[64vh] pt-28 flex items-end overflow-hidden">
         <div className="absolute inset-0">
-          <img
+          <SmartImage
             src={heroImg}
             alt="À Commander — La Délicieuse Diète"
             className="w-full h-full object-cover"
+            priority
           />
           <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/25 to-transparent" />
         </div>
@@ -114,12 +116,12 @@ export default function SaladCategoryPage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-16 md:pb-24"
+          className="relative z-10 w-full max-w-5xl mx-auto px-6 md:px-12 pb-10 md:pb-14"
         >
           <span className="font-body text-xs text-primary mb-4 block">
             Notre carte
           </span>
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
+          <h1 className="font-display text-4xl md:text-6xl lg:text-7xl text-primary-foreground leading-[0.95] mb-6">
             À Commander,<br />
             <span>fait avec soin</span>
           </h1>
@@ -202,11 +204,12 @@ function CategoryCard({ cat, delay }: { cat: typeof CATEGORIES[0]; delay: number
         to={cat.href}
         className="block group relative overflow-hidden rounded-2xl h-64 shadow-md hover:shadow-xl transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300"
       >
-        <img
+        <SmartImage
           src={cat.image}
           alt={cat.title}
           className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
+          sizes="(min-width: 768px) 512px, 100vw"
+          widths={[320, 480, 640, 960]}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus, Eye, EyeOff } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
@@ -375,7 +376,7 @@ export default function IngredientsPage() {
                   <div key={i._id} className={`bg-background border border-border rounded-xl p-4 shadow-sm ${i.actif ? '' : 'opacity-60'}`}>
                     <div className="flex items-start gap-3">
                       {i.image && (
-                        <img src={i.image} alt={i.nom} className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" />
+                        <SmartImage src={i.image} alt={i.nom} className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" sizes="48px" widths={[96, 192]} />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">

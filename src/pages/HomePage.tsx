@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
+import SmartImage from '@/components/SmartImage';
 import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { useUser } from '@/context/UserContext';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, Play, X, Tag, Calendar, ShoppingCart, FileText } from '@/components/icons';
 import { toast } from 'sonner';
-import heroImage from '@/assets/hero-salad.jpg';
-import juicesImage from '@/assets/juices.jpg';
-import mealImage from '@/assets/balanced-meal.jpg';
-import prepImage from '@/assets/preparation.jpg';
+import heroImage from '@/assets/hero-salad.webp';
+import juicesImage from '@/assets/juices.webp';
+import mealImage from '@/assets/balanced-meal.webp';
+import prepImage from '@/assets/preparation.webp';
 import Footer from '@/components/Footer';
 import ProductSheetModal from '@/components/ProductSheetModal';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
@@ -157,18 +158,18 @@ export default function HomePage() {
           actions={<Link to="/composer" className={introPrimaryClass}>Commander</Link>}
         />
       ) : (
-      <section className="relative h-screen flex items-end overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[64vh] pt-28 flex items-end overflow-hidden">
         <div className="absolute inset-0">
-          <img src={heroImage} alt="Salade fraîche préparée avec soin" className="w-full h-full object-cover" />
+          <SmartImage src={heroImage} alt="Salade fraîche préparée avec soin" className="w-full h-full object-cover" priority />
           <div className="absolute inset-0 bg-gradient-to-t from-foreground/70 via-foreground/20 to-transparent" />
         </div>
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.3 }}
-          className="relative z-10 max-w-4xl px-6 md:px-12 pb-16 md:pb-24"
+          className="relative z-10 max-w-4xl px-6 md:px-12 pb-10 md:pb-14"
         >
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl text-primary-foreground leading-[0.95] mb-6">
+          <h1 className="font-display text-4xl md:text-6xl lg:text-7xl text-primary-foreground leading-[0.95] mb-6">
             La Délicieuse Diète
           </h1>
           <p className="font-display text-xl md:text-2xl text-primary-foreground/80 max-w-xl mb-10">
@@ -223,7 +224,7 @@ export default function HomePage() {
                     {/* Photo libre : aucun texte ni dégradé par-dessus, tout le détail est sous l'image */}
                     <div className="relative aspect-[4/3] overflow-hidden bg-muted">
                       {repas.image ? (
-                        <img src={repas.image} alt={repas.nom} className="w-full h-full object-cover" loading="lazy" />
+                        <SmartImage src={repas.image} alt={repas.nom} className="w-full h-full object-cover" sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-primary/30 to-secondary/20" />
                       )}

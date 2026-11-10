@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { cachedJson } from '@/services/publicApiService';
+import { resizedUrl } from '@/lib/imageUrl';
 import { loginClient, registerClient, fetchMe, getClientOrders, updateClientProfile, changePassword as apiChangePassword, getClientPreferences, saveClientPreferences, uploadClientAvatar, deleteClientAvatar } from '@/services/clientService';
 import { isPrefKey, type PrefKey } from '@/lib/dietary';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
@@ -95,6 +96,10 @@ const STORAGE_KEY = 'ladelicieuse_user';
 export const TOKEN_KEY = 'ladelicieuse_token';
 const PREFS_KEY = 'ladelicieuse_prefs';
 
+// Charge l'image en avance pour que le passage de l'aperçu local à la vraie photo ne clignote pas.
+const warmImage = (url: string): Promise<void> =>
+  new Promise(resolve => { const img = new Image(); img.onload = img.onerror = () => resolve(); img.src = url; });
+
 export function loadStoredUser(): User | null {
   try {
     const raw = ls.get(STORAGE_KEY);
@@ -166,19 +171,30 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // La photo change à l'écran tout de suite (aperçu local), l'envoi se fait derrière ; en cas d'échec on revient à l'ancienne.
   const changeAvatar = useCallback(async (photo: Blob | null): Promise<void> => {
     const token = ls.get(TOKEN_KEY);
     if (!token) throw new Error('Non authentifié.');
-    let avatar = '';
-    if (photo) avatar = await uploadClientAvatar(token, photo);
-    else await deleteClientAvatar(token);
-    setUser(prev => {
+    const preview = photo ? URL.createObjectURL(photo) : '';
+    const previous = user?.avatar ?? '';
+    const show = (avatar: string, remember: boolean) => setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, avatar };
-      saveUser(updated);
+      if (remember) saveUser(updated);
       return updated;
     });
-  }, []);
+    show(preview, false);
+    try {
+      const avatar = photo ? await uploadClientAvatar(token, photo) : (await deleteClientAvatar(token), '');
+      if (avatar) await warmImage(resizedUrl(avatar, 192));
+      show(avatar, true);
+    } catch (error) {
+      show(previous, false);
+      throw error;
+    } finally {
+      if (preview) URL.revokeObjectURL(preview);
+    }
+  }, [user?.avatar]);
 
   const savePreferences = useCallback(async (prefs: PrefKey[]): Promise<void> => {
     const token = ls.get(TOKEN_KEY);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import SmartImage from '@/components/SmartImage';
 import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, ChefHat, Leaf, Grape, ChevronDown } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
@@ -327,7 +328,7 @@ export default function SuggestionsPage() {
               >
                 <div className="relative h-40 overflow-hidden">
                   {s.image && isUrl(s.image) ? (
-                    <img src={s.image} alt={s.nom} className="w-full h-full object-cover" />
+                    <SmartImage src={s.image} alt={s.nom} className="w-full h-full object-cover" sizes="(min-width: 1024px) 33vw, 100vw" widths={[320, 480, 640]} />
                   ) : (
                     <div className={`w-full h-full flex items-center justify-center ${
                       s.type === 'crudites'

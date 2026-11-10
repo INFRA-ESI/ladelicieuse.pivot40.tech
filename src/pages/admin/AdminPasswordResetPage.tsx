@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import loginBg from '@/assets/admin-login-bg.jpg';
-import logo from '@/assets/logo.png';
+import loginBg from '@/assets/admin-login-bg.webp';
+import logo from '@/assets/logo.webp';
 
 import { PASSWORD_RULES } from '@/lib/password';
 

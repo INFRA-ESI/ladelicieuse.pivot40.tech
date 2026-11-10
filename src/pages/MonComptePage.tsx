@@ -13,6 +13,7 @@ import { getClientFidelite, redeemPoints, type FideliteEntry } from '@/services/
 import type { PrefKey } from '@/lib/dietary';
 import { prepareAvatar } from '@/lib/avatarImage';
 import Avatar from '@/components/Avatar';
+import SmartImage from '@/components/SmartImage';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { formatPrice } from '@/data/products';
 import { toast } from 'sonner';
@@ -550,7 +551,7 @@ export default function MonComptePage() {
                         <DialogContent className="max-w-[min(92vw,30rem)] p-3 pt-12 sm:p-4 sm:pt-12 gap-3">
                           <DialogTitle className="sr-only">Photo de profil</DialogTitle>
                           <DialogDescription className="sr-only">Votre photo de profil en grand</DialogDescription>
-                          {user.avatar && <img src={user.avatar} alt={`Photo de profil de ${user.prenoms} ${user.nom}`} className="w-full aspect-square object-cover rounded-xl" />}
+                          {user.avatar && <SmartImage key={user.avatar} src={user.avatar} alt={`Photo de profil de ${user.prenoms} ${user.nom}`} className="w-full aspect-square object-cover rounded-xl" sizes="(min-width: 640px) 480px, 92vw" widths={[480, 640, 960]} priority />}
                           <button type="button" onClick={changeFromViewer} className="font-body text-sm py-2.5 border border-border rounded-xl text-foreground hover:bg-muted transition-colors">
                             Changer la photo
                           </button>

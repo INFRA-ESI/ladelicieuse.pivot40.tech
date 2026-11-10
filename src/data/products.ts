@@ -1,5 +1,5 @@
-import juicesImage from '@/assets/juices.jpg';
-import balancedMealImage from '@/assets/balanced-meal.jpg';
+import juicesImage from '@/assets/juices.webp';
+import balancedMealImage from '@/assets/balanced-meal.webp';
 import { formatPrixFcfa } from '@/lib/fcfa';
 
 // Données des ingrédients pour la personnalisation de salades
