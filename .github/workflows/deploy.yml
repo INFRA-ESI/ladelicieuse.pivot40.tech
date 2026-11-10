@@ -85,7 +85,13 @@ jobs:
           passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
           port: ${{ secrets.PORT || '22' }}
           script: |
+            # Dossiers du site (D) et de l'API (B). Le secret FOLDER est prioritaire ; s'il ne désigne pas un dossier valide, on prend
+            # celui où les conteneurs actuels ont été lancés (le chemin n'est pas affiché dans le journal, qui est public).
+            dossier_de() { docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$1" 2>/dev/null || true; }
             D="${{ secrets.FOLDER }}"
+            if [ ! -f "$D/.env" ]; then D=$(dossier_de la-delicieuse); fi
+            B="$D/backend"
+            if [ ! -f "$B/.env" ]; then B=$(dossier_de ladelicieuse-backend); fi
             if ! docker info > /dev/null 2>&1; then
               echo "ERREUR : Docker est absent ou n'est pas utilisable par l'utilisateur SSH (groupe docker)."
               exit 1
@@ -94,17 +100,19 @@ jobs:
               echo "ERREUR : ni « docker compose » ni « docker-compose » n'est installé."
               exit 1
             fi
-            if [ ! -d "$D" ] || [ ! -w "$D" ]; then
-              echo "ERREUR : le dossier du secret FOLDER n'existe pas ou n'est pas modifiable par l'utilisateur SSH."
+            if [ -z "$D" ] || [ ! -d "$D" ] || [ ! -w "$D" ]; then
+              echo "ERREUR : dossier du site introuvable ou non modifiable par l'utilisateur SSH (secret FOLDER, voir PRODUCTION.md)."
               exit 1
             fi
-            for f in .env backend/.env; do
-              if [ ! -f "$D/$f" ]; then
-                echo "ERREUR : fichier $f absent dans le dossier du site (variables de production, voir PRODUCTION.md)."
-                exit 1
-              fi
-            done
-            echo "Serveur vérifié : Docker disponible, dossier du site et fichiers .env présents."
+            if [ ! -f "$D/.env" ]; then
+              echo "ERREUR : fichier .env absent à la racine du site (VITE_API_URL, voir PRODUCTION.md)."
+              exit 1
+            fi
+            if [ -z "$B" ] || [ ! -f "$B/.env" ] || [ ! -w "$B" ]; then
+              echo "ERREUR : dossier de l'API introuvable, non modifiable, ou sans fichier .env (voir PRODUCTION.md)."
+              exit 1
+            fi
+            echo "Serveur vérifié : Docker disponible, dossiers du site et de l'API prêts, fichiers .env présents."
 
       # ── Envoyer les sources ──────────────────────────────────────────────────────────────────────────
       - name: Envoyer les sources au serveur
@@ -117,7 +125,7 @@ jobs:
           passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
           port: ${{ secrets.PORT || '22' }}
           source: release.tgz
-          target: ${{ secrets.FOLDER }}/.release
+          target: /tmp/ladelicieuse-release
 
       # ── Reconstruire et relancer les deux conteneurs ─────────────────────────────────────────────────
       - name: Reconstruire et relancer les conteneurs
@@ -131,34 +139,41 @@ jobs:
           port: ${{ secrets.PORT || '22' }}
           script: |
             set -e
+            # Dossiers du site (D) et de l'API (B). Le secret FOLDER est prioritaire ; s'il ne désigne pas un dossier valide, on prend
+            # celui où les conteneurs actuels ont été lancés (le chemin n'est pas affiché dans le journal, qui est public).
+            dossier_de() { docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$1" 2>/dev/null || true; }
             D="${{ secrets.FOLDER }}"
+            if [ ! -f "$D/.env" ]; then D=$(dossier_de la-delicieuse); fi
+            B="$D/backend"
+            if [ ! -f "$B/.env" ]; then B=$(dossier_de ladelicieuse-backend); fi
             cd "$D"
 
             if docker compose version > /dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
 
             # Les images téléversées vivaient dans le conteneur : on les met à l'abri sur le serveur (une seule fois,
             # si le dossier est encore vide) avant de remplacer le conteneur.
-            mkdir -p backend/public/uploads
-            if [ -z "$(ls -A backend/public/uploads 2>/dev/null)" ] && docker inspect ladelicieuse-backend > /dev/null 2>&1; then
-              docker cp ladelicieuse-backend:/app/public/uploads/. backend/public/uploads/ 2>/dev/null \
+            mkdir -p "$B/public/uploads"
+            if [ -z "$(ls -A "$B/public/uploads" 2>/dev/null)" ] && docker inspect ladelicieuse-backend > /dev/null 2>&1; then
+              docker cp ladelicieuse-backend:/app/public/uploads/. "$B/public/uploads/" 2>/dev/null \
                 && echo "Images téléversées récupérées depuis l'ancien conteneur" || true
             fi
 
             # Sources : on dépose la nouvelle version par-dessus l'ancienne (les .env ne sont pas dans l'archive).
-            tar -xzf .release/release.tgz -C "$D"
-            rm -rf .release
+            tar -xzf /tmp/ladelicieuse-release/release.tgz -C "$D"
+            if [ "$B" != "$D/backend" ]; then tar -xzf /tmp/ladelicieuse-release/release.tgz -C "$B" --strip-components=1 backend; fi
+            rm -rf /tmp/ladelicieuse-release
 
             # Un conteneur du même nom créé depuis un autre dossier bloquerait « up » : on le retire (il est sans état).
             for c in ladelicieuse-backend la-delicieuse; do
               if docker inspect "$c" > /dev/null 2>&1; then
-                wd=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$c")
-                case "$c" in ladelicieuse-backend) attendu="$D/backend" ;; *) attendu="$D" ;; esac
-                if [ "$wd" != "$attendu" ]; then docker rm -f "$c" > /dev/null; echo "Ancien conteneur $c retiré (créé depuis $wd)"; fi
+                wd=$(dossier_de "$c")
+                case "$c" in ladelicieuse-backend) attendu="$B" ;; *) attendu="$D" ;; esac
+                if [ "$wd" != "$attendu" ]; then docker rm -f "$c" > /dev/null; echo "Ancien conteneur $c retiré (créé depuis un autre dossier)"; fi
               fi
             done
 
             # API d'abord, puis le site.
-            (cd backend && $DC up -d --build)
+            (cd "$B" && $DC up -d --build)
             $DC up -d --build
 
             attendre() { # $1 = nom, $2 = adresse, $3 = conteneur
