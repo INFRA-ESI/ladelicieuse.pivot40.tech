@@ -82,7 +82,9 @@ sinon un événement émis par une instance n'atteint pas les navigateurs connec
 
 ## 5. Premier déploiement : ordre des opérations
 
-1. **Sauvegarder la base** : `mongodump --uri "$MONGO_URI" --out sauvegarde-avant-deploiement`.
+1. **Sauvegarde de la base** : automatique. Chaque déploiement lance un `mongodump` (conteneur `mongo:7` jetable) **avant** de modifier quoi que ce soit et s'arrête s'il échoue.
+   Les 7 dernières archives sont dans `~/sauvegardes-ladelicieuse/` (dossier personnel de l'utilisateur SSH), nommées `mongo-AAAAMMJJ-HHMMSS.archive.gz`.
+   Restauration : `docker run --rm -i -e MONGO_URI -v ~/sauvegardes-ladelicieuse:/s mongo:7 sh -c 'mongorestore --uri="$MONGO_URI" --archive=/s/<archive> --gzip --drop'` (avec `MONGO_URI` exporté depuis `backend/.env`).
 2. Vérifier `backend/.env` (§2) et `nginx` (§3).
 3. **Migrations au démarrage** (idempotentes) : prix hebdomadaire des formules, tarif présentiel des consultations, calories des plats,
    **renommage des numéros de commande `CMD-0001` → `LDD-0001`** (seul le préfixe change). Les reçus déjà envoyés gardent l'ancien numéro.
@@ -147,7 +149,7 @@ La CSP actuelle (`connect-src 'self' https: wss:`) autorise un collecteur en htt
 ## 7. Retour arrière
 
 - Front et backend : relancer le workflow « Deploy » sur l'ancienne version (lancement manuel, en choisissant dans « Use workflow from » une branche ou un tag placé sur le commit précédent).
-- Base : restaurer `sauvegarde-avant-deploiement` seulement si une migration a mal tourné (`mongorestore`).
+- Base : restaurer la dernière archive de `~/sauvegardes-ladelicieuse/` (commande au §5) seulement si une migration a mal tourné.
 
 ## 8. Points connus, à traiter après la mise en ligne
 

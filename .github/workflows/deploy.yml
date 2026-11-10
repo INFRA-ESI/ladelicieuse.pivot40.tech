@@ -152,6 +152,25 @@ jobs:
 
             if docker compose version > /dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
 
+            # Sauvegarde de la base AVANT toute modification : le déploiement s'arrête si elle échoue.
+            # mongodump tourne dans un conteneur jetable (rien à installer sur le serveur) ; l'adresse de la base ne passe jamais
+            # par la ligne de commande. Les 7 dernières sauvegardes sont conservées dans le dossier personnel de l'utilisateur SSH.
+            MONGO_URI=$(grep -E '^MONGO_URI=' "$B/.env" | head -1 | cut -d= -f2- | sed -E "s/[\"'[:space:]]//g")
+            if [ -z "$MONGO_URI" ]; then echo "ERREUR : MONGO_URI absent de backend/.env, sauvegarde impossible."; exit 1; fi
+            export MONGO_URI
+            SAUVEGARDES="$HOME/sauvegardes-ladelicieuse"
+            mkdir -p "$SAUVEGARDES"
+            NOM="mongo-$(date +%Y%m%d-%H%M%S).archive.gz"
+            if ! docker run --rm -e MONGO_URI -v "$SAUVEGARDES":/sauvegardes mongo:7 sh -c 'mongodump --uri="$MONGO_URI" --archive=/sauvegardes/'"$NOM"' --gzip --quiet'; then
+              rm -f "$SAUVEGARDES/$NOM"
+              echo "ERREUR : la sauvegarde de la base a échoué, rien n'a été modifié."
+              exit 1
+            fi
+            unset MONGO_URI
+            if [ ! -s "$SAUVEGARDES/$NOM" ]; then echo "ERREUR : sauvegarde vide, rien n'a été modifié."; rm -f "$SAUVEGARDES/$NOM"; exit 1; fi
+            echo "Base sauvegardée : $NOM ($(du -h "$SAUVEGARDES/$NOM" | cut -f1))"
+            ls -1t "$SAUVEGARDES"/mongo-*.archive.gz | tail -n +8 | xargs -r rm -f
+
             # Les images téléversées vivaient dans le conteneur : on les met à l'abri sur le serveur (une seule fois,
             # si le dossier est encore vide) avant de remplacer le conteneur.
             mkdir -p "$B/public/uploads"
