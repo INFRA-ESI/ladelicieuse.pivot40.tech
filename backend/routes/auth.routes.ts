@@ -10,6 +10,7 @@ import { rateLimiter } from '../middleware/rateLimiter.js';
 import { validate } from '../middleware/validate.js';
 import Settings from '../models/Settings.model.js';
 import { logger } from '../config/logger.js';
+import { primaryFrontendUrl } from '../config/frontendUrl.js';
 import { passwordSchema, loginPasswordError } from '../utils/password.js';
 
 const RequestOTPSchema = z.object({
@@ -132,10 +133,8 @@ router.post(
       const otp = generateOTP();
       await storeOTP(email, otp);
 
-      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress;
-
       try {
-        await sendLoginOTPEmail(email, otp, ip);
+        await sendLoginOTPEmail(email, otp);
       } catch (mailError) {
         // Un OTP que personne ne peut lire ne doit pas rester valide.
         await deleteOTP(email).catch(() => undefined);
@@ -235,7 +234,7 @@ router.post(
       if (email !== validCredentials.email) { res.json(neutral); return; }
 
       // Jamais l'en-tête Origin/Host de la requête : il permettrait d'envoyer un lien piégé à l'admin.
-      const baseUrl = process.env.FRONTEND_URL?.replace(/\/$/, '')
+      const baseUrl = primaryFrontendUrl()
         ?? (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:5100');
       if (!baseUrl) {
         logger.error('forgot-password impossible : FRONTEND_URL non défini en production');
@@ -247,9 +246,8 @@ router.post(
       const key   = `admin-reset:${hashResetToken(token)}`;
       await requireRedis().set(key, email, { ex: RESET_EXPIRY_S });
 
-      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress;
       try {
-        await sendAdminPasswordResetEmail(email, `${baseUrl}/admin/reset-password?token=${token}`, ip);
+        await sendAdminPasswordResetEmail(email, `${baseUrl}/admin/reset-password?token=${token}`);
         logger.info('Lien de réinitialisation admin envoyé');
       } catch (mailError) {
         await requireRedis().del(key).catch(() => undefined);

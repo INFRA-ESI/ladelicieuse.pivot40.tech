@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { singpayConfig } from '../config/singpay.config.js';
 import TransactionModel, { type TransactionProvider } from '../models/Transaction.model.js';
 import { logger } from '../config/logger.js';
+import { primaryFrontendUrl } from '../config/frontendUrl.js';
 import {
   SingPayMobileMoneyRequest,
   SingPayPaymentResponse,
@@ -112,7 +113,7 @@ class SingPayService {
     dto: InitiateCardPaymentDto & { successUrl?: string; cancelUrl?: string }
   ): Promise<{ link: string; exp: string; reference: string }> {
     const reference = this.generateReference(dto.orderId);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+    const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
 
     const payload = {
       portefeuille:     singpayConfig.walletId,

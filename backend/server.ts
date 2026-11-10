@@ -12,6 +12,7 @@ import { validateConfig } from './config/singpay.config.js';
 import { assertProductionConfig } from './config/production.config.js';
 import { swaggerDocument, swaggerUiOptions } from './config/swagger.config.js';
 import { logger } from './config/logger.js';
+import { frontendUrls } from './config/frontendUrl.js';
 
 // Routes
 import paymentRoutes       from './routes/payment.routes.js';
@@ -93,16 +94,17 @@ if (process.env.NODE_ENV !== 'production') {
     'http://localhost:3000',
   );
 }
-if (process.env.FRONTEND_URL) {
-  try {
-    const parsed = new URL(process.env.FRONTEND_URL);
-    if (['http:', 'https:'].includes(parsed.protocol)) {
-      allowedOrigins.push(process.env.FRONTEND_URL.replace(/\/$/, ''));
-    } else {
-      logger.error(`[CORS] FRONTEND_URL protocole invalide: "${process.env.FRONTEND_URL}" — ignoré`);
+if (frontendUrls().length > 0) {
+  for (const url of frontendUrls()) {
+    try {
+      if (['http:', 'https:'].includes(new URL(url).protocol)) {
+        allowedOrigins.push(url);
+      } else {
+        logger.error(`[CORS] FRONTEND_URL protocole invalide: "${url}" — ignoré`);
+      }
+    } catch {
+      logger.error(`[CORS] FRONTEND_URL mal formé: "${url}" — ignoré`);
     }
-  } catch {
-    logger.error(`[CORS] FRONTEND_URL mal formé: "${process.env.FRONTEND_URL}" — ignoré`);
   }
 } else if (process.env.NODE_ENV === 'production') {
   logger.error('[CORS] FRONTEND_URL non défini en production — aucune origine externe autorisée !');
@@ -292,7 +294,7 @@ async function start() {
   initRealtime(httpServer, { isOriginAllowed: (origin, req) => isOriginAllowed(origin, req.headers) });
   httpServer.listen(PORT, () => {
     logger.info(`Serveur lancé sur http://localhost:${PORT}`);
-    logger.info(`CORS activé pour ${process.env.FRONTEND_URL || 'http://localhost:5100'}`);
+    logger.info(`CORS activé pour ${frontendUrls().join(', ') || 'http://localhost:5100'}`);
   });
 }
 

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { primaryFrontendUrl } from '../config/frontendUrl.js';
 
 // ── Singleton SMTP ────────────────────────────────────────────────────────────
 let _transporter: nodemailer.Transporter | null = null;
@@ -191,20 +192,6 @@ function alertBox(html: string, borderColor = C.primary): string {
 </table>`;
 }
 
-function linkBox(href: string): string {
-  return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0">
-  <tr>
-    <td style="background:${C.bg};border-left:3px solid ${C.primary};
-               padding:12px 16px;border-radius:0 4px 4px 0;">
-      <a href="${href}"
-         style="font-family:'Courier New',Courier,monospace;font-size:10px;
-                color:${C.primary};word-break:break-all;text-decoration:none;">${href}</a>
-    </td>
-  </tr>
-</table>`;
-}
-
 function wrapper(rows: string, preheaderText = ''): string {
   return `<!DOCTYPE html>
 <html lang="fr" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
@@ -281,7 +268,7 @@ export async function sendBroadcastEmail(
   subject: string,
   message: string,
 ): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+  const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
   const bodyHtml = escapeHtml(message).split(/\n{2,}/).map(
     para => `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;
                   line-height:1.9;color:${C.textMid};">${para.replace(/\n/g, '<br>')}</p>`
@@ -318,7 +305,7 @@ export async function sendBroadcastEmail(
 // ── 1. Email de vérification de compte ───────────────────────────────────────
 
 export async function sendVerificationEmail(to: string, nom: string, token: string): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+  const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
   const verifyUrl   = `${frontendUrl}/verify-email?token=${token}`;
 
   const rows = `
@@ -346,9 +333,7 @@ export async function sendVerificationEmail(to: string, nom: string, token: stri
         <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
                   color:${C.textLight};line-height:1.7;">
           Ce lien est valable pendant <strong style="color:${C.textMid};">24 heures</strong>.
-          Si le bouton ne s'affiche pas correctement, copiez ce lien dans votre navigateur&nbsp;:
         </p>
-        ${linkBox(verifyUrl)}
 
         ${divider()}
 
@@ -369,7 +354,7 @@ export async function sendVerificationEmail(to: string, nom: string, token: stri
 // ── 2. Email de bienvenue (après vérification) ────────────────────────────────
 
 export async function sendWelcomeEmail(to: string, nom: string): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+  const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
 
   const rows = `
     ${header('Bienvenue')}
@@ -448,7 +433,7 @@ export async function sendWelcomeEmail(to: string, nom: string): Promise<void> {
 
 // ── 3. OTP connexion admin ────────────────────────────────────────────────────
 
-export async function sendLoginOTPEmail(to: string, otp: string, ip?: string): Promise<void> {
+export async function sendLoginOTPEmail(to: string, otp: string): Promise<void> {
   const date = new Date().toLocaleString('fr-FR', {
     timeZone: 'Africa/Libreville',
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -514,13 +499,6 @@ export async function sendLoginOTPEmail(to: string, otp: string, ip?: string): P
             <td style="padding:6px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;
                        color:${C.textMid};border-bottom:1px solid ${C.muted};">${date}</td>
           </tr>
-          ${ip ? `<tr>
-            <td style="padding:6px 0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
-                       letter-spacing:1px;text-transform:uppercase;color:${C.textLight};
-                       vertical-align:top;">IP</td>
-            <td style="padding:6px 0;font-family:'Courier New',Courier,monospace;font-size:13px;
-                       color:${C.textMid};">${ip}</td>
-          </tr>` : ''}
         </table>
 
         ${divider()}
@@ -535,7 +513,7 @@ export async function sendLoginOTPEmail(to: string, otp: string, ip?: string): P
     to,
     subject: `[${otp}] Code de connexion administrateur`,
     html:    wrapper(rows, `Votre code OTP administrateur : ${otp} — Valable 5 minutes.`),
-    text:    `Code de connexion administrateur : ${otp}\n\nValable 5 minutes.\nDate : ${date}${ip ? `\nIP : ${ip}` : ''}\n\nSi vous n'êtes pas à l'origine de cette connexion, sécurisez votre compte.`,
+    text:    `Code de connexion administrateur : ${otp}\n\nValable 5 minutes.\nDate : ${date}\n\nSi vous n'êtes pas à l'origine de cette connexion, sécurisez votre compte.`,
   });
 }
 
@@ -543,7 +521,7 @@ export async function sendLoginOTPEmail(to: string, otp: string, ip?: string): P
 
 // En production, un lien vers localhost serait envoyé au client sans que personne ne s'en aperçoive : on préfère échouer bruyamment.
 function siteUrl(): string {
-  const url = process.env.FRONTEND_URL?.replace(/\/$/, '');
+  const url = primaryFrontendUrl();
   if (url) return url;
   if (process.env.NODE_ENV === 'production') throw new Error('FRONTEND_URL non défini en production : lien de réinitialisation impossible');
   return 'http://localhost:5100';
@@ -577,9 +555,7 @@ export async function sendPasswordResetEmail(to: string, nom: string, token: str
         <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
                   color:${C.textLight};line-height:1.7;">
           Ce lien est valable pendant <strong style="color:${C.textMid};">1 heure</strong>.
-          Si le bouton ne s&apos;affiche pas correctement&nbsp;:
         </p>
-        ${linkBox(resetUrl)}
 
         ${divider()}
 
@@ -597,7 +573,7 @@ export async function sendPasswordResetEmail(to: string, nom: string, token: str
   });
 }
 
-export async function sendAdminPasswordResetEmail(to: string, resetUrl: string, ip?: string): Promise<void> {
+export async function sendAdminPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const rows = `
     ${header('Acc&egrave;s administrateur')}
     <tr>
@@ -619,13 +595,11 @@ export async function sendAdminPasswordResetEmail(to: string, resetUrl: string, 
         <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
                   color:${C.textLight};line-height:1.7;">
           Ce lien est valable <strong style="color:${C.textMid};">30 minutes</strong> et ne peut &ecirc;tre utilis&eacute; qu&apos;une fois.
-          Si le bouton ne s&apos;affiche pas correctement&nbsp;:
         </p>
-        ${linkBox(resetUrl)}
 
         ${divider()}
 
-        ${alertBox(`Si vous n&apos;&ecirc;tes pas &agrave; l&apos;origine de cette demande${ip ? ` (IP&nbsp;: ${ip})` : ''}, ignorez cet email. Votre mot de passe actuel reste inchang&eacute;.`, C.tomato)}
+        ${alertBox('Si vous n&apos;&ecirc;tes pas &agrave; l&apos;origine de cette demande, ignorez cet email. Votre mot de passe actuel reste inchang&eacute;.', C.tomato)}
       </td>
     </tr>
     ${footer()}`;
@@ -853,7 +827,7 @@ export interface OrderEmailData {
 }
 
 export async function sendOrderConfirmationEmail(to: string, order: OrderEmailData): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
+  const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
   const statusMeta  = STATUT_META[order.statut] ?? STATUT_META['en_attente'];
   const dateStr     = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
