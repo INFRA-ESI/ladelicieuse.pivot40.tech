@@ -132,6 +132,8 @@ jobs:
         if: steps.config.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1
         with:
+          # La reconstruction des images sur le serveur dépasse les 10 minutes par défaut de l'action.
+          command_timeout: 30m
           host: ${{ secrets.IP_SERVER }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.PRIVATE_KEY }}
