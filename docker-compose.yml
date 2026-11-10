@@ -6,7 +6,16 @@ services:
         VITE_API_URL: ${VITE_API_URL}
     env_file:
       - .env
+    environment:
+      # Le serveur du site relaie /api, /uploads et /socket.io vers le conteneur de l'API (réseau partagé ci-dessous).
+      API_TARGET: http://ladelicieuse-backend:3000
     ports:
       - "127.0.0.1:5101:5100"
     restart: always
     container_name: la-delicieuse
+
+# Réseau commun au site et à l'API (créé par le déploiement : docker network create ladelicieuse-net).
+networks:
+  default:
+    name: ladelicieuse-net
+    external: true

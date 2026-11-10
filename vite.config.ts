@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // https://vitejs.dev/config/
+// En production (conteneur Docker), l'API est dans un autre conteneur : API_TARGET donne son adresse (voir docker-compose.yml).
+const previewApiTarget = process.env.API_TARGET ?? 'http://localhost:3000';
+
 export default defineConfig(() => ({
   server: {
     host: "0.0.0.0",
@@ -49,15 +52,15 @@ export default defineConfig(() => ({
     ],
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: previewApiTarget,
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:3000',
+        target: previewApiTarget,
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: previewApiTarget,
         changeOrigin: true,
         ws: true,
       },

@@ -9,3 +9,9 @@ services:
     volumes:
       # Images téléversées : sans ce dossier sur l'hôte, elles disparaissent à chaque reconstruction du conteneur.
       - ./public/uploads:/app/public/uploads
+
+# Réseau commun au site et à l'API (créé par le déploiement : docker network create ladelicieuse-net).
+networks:
+  default:
+    name: ladelicieuse-net
+    external: true

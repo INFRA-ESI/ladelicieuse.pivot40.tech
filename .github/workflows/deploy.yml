@@ -177,6 +177,9 @@ jobs:
               fi
             done
 
+            # Réseau partagé : le site joint l'API par son nom de conteneur.
+            docker network inspect ladelicieuse-net > /dev/null 2>&1 || docker network create ladelicieuse-net > /dev/null
+
             # API d'abord, puis le site.
             (cd "$B" && $DC up -d --build)
             $DC up -d --build
@@ -192,6 +195,8 @@ jobs:
             }
             attendre "API" "http://127.0.0.1:5402/health/live" ladelicieuse-backend
             attendre "Site" "http://127.0.0.1:5101/" la-delicieuse
+            # De bout en bout : le site doit relayer /api jusqu'à l'API (sinon les visiteurs voient des erreurs 500).
+            attendre "Site vers API" "http://127.0.0.1:5101/api/menu" la-delicieuse
             curl -fsS "http://127.0.0.1:5402/health/ready" > /dev/null || echo "Attention : /health/ready en échec (MongoDB ou Redis)"
 
             docker image prune -f > /dev/null
