@@ -159,10 +159,12 @@ jobs:
             fi
 
             # Sources : on dépose la nouvelle version par-dessus l'ancienne (les .env ne sont pas dans l'archive).
-            # -m et --no-same-* : les dossiers existants peuvent appartenir à un autre utilisateur, on n'y change ni dates ni droits.
-            tar -xzmf /tmp/ladelicieuse-release/release.tgz --no-same-owner --no-same-permissions -C "$D"
-            if [ "$B" != "$D/backend" ]; then tar -xzmf /tmp/ladelicieuse-release/release.tgz --no-same-owner --no-same-permissions -C "$B" --strip-components=1 backend; fi
-            rm -rf /tmp/ladelicieuse-release
+            # Les dossiers existants peuvent appartenir à un autre utilisateur : cp n'y change ni droits ni dates (tar, si).
+            R=$(mktemp -d)
+            tar -xzf /tmp/ladelicieuse-release/release.tgz -C "$R"
+            cp -R --remove-destination --no-preserve=mode,ownership,timestamps "$R"/. "$D"/
+            if [ "$B" != "$D/backend" ]; then cp -R --remove-destination --no-preserve=mode,ownership,timestamps "$R"/backend/. "$B"/; fi
+            rm -rf "$R" /tmp/ladelicieuse-release
 
             # Un conteneur du même nom créé depuis un autre dossier bloquerait « up » : on le retire (il est sans état).
             for c in ladelicieuse-backend la-delicieuse; do
