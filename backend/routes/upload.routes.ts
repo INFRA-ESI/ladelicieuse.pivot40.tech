@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { verifyJWT } from './auth.routes.js';
+import { shrinkUpload, purgeVariants } from '../services/imageVariants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads');
@@ -135,8 +136,9 @@ router.post('/', verifyJWT, upload.single('image'), async (req: Request, res: Re
     return;
   }
 
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ success: true, url });
+  // Une photo de téléphone fait 3 à 5 Mo : on la garde en WebP, 1600 px maximum, pour que le site l'affiche vite.
+  const kept = await shrinkUpload(req.file.path);
+  res.json({ success: true, url: `/uploads/${path.basename(kept)}` });
 });
 
 // ── POST /api/upload/video — Vidéo de présentation ───────────────────────────
@@ -179,6 +181,7 @@ router.delete('/', verifyJWT, async (req: Request, res: Response): Promise<void>
   } catch {
     // Le fichier n'existe plus — non bloquant
   }
+  await purgeVariants(UPLOAD_DIR, `/uploads/${filename}`);
 
   res.json({ success: true });
 });

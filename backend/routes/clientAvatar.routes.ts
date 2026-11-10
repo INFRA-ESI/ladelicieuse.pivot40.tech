@@ -9,6 +9,7 @@ import { requireClient, type ClientRequest } from '../middleware/clientAuth.js';
 import { memoryRateLimiter } from '../middleware/rateLimiter.js';
 import { detectImageType, IMAGE_EXTENSION } from '../utils/imageType.js';
 import { logger } from '../config/logger.js';
+import { purgeVariants } from '../services/imageVariants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -26,6 +27,7 @@ async function removeStored(url: string | undefined): Promise<void> {
   const file = path.resolve(avatarDir(), path.basename(url));
   if (!file.startsWith(path.resolve(avatarDir()))) return;
   await fs.unlink(file).catch(() => undefined);
+  await purgeVariants(path.join(__dirname, '..', 'public', 'uploads'), `${PUBLIC_PREFIX}${path.basename(url)}`);
 }
 
 function receive(req: ClientRequest, res: Response, next: NextFunction): void {

@@ -48,6 +48,7 @@ import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import Settings from './models/Settings.model.js';
 import { initRealtime, closeRealtime } from './services/realtime.service.js';
+import { variantMiddleware } from './services/imageVariants.js';
 import { migratePlansToWeekly, migrateConsultationsPresentielPrice, migrateOrderNumbersToLdd, backfillMealNutrition } from './services/migrations.service.js';
 import { memoryRateLimiter } from './middleware/rateLimiter.js';
 import { hideInternalErrors } from './middleware/hideInternalErrors.js';
@@ -82,7 +83,11 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+// Les fichiers envoyés portent un nom aléatoire unique : leur contenu ne change jamais sous un même nom,
+// le navigateur peut les garder un an. `?w=480` sert une copie WebP réduite (voir imageVariants).
+const UPLOADS_ROOT = path.join(__dirname, 'public', 'uploads');
+app.use('/uploads', variantMiddleware(UPLOADS_ROOT));
+app.use('/uploads', express.static(UPLOADS_ROOT, { maxAge: '365d', immutable: true }));
 
 // ── CORS — whitelist explicite ────────────────────────────────────────────────
 const allowedOrigins: string[] = [];
