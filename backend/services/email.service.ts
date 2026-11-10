@@ -541,9 +541,16 @@ export async function sendLoginOTPEmail(to: string, otp: string, ip?: string): P
 
 // ── 4. Réinitialisation de mot de passe ──────────────────────────────────────
 
+// En production, un lien vers localhost serait envoyé au client sans que personne ne s'en aperçoive : on préfère échouer bruyamment.
+function siteUrl(): string {
+  const url = process.env.FRONTEND_URL?.replace(/\/$/, '');
+  if (url) return url;
+  if (process.env.NODE_ENV === 'production') throw new Error('FRONTEND_URL non défini en production : lien de réinitialisation impossible');
+  return 'http://localhost:5100';
+}
+
 export async function sendPasswordResetEmail(to: string, nom: string, token: string): Promise<void> {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5100';
-  const resetUrl    = `${frontendUrl}/reset-password?token=${token}`;
+  const resetUrl = `${siteUrl()}/reset-password?token=${token}`;
 
   const rows = `
     ${header('S&eacute;curit&eacute; du compte')}

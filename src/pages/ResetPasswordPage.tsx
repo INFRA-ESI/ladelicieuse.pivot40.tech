@@ -15,6 +15,7 @@ export default function ResetPasswordPage() {
   const [loading, setLoading]       = useState(false);
   const [success, setSuccess]       = useState(false);
   const [error, setError]           = useState('');
+  const [expired, setExpired]       = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -32,7 +33,10 @@ export default function ResetPasswordPage() {
         body: JSON.stringify({ token, password }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.message);
+      if (!data.success) {
+        if (res.status === 400 && /invalide|expir/i.test(String(data.message))) { setExpired(true); return; }
+        throw new Error(data.message);
+      }
       setSuccess(true);
     } catch (err) {
       setError((err as Error).message || 'Erreur lors de la réinitialisation.');
@@ -47,7 +51,7 @@ export default function ResetPasswordPage() {
     </button>
   );
 
-  if (!token) {
+  if (!token || expired) {
     return (
       <>
       <div className="min-h-screen flex items-center justify-center px-6 pt-24">
@@ -57,7 +61,7 @@ export default function ResetPasswordPage() {
           </div>
           <h2 className="font-display text-2xl text-foreground mb-3">Lien invalide</h2>
           <p className="font-body text-sm text-muted-foreground mb-6">
-            Ce lien de réinitialisation est invalide ou a expiré.
+            Ce lien de réinitialisation est invalide, a expiré ou a déjà été utilisé.
           </p>
           <Link
             to="/mot-de-passe-oublie"
@@ -125,6 +129,7 @@ export default function ResetPasswordPage() {
                     onChange={e => setPassword(e.target.value)}
                     placeholder="8 caractères, une majuscule, un chiffre"
                     autoComplete="new-password"
+                    autoFocus
                     className="w-full font-body text-sm px-4 py-3.5 pr-12 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">{eyeBtn}</div>

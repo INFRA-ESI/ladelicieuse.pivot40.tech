@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, Circle, Eye, EyeOff, KeyRound, Loader2, MailCheck } from '@/components/icons';
+import { AlertTriangle, ArrowLeft, Check, Circle, Eye, EyeOff, KeyRound, Loader2, MailCheck } from '@/components/icons';
 import { toast } from 'sonner';
 import { requestAdminPasswordReset, resetAdminPassword } from '@/services/authService';
 import { useAdminTheme } from '@/hooks/useAdminTheme';
@@ -89,7 +89,7 @@ function RequestLinkForm() {
       <div className="space-y-1.5">
         <Label htmlFor="email" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Email</Label>
         <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
-          autoComplete="email" placeholder="admin@example.com" disabled={loading} className="h-11" />
+          autoComplete="email" placeholder="admin@example.com" disabled={loading} className="h-11" autoFocus />
       </div>
       <Button type="submit" className="w-full h-11" disabled={loading || !email}>
         {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Envoi…</> : 'Envoyer le lien'}
@@ -104,6 +104,7 @@ function NewPasswordForm({ token }: { token: string }) {
   const [show, setShow]           = useState(false);
   const [loading, setLoading]     = useState(false);
   const [done, setDone]           = useState(false);
+  const [expired, setExpired]     = useState(false);
 
   const rulesOk = PASSWORD_RULES.every(r => r.test(password));
   const matches = password === confirm;
@@ -115,8 +116,20 @@ function NewPasswordForm({ token }: { token: string }) {
     const res = await resetAdminPassword(token, password);
     setLoading(false);
     if (res.success) setDone(true);
+    else if (/invalide|expir/i.test(res.message)) setExpired(true);
     else toast.error(res.message);
   };
+
+  if (expired) {
+    return (
+      <div className="text-center space-y-4">
+        <AlertTriangle className="w-10 h-10 text-destructive mx-auto" />
+        <h2 className="font-display text-xl text-foreground">Lien expiré ou déjà utilisé</h2>
+        <p className="text-sm text-muted-foreground">Un lien n'est valable que 30 minutes et une seule fois.</p>
+        <Button asChild className="w-full h-11"><Link to="/admin/forgot-password">Recevoir un nouveau lien</Link></Button>
+      </div>
+    );
+  }
 
   if (done) {
     return (
@@ -141,7 +154,7 @@ function NewPasswordForm({ token }: { token: string }) {
         <Label htmlFor="new-password" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Nouveau mot de passe</Label>
         <div className="relative">
           <Input id="new-password" type={show ? 'text' : 'password'} value={password}
-            onChange={e => setPassword(e.target.value)} autoComplete="new-password" disabled={loading} className="h-11 pr-11" />
+            onChange={e => setPassword(e.target.value)} autoComplete="new-password" disabled={loading} className="h-11 pr-11" autoFocus />
           <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? 'Masquer' : 'Afficher'}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
             {show ? <EyeOff size={17} /> : <Eye size={17} />}

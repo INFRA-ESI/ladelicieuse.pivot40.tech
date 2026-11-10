@@ -191,23 +191,28 @@ router.post('/forgot-password', rateLimiter(3, 900, 'client-forgot-pwd'), async 
       return;
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const neutral = { success: true, message: 'Si un compte correspond à cet email, vous recevrez un lien de réinitialisation.' };
+    const user = await User.findOne({ email: String(email).toLowerCase().trim() });
 
-    // Toujours répondre OK pour ne pas révéler si l'email existe
-    if (!user || !user.emailVerified) {
-      res.json({ success: true, message: 'Si un compte correspond à cet email, vous recevrez un lien de réinitialisation.' });
-      return;
-    }
+    // Toujours répondre OK pour ne pas révéler si l'email existe. Un compte pas encore vérifié peut aussi réinitialiser :
+    // le lien arrive dans sa boîte mail, ce qui prouve qu'elle lui appartient (voir reset-password).
+    if (!user) { res.json(neutral); return; }
 
     const token = crypto.randomBytes(32).toString('hex');
     user.passwordResetToken = token;
-    user.passwordResetExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 h, comme annoncé dans l'e-mail et sur la page
     await user.save();
 
-    await sendPasswordResetEmail(user.email, user.nom, token);
-    logger.info('Email reset mot de passe envoyé', { email: user.email });
+    try {
+      await sendPasswordResetEmail(user.email, user.nom, token);
+      logger.info('Email reset mot de passe envoyé', { email: user.email });
+    } catch (mailError) {
+      // Réponse identique : une erreur visible révélerait que le compte existe. L'échec est dans les journaux.
+      const { code, command, message } = mailError as NodeJS.ErrnoException & { command?: string };
+      logger.error('Envoi email réinitialisation client impossible', { code, command, message });
+    }
 
-    res.json({ success: true, message: 'Si un compte correspond à cet email, vous recevrez un lien de réinitialisation.' });
+    res.json(neutral);
   } catch (error) {
     logger.error('Erreur forgot-password', { error: (error as Error).message });
     res.status(500).json({ success: false, message: 'Erreur lors de la demande de réinitialisation.' });
@@ -276,6 +281,8 @@ router.post('/reset-password', memoryRateLimiter(10, 900, 'client-reset-pwd'), a
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    user.emailVerified = true; // le lien reçu par e-mail prouve que l'adresse est bien la sienne
+    user.emailVerificationToken = undefined;
     await user.save();
 
     logger.info('Mot de passe réinitialisé', { email: user.email });
