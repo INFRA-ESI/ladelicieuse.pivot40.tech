@@ -1,10 +1,22 @@
-import { defineConfig } from "vite";
+import { defineConfig, type ProxyOptions } from "vite";
+import type { ClientRequest, IncomingMessage } from "node:http";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // https://vitejs.dev/config/
 // En production (conteneur Docker), l'API est dans un autre conteneur : API_TARGET donne son adresse (voir docker-compose.yml).
 const previewApiTarget = process.env.API_TARGET ?? 'http://localhost:3000';
+
+// changeOrigin remplace l'en-tête Host par celui de l'API : sans x-forwarded-host, l'API ne peut plus reconnaître
+// qu'une requête du navigateur vient du site lui-même (règle « même origine » du CORS) et la refuse.
+const forwardHost: ProxyOptions['configure'] = proxy => {
+  const set = (proxied: ClientRequest, req: IncomingMessage) => {
+    const host = req.headers['x-forwarded-host'] ?? req.headers.host;
+    if (typeof host === 'string' && host) proxied.setHeader('x-forwarded-host', host);
+  };
+  proxy.on('proxyReq', set);
+  proxy.on('proxyReqWs', set);
+};
 
 export default defineConfig(() => ({
   server: {
@@ -54,14 +66,17 @@ export default defineConfig(() => ({
       '/api': {
         target: previewApiTarget,
         changeOrigin: true,
+        configure: forwardHost,
       },
       '/uploads': {
         target: previewApiTarget,
         changeOrigin: true,
+        configure: forwardHost,
       },
       '/socket.io': {
         target: previewApiTarget,
         changeOrigin: true,
+        configure: forwardHost,
         ws: true,
       },
     },
