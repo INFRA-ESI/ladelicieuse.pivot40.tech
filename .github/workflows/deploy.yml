@@ -2,6 +2,10 @@ name: Deploy
 
 # Le déploiement ne part qu'une fois la CI (lint, typage, tests, build) terminée AVEC SUCCÈS sur main.
 # Le lancement manuel reste possible (workflow_dispatch).
+#
+# En production, le site et l'API tournent dans deux conteneurs Docker (voir docker-compose.yml à la racine et
+# backend/docker-compose.yml). Le serveur reconstruit les images à partir des sources envoyées ici : les
+# variables VITE_* et les secrets de l'API viennent des fichiers .env déjà présents sur le serveur.
 on:
   workflow_run:
     workflows: [CI]
@@ -15,7 +19,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to production (VPS)
+    name: Deploy to production (Docker)
     runs-on: ubuntu-latest
     environment: production
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
@@ -64,26 +68,14 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - uses: actions/setup-node@v7
+      # Les sources suivies par git, sans .env ni node_modules : le serveur n'a pas besoin d'accéder au dépôt GitHub.
+      # Les images téléversées (données des clients) ne sont jamais écrasées par celles du dépôt.
+      - name: Préparer l'archive des sources
         if: steps.config.outputs.ready == 'true'
-        with:
-          node-version: 22
-          cache: npm
+        run: git archive --format=tar.gz --output=release.tgz HEAD -- . ':(exclude)backend/public/uploads'
 
-      # ── Build frontend (avec les secrets GitHub) ────────────────────────────
-      - name: Install frontend dependencies
-        if: steps.config.outputs.ready == 'true'
-        run: npm ci
-
-      - name: Build frontend
-        if: steps.config.outputs.ready == 'true'
-        run: npm run build
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
-
-      # ── Vérifier le dossier du site sur le serveur avant d'y écrire quoi que ce soit ─────────────────
-      - name: Check site folder on VPS
+      # ── Vérifier le serveur avant d'y écrire quoi que ce soit ────────────────────────────────────────
+      - name: Vérifier le serveur (Docker, dossier, fichiers .env)
         if: steps.config.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1
         with:
@@ -94,20 +86,28 @@ jobs:
           port: ${{ secrets.PORT || '22' }}
           script: |
             D="${{ secrets.FOLDER }}"
-            if [ ! -d "$D/.git" ]; then
-              echo "ERREUR : le dossier du secret FOLDER n'existe pas ou n'est pas un dépôt git."
-              echo "Le serveur doit d'abord être préparé (voir « Préparation du serveur » dans PRODUCTION.md)."
+            if ! docker info > /dev/null 2>&1; then
+              echo "ERREUR : Docker est absent ou n'est pas utilisable par l'utilisateur SSH (groupe docker)."
               exit 1
             fi
-            if [ ! -w "$D" ]; then
-              echo "ERREUR : le dossier du site n'est pas modifiable par l'utilisateur de déploiement."
+            if ! docker compose version > /dev/null 2>&1 && ! docker-compose version > /dev/null 2>&1; then
+              echo "ERREUR : ni « docker compose » ni « docker-compose » n'est installé."
               exit 1
             fi
-            echo "Dossier du site vérifié (dépôt git, accessible en écriture)."
+            if [ ! -d "$D" ] || [ ! -w "$D" ]; then
+              echo "ERREUR : le dossier du secret FOLDER n'existe pas ou n'est pas modifiable par l'utilisateur SSH."
+              exit 1
+            fi
+            for f in .env backend/.env; do
+              if [ ! -f "$D/$f" ]; then
+                echo "ERREUR : fichier $f absent dans le dossier du site (variables de production, voir PRODUCTION.md)."
+                exit 1
+              fi
+            done
+            echo "Serveur vérifié : Docker disponible, dossier du site et fichiers .env présents."
 
-      # ── Envoyer le dist/ sur le VPS (tar sur SSH : rien à installer sur le serveur) ─────────────────
-      # Le site est déposé dans dist.new ; la bascule vers dist n'a lieu qu'à l'étape suivante, une fois tout reçu.
-      - name: Upload frontend dist to VPS
+      # ── Envoyer les sources ──────────────────────────────────────────────────────────────────────────
+      - name: Envoyer les sources au serveur
         if: steps.config.outputs.ready == 'true'
         uses: appleboy/scp-action@v1
         with:
@@ -116,13 +116,11 @@ jobs:
           key: ${{ secrets.PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
           port: ${{ secrets.PORT || '22' }}
-          source: dist/*
-          target: ${{ secrets.FOLDER }}/dist.new
-          strip_components: 1
-          rm: true
+          source: release.tgz
+          target: ${{ secrets.FOLDER }}/.release
 
-      # ── Backend : git pull + build + PM2 restart ────────────────────────────
-      - name: Deploy backend via SSH
+      # ── Reconstruire et relancer les deux conteneurs ─────────────────────────────────────────────────
+      - name: Reconstruire et relancer les conteneurs
         if: steps.config.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1
         with:
@@ -133,45 +131,48 @@ jobs:
           port: ${{ secrets.PORT || '22' }}
           script: |
             set -e
-            cd ${{ secrets.FOLDER }}
+            D="${{ secrets.FOLDER }}"
+            cd "$D"
 
-            # Bascule du site : le nouveau dist remplace l'ancien en deux renommages (pas de dossier à moitié copié).
-            if [ -f dist.new/index.html ]; then
-              rm -rf dist.old
-              if [ -d dist ]; then mv dist dist.old; fi
-              mv dist.new dist
-              rm -rf dist.old
-              echo "Site mis à jour"
-            else
-              echo "dist.new/index.html introuvable : envoi du site échoué"
-              exit 1
+            if docker compose version > /dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
+
+            # Les images téléversées vivaient dans le conteneur : on les met à l'abri sur le serveur (une seule fois,
+            # si le dossier est encore vide) avant de remplacer le conteneur.
+            mkdir -p backend/public/uploads
+            if [ -z "$(ls -A backend/public/uploads 2>/dev/null)" ] && docker inspect ladelicieuse-backend > /dev/null 2>&1; then
+              docker cp ladelicieuse-backend:/app/public/uploads/. backend/public/uploads/ 2>/dev/null \
+                && echo "Images téléversées récupérées depuis l'ancien conteneur" || true
             fi
 
-            # Aligne le serveur sur main, même si l'historique a été réécrit (un « git pull » échouerait alors).
-            git fetch origin main
-            git reset --hard origin/main
+            # Sources : on dépose la nouvelle version par-dessus l'ancienne (les .env ne sont pas dans l'archive).
+            tar -xzf .release/release.tgz -C "$D"
+            rm -rf .release
 
-            cd backend
-            # TypeScript (tsc) est une dépendance de développement : il faut l'installer pour compiler, puis la retirer.
-            npm ci
-            npm run build
-            npm prune --omit=dev
-
-            pm2 restart ladelicieuse-api || pm2 start dist/server.js --name ladelicieuse-api
-            pm2 save
-
-            # Vérifie que le serveur est vraiment reparti (sinon le déploiement est en échec et le journal s'affiche).
-            PORT=$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '\r')
-            PORT=${PORT:-3000}
-            for i in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${PORT}/health/live" > /dev/null; then
-                echo "Serveur en ligne après ${i} s"
-                curl -fsS "http://127.0.0.1:${PORT}/health/ready" || echo "Attention : /health/ready en échec (MongoDB ou Redis)"
-                echo "Deployment complete"
-                exit 0
+            # Un conteneur du même nom créé depuis un autre dossier bloquerait « up » : on le retire (il est sans état).
+            for c in ladelicieuse-backend la-delicieuse; do
+              if docker inspect "$c" > /dev/null 2>&1; then
+                wd=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$c")
+                case "$c" in ladelicieuse-backend) attendu="$D/backend" ;; *) attendu="$D" ;; esac
+                if [ "$wd" != "$attendu" ]; then docker rm -f "$c" > /dev/null; echo "Ancien conteneur $c retiré (créé depuis $wd)"; fi
               fi
-              sleep 1
             done
-            echo "Le serveur ne répond pas après le redémarrage"
-            pm2 logs ladelicieuse-api --nostream --lines 60
-            exit 1
+
+            # API d'abord, puis le site.
+            (cd backend && $DC up -d --build)
+            $DC up -d --build
+
+            attendre() { # $1 = nom, $2 = adresse, $3 = conteneur
+              for i in $(seq 1 60); do
+                if curl -fsS "$2" > /dev/null 2>&1; then echo "$1 en ligne après ${i} s"; return 0; fi
+                sleep 1
+              done
+              echo "$1 ne répond pas après le redémarrage"
+              docker logs --tail 60 "$3"
+              return 1
+            }
+            attendre "API" "http://127.0.0.1:5402/health/live" ladelicieuse-backend
+            attendre "Site" "http://127.0.0.1:5101/" la-delicieuse
+            curl -fsS "http://127.0.0.1:5402/health/ready" > /dev/null || echo "Attention : /health/ready en échec (MongoDB ou Redis)"
+
+            docker image prune -f > /dev/null
+            echo "Deployment complete"

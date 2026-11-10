@@ -6,10 +6,17 @@ Ce document décrit ce qu'il faut avoir en place AVANT le premier déploiement, 
 
 - Un push sur `main` lance la **CI** (lint, typage, tests front et backend avec une vraie MongoDB, builds).
 - Le **déploiement** ne part que si la CI est terminée **avec succès** sur `main` (ou en lancement manuel).
-- Il compile le front sur GitHub, le copie dans `dist/` sur le serveur, met à jour le backend, le recompile, le relance avec pm2
-  et **vérifie `/health/live`** : si le serveur ne repart pas, le déploiement est en échec et les journaux s'affichent.
+- Il envoie les sources du commit validé sur le serveur (archive git, sans les `.env` ni les images téléversées), reconstruit les **deux conteneurs Docker**
+  (`docker compose up -d --build` dans `backend/` puis à la racine) et **vérifie** l'API (`127.0.0.1:5402/health/live`) et le site (`127.0.0.1:5101`) :
+  si un conteneur ne repart pas, le déploiement est en échec et ses journaux s'affichent.
+- Ports de production, ouverts sur `127.0.0.1` seulement (nginx fait la jonction) : **site 5101** (conteneur `la-delicieuse`, port interne 5100),
+  **API 5402** (conteneur `ladelicieuse-backend`, port interne 3000).
+- Les variables viennent de deux fichiers qui restent sur le serveur : `.env` à la racine (`VITE_API_URL`, `VITE_*`, intégrées au build du site)
+  et `backend/.env` (§2). Le déploiement échoue avec un message clair si l'un des deux manque.
 
 ## 2. Variables d'environnement du backend (`backend/.env` sur le serveur)
+
+`PORT` doit rester à 3000 (ou absent) : c'est le port interne du conteneur, publié sur 5402 par `backend/docker-compose.yml`.
 
 | Variable | Obligatoire | Effet si absente ou fausse |
 |---|---|---|
@@ -28,24 +35,17 @@ Au démarrage, le serveur journalise une alerte `[Config]` pour chaque dépendan
 
 ## 3. nginx
 
-Le front est servi par nginx depuis `dist/`, l'API et le temps réel sont relayés au backend (port 3000 par défaut).
+nginx tourne sur le serveur (pas dans Docker). Il envoie le site au conteneur du front (`127.0.0.1:5101`) et l'API, les fichiers téléversés et le temps réel
+au conteneur de l'API (`127.0.0.1:5402`). Le conteneur du front relaie lui aussi `/api` vers `localhost:3000` (réglage de `vite preview`), ce qui ne marche pas depuis
+son conteneur : **ne pas compter dessus, `/api`, `/uploads` et `/socket.io` doivent aller directement au port 5402 dans nginx**.
 
 ```nginx
 server {
     listen 443 ssl http2;
     server_name ladelicieuse.pivot40.tech;
-    root /chemin/du/projet/dist;
-    index index.html;
-
-    # Fichiers à empreinte : cache d'un an
-    location /assets/ {
-        add_header Cache-Control "public, max-age=31536000, immutable";
-        try_files $uri =404;
-    }
-
     # API et fichiers téléversés
     location ~ ^/(api|uploads)/ {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:5402;
         proxy_set_header Host $host;
         # IMPORTANT : écraser l'en-tête, ne jamais le laisser venir du navigateur (limites de débit par IP)
         proxy_set_header X-Forwarded-For $remote_addr;
@@ -54,7 +54,7 @@ server {
 
     # Temps réel (Socket.IO) : sans ces deux en-têtes, les pages retombent sur le rechargement périodique
     location /socket.io/ {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:5402;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -64,7 +64,10 @@ server {
     }
 
     location / {
-        try_files $uri /index.html;
+        proxy_pass http://127.0.0.1:5101;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
@@ -73,7 +76,7 @@ Si nginx ajoute sa propre politique de sécurité (CSP), elle doit autoriser `fo
 
 ## 4. Une seule instance du backend
 
-Le temps réel (Socket.IO) garde ses connexions en mémoire du processus. Garder **une seule instance** pm2 (mode `fork`, pas `cluster`),
+Le temps réel (Socket.IO) garde ses connexions en mémoire du processus. Garder **un seul conteneur** d'API (pas de `--scale`),
 sinon un événement émis par une instance n'atteint pas les navigateurs connectés à l'autre. Passer à plusieurs instances demandera un adaptateur
 (Redis classique, pas Upstash REST).
 
@@ -91,36 +94,37 @@ sinon un événement émis par une instance n'atteint pas les navigateurs connec
 
 ## 5 bis. Préparation du serveur (une seule fois, par la personne qui administre le VPS)
 
-À faire AVANT d'activer le déploiement automatique. Prérequis : Node.js 20 ou plus, npm, git, pm2, nginx, MongoDB accessible.
+À faire AVANT d'activer le déploiement automatique. Prérequis : Docker avec le plugin Compose, nginx, MongoDB accessible. L'utilisateur SSH du déploiement doit
+pouvoir lancer `docker` (groupe `docker`) et écrire dans le dossier du site. Aucun accès du serveur au dépôt GitHub n'est nécessaire (les sources sont envoyées par le déploiement).
 
 ```bash
-# 1. Cloner le dépôt dans le dossier du site (ce chemin devient le secret GitHub FOLDER)
-sudo mkdir -p /var/www/ladelicieuse && sudo chown "$USER": /var/www/ladelicieuse
-git clone https://github.com/INFRA-ESI/ladelicieuse.pivot40.tech.git /var/www/ladelicieuse
+# 1. Dossier du site (ce chemin est le secret GitHub FOLDER)
+sudo mkdir -p /var/www/ladelicieuse/backend && sudo chown -R "$USER": /var/www/ladelicieuse
 
-# 2. Configurer l'API (valeurs : §2)
-cp /var/www/ladelicieuse/backend/.env.example /var/www/ladelicieuse/backend/.env
-nano /var/www/ladelicieuse/backend/.env            # NODE_ENV=production, JWT_SECRET, MONGO_URI, ADMIN_*, FRONTEND_URL…
+# 2. Fichiers de variables (modèles : .env.example et backend/.env.example dans le dépôt)
+nano /var/www/ladelicieuse/.env            # VITE_API_URL=https://ladelicieuse.pivot40.tech, VITE_ADMIN_EMAIL…
+nano /var/www/ladelicieuse/backend/.env    # §2 : NODE_ENV=production, JWT_SECRET, MONGO_URI, ADMIN_*, FRONTEND_URL, Upstash, e-mail…
 
-# 3. Compiler et lancer l'API, une seule instance (§4)
-cd /var/www/ladelicieuse/backend && npm ci && npm run build && npm prune --omit=dev
-pm2 start dist/server.js --name ladelicieuse-api && pm2 save && pm2 startup   # exécuter la commande affichée par pm2 startup
-
-# 4. nginx : configuration du §3 (root = /var/www/ladelicieuse/dist), puis
+# 3. nginx : configuration du §3, puis
 sudo nginx -t && sudo systemctl reload nginx
 
+# 4. Premier lancement : le déploiement GitHub s'en charge (« Run workflow » sur Deploy), ou à la main depuis le dossier du site :
+#    (cd backend && docker compose up -d --build) && docker compose up -d --build
+
 # 5. Contrôle
-curl -fsS http://127.0.0.1:3000/health/live && curl -fsS http://127.0.0.1:3000/health/ready
+curl -fsS http://127.0.0.1:5402/health/live && curl -fsS http://127.0.0.1:5402/health/ready && curl -fsS -o /dev/null http://127.0.0.1:5101/
 ```
 
-Le dossier du site doit être modifiable par l'utilisateur SSH du déploiement (secrets `USER`, `IP_SERVER`, `PORT`, `PRIVATE_KEY`, `PASSPHRASE_PRIVATE_KEY`).
+Si le site tourne déjà dans des conteneurs portant ces noms (`ladelicieuse-backend`, `la-delicieuse`) créés depuis un autre dossier, le déploiement les remplace
+(ils sont sans état) et récupère d'abord les images téléversées de l'ancien conteneur dans `backend/public/uploads` du serveur.
+
 Une fois le serveur prêt, dans GitHub : mettre à jour le secret `FOLDER` si le chemin diffère, puis créer la variable de dépôt `DEPLOY_AUTO` = `true`
 (Settings > Secrets and variables > Actions > Variables). Un lancement manuel du workflow « Deploy » fonctionne sans cette variable.
 
 ## 6. Vérifications après déploiement
 
-- `curl https://ladelicieuse.pivot40.tech/health/live` → 200 ; `/health/ready` → 200 (MongoDB et Redis répondent).
-- Journaux pm2 : aucune alerte `[Config]` inattendue ; message « Serveur lancé ».
+- Sur le serveur : `curl http://127.0.0.1:5402/health/live` → 200 ; `/health/ready` → 200 (MongoDB et Redis répondent).
+- `docker logs --tail 80 ladelicieuse-backend` : aucune alerte `[Config]` inattendue ; message « Serveur lancé ».
 - Connexion à `/admin/login` : le code arrive par e-mail.
 - Une commande de test en espèces : elle apparaît dans l'admin aussitôt (temps réel), numéro `LDD-…`, notification « Nouvelle commande ».
 - Les polices de la marque s'affichent (Cormorant Garamond, Lato).
@@ -142,8 +146,7 @@ La CSP actuelle (`connect-src 'self' https: wss:`) autorise un collecteur en htt
 
 ## 7. Retour arrière
 
-- Front : relancer le déploiement du commit précédent (lancement manuel du workflow « Deploy » sur l'ancienne version).
-- Backend : `git checkout <commit précédent>` dans le dossier du serveur, `cd backend && npm ci && npm run build && npm prune --omit=dev`, `pm2 restart ladelicieuse-api`.
+- Front et backend : relancer le workflow « Deploy » sur l'ancienne version (lancement manuel, en choisissant dans « Use workflow from » une branche ou un tag placé sur le commit précédent).
 - Base : restaurer `sauvegarde-avant-deploiement` seulement si une migration a mal tourné (`mongorestore`).
 
 ## 8. Points connus, à traiter après la mise en ligne

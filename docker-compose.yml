@@ -1,6 +1,11 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:5101:5100"
     restart: always

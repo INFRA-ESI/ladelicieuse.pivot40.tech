@@ -2,7 +2,10 @@ services:
   backend:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:5402:3000"
     restart: unless-stopped
     container_name: ladelicieuse-backend
     env_file: .env
+    volumes:
+      # Images téléversées : sans ce dossier sur l'hôte, elles disparaissent à chaque reconstruction du conteneur.
+      - ./public/uploads:/app/public/uploads

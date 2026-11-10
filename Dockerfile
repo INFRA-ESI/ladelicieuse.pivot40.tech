@@ -10,6 +10,8 @@ RUN npm install
 COPY . .
 
 # Build de l'application
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # Exposition du port 5100
