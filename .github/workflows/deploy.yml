@@ -199,8 +199,9 @@ jobs:
             # Réseau partagé : le site joint l'API par son nom de conteneur.
             docker network inspect ladelicieuse-net > /dev/null 2>&1 || docker network create ladelicieuse-net > /dev/null
 
-            # API d'abord, puis le site.
-            (cd "$B" && $DC up -d --build)
+            # API d'abord, puis le site. --force-recreate : le conteneur de l'API est toujours recréé, donc il relit
+            # backend/.env (e-mail, secrets) à chaque déploiement, même si les sources n'ont pas changé.
+            (cd "$B" && $DC up -d --build --force-recreate)
             $DC up -d --build
 
             attendre() { # $1 = nom, $2 = adresse, $3 = conteneur

@@ -7,7 +7,7 @@ Ce document décrit ce qu'il faut avoir en place AVANT le premier déploiement, 
 - Un push sur `main` lance la **CI** (lint, typage, tests front et backend avec une vraie MongoDB, builds).
 - Le **déploiement** ne part que si la CI est terminée **avec succès** sur `main` (ou en lancement manuel).
 - Il envoie les sources du commit validé sur le serveur (archive git, sans les `.env` ni les images téléversées), reconstruit les **deux conteneurs Docker**
-  (`docker compose up -d --build` dans `backend/` puis à la racine) et **vérifie** l'API (`127.0.0.1:5402/health/live`) et le site (`127.0.0.1:5101`) :
+  (`docker compose up -d --build --force-recreate` dans `backend/`, puis `docker compose up -d --build` à la racine ; l'API est toujours recréée, elle relit donc `backend/.env` à chaque déploiement) et **vérifie** l'API (`127.0.0.1:5402/health/live`) et le site (`127.0.0.1:5101`) :
   si un conteneur ne repart pas, le déploiement est en échec et ses journaux s'affichent.
 - Ports de production, ouverts sur `127.0.0.1` seulement (nginx fait la jonction) : **site 5101** (conteneur `la-delicieuse`, port interne 5100),
   **API 5402** (conteneur `ladelicieuse-backend`, port interne 3000).
