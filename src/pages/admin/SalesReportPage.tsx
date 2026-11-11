@@ -9,7 +9,8 @@ import {
 } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet } from '@/services/adminApiService';
-import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
+import { BRAND, downloadPdf, toneFor, type PdfBlock } from '@/lib/pdfDocument';
+import { downloadBlob, safeFileName } from '@/lib/downloadFile';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/admin/TablePagination';
 
@@ -399,130 +400,68 @@ export default function SalesReportPage() {
     }
 
     const csv = '﻿' + rows.map(r => r.map(cell).join(sep)).join('\r\n'); // BOM pour Excel
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `rapport-ventes-${periodLabel.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([csv], { type: 'text/csv;charset=utf-8;' }),
+      `${period === 'jour' ? 'rapport-journalier' : 'rapport-ventes'}-${safeFileName(periodLabel)}.csv`,
+    );
+    toast.success('CSV enregistré dans vos téléchargements');
   };
 
-  // ── Export PDF (impression navigateur) ───────────────────────────────────────
-  const printReport = () => {
+  // ── Export PDF : fichier enregistré dans le dossier de téléchargements ───────
+  const exportPDF = () => {
     const genDate = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const n = (v: number) => v.toLocaleString('fr-FR');
+    const daily = period === 'jour';
+    const totalMarge = r1(stats.margePct);
 
-    // Barre de progression CSS pour la marge
-    const bar = (pct: number) => {
-      const clr = pct >= 55 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
-      const w   = Math.max(4, Math.min(100, pct));
-      return `<div style="display:flex;align-items:center;gap:6px">
-        <div style="flex:1;height:5px;background:#eee"><div style="width:${w}%;height:100%;background:${clr}"></div></div>
-        <span style="font-size:11px;font-weight:700;color:${clr};width:36px;text-align:right">${pct}%</span>
-      </div>`;
-    };
-
-    const detailRows = (period === 'mois' && periodBilanRows.length > 0)
-      ? periodBilanRows.map(r => {
-          const pct = r.revenus > 0 ? r1(r.benefice / r.revenus * 100) : 0;
-          return `<tr>
-            <td><strong>${escapeHtml(r.mois)} ${new Date(r.moisKey + '-01').getFullYear()}</strong></td>
-            <td class="r">${n(r.revenus)}</td>
-            <td class="r">${r.count}</td>
-            <td class="r">${n(r.coutMatieres)}</td>
-            <td class="r">${n(r.benefice)}</td>
-            <td style="min-width:120px">${bar(pct)}</td>
-          </tr>`;
-        }).join('')
+    const detailRows: string[][] = (period === 'mois' && periodBilanRows.length > 0)
+      ? periodBilanRows.map(r => [
+          `${r.mois} ${new Date(r.moisKey + '-01').getFullYear()}`, n(r.revenus), String(r.count), n(r.coutMatieres), n(r.benefice),
+          `${r.revenus > 0 ? r1(r.benefice / r.revenus * 100) : 0}%`,
+        ])
       : periodDays.map(d => {
           const m = d.revenus - d.cout;
-          const pct = d.revenus > 0 ? r1(m / d.revenus * 100) : 0;
-          return `<tr>
-            <td>${escapeHtml(d.dateStr)}</td>
-            <td class="r">${n(d.revenus)}</td>
-            <td class="r">${d.commandes}</td>
-            <td class="r">${n(d.cout)}</td>
-            <td class="r">${n(m)}</td>
-            <td style="min-width:120px">${bar(pct)}</td>
-          </tr>`;
-        }).join('');
+          return [d.dateStr, n(d.revenus), String(d.commandes), n(d.cout), n(m), `${d.revenus > 0 ? r1(m / d.revenus * 100) : 0}%`];
+        });
 
-    const prodRows = sortedProducts.map((p, i) =>
-      `<tr>
-        <td class="r" style="color:#888">${i + 1}</td>
-        <td><strong>${escapeHtml(p.nom)}</strong></td>
-        <td class="r">${p.vendu}</td>
-        <td class="r"><strong>${n(p.ca)}</strong></td>
-        <td class="r">${n(p.coutTotal)}</td>
-        <td class="r">${n(p.marge)}</td>
-        <td style="min-width:120px">${bar(p.margePct)}</td>
-      </tr>`
-    ).join('');
+    const blocks: PdfBlock[] = [
+      { kind: 'section', title: '1. Indicateurs clés de performance' },
+      { kind: 'kpis', items: [
+        { label: 'Revenus totaux', value: n(stats.revenus), unit: 'FCFA', strong: true },
+        { label: 'Marge brute', value: n(stats.marge), unit: 'FCFA', strong: true },
+        { label: 'Commandes', value: String(stats.commandes) },
+        { label: 'Panier moyen', value: n(Math.round(stats.panierMoyen)), unit: 'FCFA' },
+        { label: 'Coût matières', value: n(stats.cout), unit: 'FCFA' },
+        { label: 'Résultat net', value: n(stats.revenus - stats.cout), unit: 'FCFA', tone: toneFor(totalMarge) },
+      ] },
+      { kind: 'gauge', label: 'Taux de marge global', value: totalMarge, tone: toneFor(totalMarge),
+        caption: totalMarge >= 55 ? 'Excellente rentabilité' : totalMarge >= 40 ? 'Rentabilité correcte' : 'Marge à améliorer' },
+    ];
+    if (detailRows.length > 0) {
+      blocks.push(
+        { kind: 'section', title: daily ? '2. Ventes du jour' : `2. Détail ${period === 'mois' ? 'mensuel' : 'journalier'}` },
+        { kind: 'table', head: ['Période', 'Revenus (FCFA)', 'Commandes', 'Coût (FCFA)', 'Marge (FCFA)', 'Marge %'], rows: detailRows,
+          align: ['left', 'right', 'right', 'right', 'right', 'right'], toneColumn: 5 },
+      );
+    }
+    if (sortedProducts.length > 0) {
+      blocks.push(
+        { kind: 'section', title: daily ? '3. Produits vendus ce jour' : '3. Performance produits' },
+        { kind: 'table', head: ['#', 'Produit', 'Qté vendue', 'CA (FCFA)', 'Coût total', 'Marge (FCFA)', 'Marge %'],
+          rows: sortedProducts.map((p, i) => [String(i + 1), p.nom, String(p.vendu), n(p.ca), n(p.coutTotal), n(p.marge), `${p.margePct}%`]),
+          align: ['right', 'left', 'right', 'right', 'right', 'right', 'right'], widths: [10, undefined, 22, 28, 26, 28, 18], toneColumn: 6 },
+      );
+    }
 
-    const totalMarge = r1(stats.margePct);
-    const margeCls   = totalMarge >= 55 ? '#16a34a' : totalMarge >= 40 ? '#d97706' : '#dc2626';
-
-    const section = (num: number, title: string, content: string) => `
-      <div class="section">
-        <div class="section-title">${num}. ${title}</div>
-        ${content}
-      </div>`;
-    const kpi = (label: string, value: string, unit: string, cls: string, color = '') =>
-      `<div class="kpi-card ${cls}"><div class="kpi-lbl">${label}</div><div class="kpi-val"${color ? ` style="color:${color}"` : ''}>${value}${unit ? `<span class="kpi-unit">${unit}</span>` : ''}</div></div>`;
-
-    const body = [
-      section(1, 'Indicateurs clés de performance', `
-        <div class="kpi">
-          ${kpi('Revenus totaux', n(stats.revenus), 'FCFA', 'primary')}
-          ${kpi('Marge brute', n(stats.marge), 'FCFA', 'primary')}
-          ${kpi('Commandes', String(stats.commandes), '', 'secondary')}
-          ${kpi('Panier moyen', n(Math.round(stats.panierMoyen)), 'FCFA', 'secondary')}
-          ${kpi('Coût matières', n(stats.cout), 'FCFA', 'secondary')}
-          ${kpi('Résultat net', n(stats.revenus - stats.cout), 'FCFA', 'secondary', margeCls)}
-        </div>
-        <div class="marge-summary">
-          <div>
-            <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:4px">Taux de marge global</div>
-            <div class="marge-big" style="color:${margeCls}">${totalMarge}%</div>
-          </div>
-          <div style="flex:1">
-            <div style="height:6px;background:#d0dccb"><div style="height:100%;background:${margeCls};width:${Math.min(100, totalMarge)}%"></div></div>
-            <div style="font-size:10px;color:#4a6357;margin-top:4px">${totalMarge >= 55 ? 'Excellente rentabilité' : totalMarge >= 40 ? 'Rentabilité correcte' : 'Marge à améliorer'}</div>
-          </div>
-        </div>`),
-      detailRows ? section(2, period === 'jour' ? 'Ventes du jour' : `Détail ${period === 'mois' ? 'mensuel' : 'journalier'}`, `
-        <div class="table-wrap"><table>
-          <thead><tr><th>Période</th><th class="r">Revenus (FCFA)</th><th class="r">Commandes</th><th class="r">Coût (FCFA)</th><th class="r">Marge (FCFA)</th><th>Marge %</th></tr></thead>
-          <tbody>${detailRows}</tbody>
-        </table></div>`) : '',
-      prodRows ? section(3, 'Performance produits', `
-        <div class="table-wrap"><table>
-          <thead><tr><th class="r">#</th><th>Produit</th><th class="r">Qté vendue</th><th class="r">CA (FCFA)</th><th class="r">Coût total</th><th class="r">Marge (FCFA)</th><th>Marge %</th></tr></thead>
-          <tbody>${prodRows}</tbody>
-        </table></div>`) : '',
-    ].join('');
-
-    const css = `
-      .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-      .kpi-card{padding:14px 16px;border:1px solid transparent}
-      .kpi-card.primary{background:#f4f7f2;border-color:#d0dccb}
-      .kpi-card.secondary{background:#f9faf9;border-color:#e4ebe2}
-      .kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#7a9488;font-weight:700;margin-bottom:6px}
-      .kpi-val{font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.1;color:#1c4028}
-      .kpi-card.primary .kpi-val{color:#267340}
-      .kpi-unit{font-size:10px;font-family:Arial,Helvetica,sans-serif;color:#7a9488;margin-left:3px}
-      .marge-summary{display:flex;align-items:center;gap:16px;background:#f4f7f2;border-left:3px solid #267340;padding:14px 18px;margin-top:10px}
-      .marge-big{font-family:Georgia,'Times New Roman',serif;font-size:32px}`;
-
-    printDocument({
-      title: `${period === 'jour' ? 'Rapport journalier' : 'Rapport de ventes'} — ${periodLabel}`,
-      heading: period === 'jour' ? 'Rapport journalier' : 'Rapport de ventes',
-      lines: [escapeHtml(periodLabel), `Généré le ${genDate}`],
-      body,
-      css,
-      footerRight: `Document confidentiel — usage interne<br>Généré le ${genDate}`,
-    }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
+    downloadPdf({
+      fileName: `${daily ? 'rapport-journalier' : 'rapport-ventes'}-${safeFileName(periodLabel)}`,
+      heading: daily ? 'Rapport journalier' : 'Rapport de ventes',
+      lines: [periodLabel, `Généré le ${genDate}`],
+      blocks,
+      footerRight: ['Document confidentiel — usage interne', `Généré le ${genDate}`],
+    })
+      .then(() => toast.success('Rapport enregistré dans vos téléchargements'))
+      .catch(() => toast.error('Impossible de générer le PDF'));
   };
   const worstMarge   = productStats.length > 0 ? [...productStats].sort((a, b) => a.margePct - b.margePct)[0] : null;
 
@@ -565,7 +504,7 @@ export default function SalesReportPage() {
             <Download className="w-4 h-4" /> CSV
           </button>
           <button
-            onClick={printReport}
+            onClick={exportPDF}
             className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border text-sm font-body text-muted-foreground rounded-md hover:text-foreground hover:border-foreground transition-colors">
             <Download className="w-4 h-4" /> PDF
           </button>

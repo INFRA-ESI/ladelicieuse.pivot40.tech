@@ -1,5 +1,5 @@
 import {
-  Download, Eye, Search, X, Printer, FileText, Plus, TrendingUp, TrendingDown,
+  Download, Eye, Search, X, FileText, Plus, TrendingUp, TrendingDown,
   Minus, BarChart2, ChevronUp, ChevronDown, RefreshCw, CheckCircle, Clock,
   AlertCircle, Receipt, Layers, Mail, Trash2, AlertTriangle,
 } from '@/components/icons';
@@ -12,7 +12,8 @@ import {
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 import { formatPrixFcfa as fmt } from '@/lib/fcfa';
 import { usePagination } from '@/hooks/usePagination';
-import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
+import { BRAND, downloadPdf } from '@/lib/pdfDocument';
+import { safeFileName } from '@/lib/downloadFile';
 import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -107,95 +108,50 @@ function Th({ label, sortKey, cur, dir, onSort }: {
   );
 }
 
-// ─── Print helper ─────────────────────────────────────────────────────────────
+// ─── PDF ──────────────────────────────────────────────────────────────────────
 
-function printInvoice(inv: Invoice) {
-  const statusStyles: Record<InvoiceStatus, string> = {
-    payee:      'background:#d1fae5;color:#065f46',
-    en_attente: 'background:#fef3c7;color:#92400e',
-    annulee:    'background:#fee2e2;color:#991b1b',
-    remboursee: 'background:#ede9fe;color:#5b21b6',
-  };
-  const watermark = inv.statut === 'payee' ? 'PAYÉE' : inv.statut === 'annulee' ? 'ANNULÉE' : inv.statut === 'remboursee' ? 'REMBOURSÉE' : '';
-  const statusLabel = STATUS_CONFIG[inv.statut].label;
+const STATUS_PDF: Record<InvoiceStatus, { fill: [number, number, number]; color: [number, number, number] }> = {
+  payee:      { fill: [209, 250, 229], color: [6, 95, 70] },
+  en_attente: { fill: [254, 243, 199], color: [146, 64, 14] },
+  annulee:    { fill: [254, 226, 226], color: [153, 27, 27] },
+  remboursee: { fill: [237, 233, 254], color: [91, 33, 182] },
+};
+const WATERMARK: Partial<Record<InvoiceStatus, string>> = { payee: 'PAYÉE', annulee: 'ANNULÉE', remboursee: 'REMBOURSÉE' };
+
+// Télécharge la facture en PDF dans le dossier de téléchargements de l'appareil.
+function downloadInvoice(inv: Invoice) {
   const f = (n: number) => `${n.toLocaleString('fr-FR')} F`;
-
-  const rows = inv.items.map(it => `<tr>
-      <td>${escapeHtml(it.nom)}</td>
-      <td class="r">${it.qty}</td>
-      <td class="r">${f(it.prixUnit)}</td>
-      <td class="r"><strong>${f(it.prixUnit * it.qty)}</strong></td>
-    </tr>`).join('');
-
-  const body = `
-    <div class="parties">
-      <div>
-        <div class="section-title">Émetteur</div>
-        <div class="party-name">${escapeHtml(BRAND.name)}</div>
-        <div class="party-info">${escapeHtml(BRAND.address)}<br>${escapeHtml(BRAND.email)}<br>${escapeHtml(BRAND.phone)}</div>
-      </div>
-      <div>
-        <div class="section-title">Facturé à</div>
-        <div class="party-name">${escapeHtml(inv.client)}</div>
-        <div class="party-info">${escapeHtml(inv.email)}${inv.telephone ? '<br>' + escapeHtml(inv.telephone) : ''}</div>
-      </div>
-      <div>
-        <div class="section-title">Détails</div>
-        <div class="detail-row"><span>N°</span><strong>${escapeHtml(inv.numero)}</strong></div>
-        <div class="detail-row"><span>Date</span><span>${fmtDate(inv.createdAt)}</span></div>
-        <div class="detail-row"><span>Statut</span><strong>${statusLabel}</strong></div>
-      </div>
-    </div>
-
-    <div class="table-wrap section">
-      <table>
-        <thead><tr>
-          <th>Description</th>
-          <th class="r" style="width:60px">Qté</th>
-          <th class="r" style="width:110px">Prix unit.</th>
-          <th class="r" style="width:110px">Total HT</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-
-    <div class="totals">
-      <div class="trow"><span>Sous-total HT</span><span>${f(inv.totalHT)}</span></div>
-      <div class="trow"><span>TVA (18 %)</span><span>${f(inv.tva)}</span></div>
-      <div class="ttc"><span>Total TTC</span><strong>${inv.totalTTC.toLocaleString('fr-FR')} FCFA</strong></div>
-    </div>
-
-    ${inv.modePaiement || inv.notes ? `<div class="note section">
-      ${inv.modePaiement ? `Mode de paiement : <strong>${escapeHtml(inv.modePaiement)}</strong>` : ''}
-      ${inv.notes ? `<span style="float:right;font-style:italic">${escapeHtml(inv.notes)}</span>` : ''}
-    </div>` : ''}
-
-    <div class="thanks">Merci pour votre confiance et à très bientôt</div>`;
-
-  const css = `
-    .parties{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-bottom:28px}
-    .party-name{font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#1c4028;line-height:1.3}
-    .party-info{font-size:11px;color:#4a6357;margin-top:4px;line-height:1.7}
-    .detail-row{display:flex;justify-content:space-between;font-size:12px;color:#4a6357;padding:4px 0;border-bottom:1px solid #e4ebe2}
-    .detail-row:last-child{border-bottom:none}
-    td{font-size:13px}
-    .totals{width:300px;margin:0 0 28px auto}
-    .trow{display:flex;justify-content:space-between;padding:8px 0;font-size:13px;color:#4a6357;border-bottom:1px solid #e4ebe2}
-    .ttc{background:#1c4028;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;text-transform:uppercase;letter-spacing:2px}
-    .ttc strong{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:0;text-transform:none}
-    .thanks{text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#4a6357;font-style:italic}`;
-
-  printDocument({
-    title: `Facture ${inv.numero} — ${BRAND.name}`,
+  const statusLabel = STATUS_CONFIG[inv.statut].label;
+  downloadPdf({
+    fileName: `facture-${safeFileName(inv.numero)}`,
     label: 'Document',
-    heading: `Facture ${escapeHtml(inv.numero)}`,
+    heading: `Facture ${inv.numero}`,
     lines: [`Émise le ${fmtDate(inv.createdAt)}`],
-    badge: { text: statusLabel, style: statusStyles[inv.statut] ?? statusStyles.en_attente },
-    body,
-    css,
-    watermark,
-    footerRight: `Document généré le ${fmtDate(new Date().toISOString())}<br>Document non contractuel`,
-  }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
+    badge: { text: statusLabel, ...(STATUS_PDF[inv.statut] ?? STATUS_PDF.en_attente) },
+    watermark: WATERMARK[inv.statut],
+    footerRight: [`Document généré le ${fmtDate(new Date().toISOString())}`, 'Document non contractuel'],
+    blocks: [
+      { kind: 'columns', columns: [
+        { title: 'Émetteur', strong: BRAND.name, lines: [BRAND.address, BRAND.email, BRAND.phone] },
+        { title: 'Facturé à', strong: inv.client, lines: [inv.email, inv.telephone].filter(Boolean) },
+        { title: 'Détails', lines: [`N° ${inv.numero}`, `Date : ${fmtDate(inv.createdAt)}`, `Statut : ${statusLabel}`] },
+      ] },
+      {
+        kind: 'table',
+        head: ['Description', 'Qté', 'Prix unit.', 'Total HT'],
+        rows: inv.items.map(it => [it.nom, String(it.qty), f(it.prixUnit), f(it.prixUnit * it.qty)]),
+        align: ['left', 'right', 'right', 'right'],
+        widths: [undefined, 18, 32, 34],
+      },
+      { kind: 'totals', rows: [['Sous-total HT', f(inv.totalHT)], ['TVA (18 %)', f(inv.tva)]], total: ['Total TTC', `${inv.totalTTC.toLocaleString('fr-FR')} FCFA`] },
+      ...(inv.modePaiement || inv.notes
+        ? [{ kind: 'note' as const, text: inv.modePaiement ? `Mode de paiement : ${inv.modePaiement}` : '', aside: inv.notes || undefined }]
+        : []),
+      { kind: 'thanks', text: 'Merci pour votre confiance et à très bientôt' },
+    ],
+  })
+    .then(() => toast.success('Facture enregistrée dans vos téléchargements'))
+    .catch(() => toast.error('Impossible de générer le PDF'));
 }
 
 // ─── Skeleton row ─────────────────────────────────────────────────────────────
@@ -363,8 +319,8 @@ function InvoiceModal({ inv, onClose, onMarkPaid }: { inv: Invoice; onClose: () 
             <button onClick={handleSendEmail} disabled={sending} className="text-muted-foreground hover:text-primary disabled:opacity-40" title="Envoyer par email">
               <Mail className="w-4 h-4" />
             </button>
-            <button onClick={() => printInvoice(inv)} className="text-muted-foreground hover:text-foreground" title="Imprimer / PDF">
-              <Printer className="w-4 h-4" />
+            <button onClick={() => downloadInvoice(inv)} className="text-muted-foreground hover:text-foreground" title="Télécharger le PDF">
+              <Download className="w-4 h-4" />
             </button>
             <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
           </div>
@@ -702,7 +658,7 @@ export default function InvoicesPage() {
                           <td className="p-4 font-body text-muted-foreground hidden md:table-cell">{fmtDate(inv.createdAt)}</td>
                           <td className="p-4 flex gap-2">
                             <button onClick={() => setSelectedInvoice(inv)} className="text-muted-foreground hover:text-foreground" title="Voir"><Eye className="w-4 h-4" /></button>
-                            <button onClick={() => printInvoice(inv)} className="text-muted-foreground hover:text-primary" title="PDF"><Download className="w-4 h-4" /></button>
+                            <button onClick={() => downloadInvoice(inv)} className="text-muted-foreground hover:text-primary" title="Télécharger le PDF"><Download className="w-4 h-4" /></button>
                             <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteInvoiceId(inv._id); }} className="text-muted-foreground hover:text-destructive" title="Supprimer"><Trash2 className="w-4 h-4" /></button>
                           </td>
                         </tr>
