@@ -1,14 +1,17 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import SmartImage from '@/components/SmartImage';
 import {
   Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight,
   Flame, Eye, EyeOff, Search, GripVertical, ImagePlus, Loader2,
-  Send, Globe, BookOpen, CalendarDays,
+  Send, Globe, BookOpen, CalendarDays, Copy,
 } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminUploadImage, adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// Fenêtre rarement ouverte : chargée à la demande.
+const ReuseMenuDialog = lazy(() => import('@/components/admin/ReuseMenuDialog'));
 
 interface LibIngredient {
   id: string;
@@ -74,7 +77,11 @@ interface Nutrients { cal: number; prot: number; glu: number; lip: number; fib: 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const today = () => new Date().toISOString().split('T')[0];
+// Jour local (celui du navigateur de l'équipe, à Libreville) : toISOString() donnerait encore la veille entre minuit et 1 h.
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const addDays = (date: string, n: number) => {
   const d = new Date(date);
@@ -280,6 +287,7 @@ export default function MenuDayPage() {
   const [saving, setSaving]             = useState(false);
   const [date, setDate]                 = useState(today());
   const [showForm, setShowForm]         = useState(false);
+  const [showReuse, setShowReuse]       = useState(false);
   const [editId, setEditId]             = useState<string | null>(null);
   const [form, setForm]                 = useState({ ...EMPTY_FORM });
   const [published, setPublished]         = useState(false);
@@ -326,7 +334,7 @@ export default function MenuDayPage() {
       const [mealsRes] = await Promise.all([
         adminGet<{ data: Meal[] }>(`/meals/admin?date=${d}`),
         // Charge le statut du menu : 404 = pas encore publié, erreur ignorée
-        adminGet<{ data: { published: boolean } }>(`/menu/${d}`)
+        adminGet<{ data: { published: boolean } }>(`/menu/admin/${d}`)
           .then(r => setPublished(r.data?.published ?? false))
           .catch(() => setPublished(false)),
       ]);
@@ -746,6 +754,14 @@ export default function MenuDayPage() {
             </p>
           </div>
         </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <button
+          onClick={() => setShowReuse(true)}
+          disabled={loadingMeals}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-body rounded-md border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+        >
+          <Copy className="w-3.5 h-3.5" /> Réutiliser un menu
+        </button>
         <button
           onClick={handlePublishToggle}
           disabled={publishing || loadingMeals}
@@ -761,7 +777,19 @@ export default function MenuDayPage() {
           }
           {published ? 'Dépublier' : 'Publier le menu'}
         </button>
+        </div>
       </div>
+
+      {showReuse && (
+        <Suspense fallback={null}>
+          <ReuseMenuDialog
+            date={date}
+            mealsCount={meals.length}
+            onClose={() => setShowReuse(false)}
+            onDone={() => { void loadMeals(date); }}
+          />
+        </Suspense>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
