@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Users, RefreshCw, CheckCircle, AlertCircle, Smartphone, Mail, Send } from '@/components/icons';
+import { Bell, Users, RefreshCw, CheckCircle, Smartphone, Mail, Send } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost } from '@/services/adminApiService';
 
@@ -102,7 +102,7 @@ export default function WhatsAppPage() {
       setPushTitle('');
       setPushBody('');
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Push non configuré — ajoutez les clés VAPID dans .env');
+      toast.error(e instanceof Error ? e.message : 'Envoi impossible pour le moment');
     } finally {
       setPushSending(false);
     }
@@ -227,22 +227,9 @@ export default function WhatsAppPage() {
             <h3 className="font-display text-base text-foreground">Push Notification</h3>
           </div>
 
-          <div className="p-3 bg-muted/50 rounded-lg border border-border">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-body text-xs text-muted-foreground">
-                  Nécessite les clés VAPID dans <code className="bg-muted px-1 rounded text-xs">backend/.env</code>
-                </p>
-                <p className="font-body text-xs text-muted-foreground mt-0.5">
-                  Générez-les : <code className="bg-muted px-1 rounded text-xs">npx web-push generate-vapid-keys</code>
-                </p>
-                <p className="font-body text-xs text-muted-foreground mt-0.5">
-                  {stats?.pushSubscriptions ?? 0} abonné(s) enregistré(s)
-                </p>
-              </div>
-            </div>
-          </div>
+          <p className="font-body text-xs text-muted-foreground">
+            {stats?.pushSubscriptions ?? 0} abonné(s) enregistré(s)
+          </p>
 
           <div>
             <label className="font-body text-xs uppercase tracking-wider text-muted-foreground block mb-2">Titre</label>
@@ -330,13 +317,6 @@ export default function WhatsAppPage() {
         <h3 className="font-display text-base text-foreground mb-3">Configuration des canaux</h3>
         <div className="grid md:grid-cols-2 gap-4">
           {[
-            {
-              name: 'Push Notifications',
-              status: 'VAPID_PUBLIC_KEY configuré ?',
-              desc: 'Générez les clés VAPID : npx web-push generate-vapid-keys → ajoutez VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY dans backend/.env',
-              color: 'border-blue-200',
-              dot: 'bg-blue-500',
-            },
             {
               name: 'Fidélité automatique',
               status: 'Actif — déclenché à la livraison',

@@ -184,7 +184,7 @@ router.post('/push/send', verifyJWT, async (req: Request, res: Response): Promis
   }
 
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-    res.status(503).json({ success: false, message: 'VAPID non configuré.' });
+    res.status(503).json({ success: false, message: 'Les notifications push ne sont pas disponibles pour le moment.' });
     return;
   }
 
