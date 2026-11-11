@@ -8,6 +8,10 @@ export interface ISuggestion extends Document {
   ingredients: string[];
   image?: string;
   actif: boolean;
+  // Position dans la liste de son type (0 = première). Absente sur les anciennes suggestions : voir services/suggestionOrder.ts.
+  ordre?: number;
+  // « Meilleure salade » : toujours en première position de son type, quel que soit l'ordre et les ajouts. Une seule par type.
+  epinglee: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +25,8 @@ const SuggestionSchema = new Schema<ISuggestion>(
     ingredients: { type: [String], default: [] },
     image:       { type: String, default: '' },
     actif:       { type: Boolean, default: true },
+    ordre:       { type: Number, min: 0 },
+    epinglee:    { type: Boolean, default: false },
   },
   { timestamps: true }
 );

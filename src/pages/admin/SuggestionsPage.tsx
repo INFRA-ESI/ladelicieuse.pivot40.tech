@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import SmartImage from '@/components/SmartImage';
-import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, ChefHat, Leaf, Grape, ChevronDown } from '@/components/icons';
+import { Plus, Edit2, Trash2, X, ToggleLeft, ToggleRight, ImagePlus, ChefHat, Leaf, Grape, ChevronDown, ChevronUp, Star } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 import { INGREDIENTS } from '@/data/products';
@@ -42,6 +42,8 @@ interface Suggestion {
   ingredients: string[];
   image: string;
   actif: boolean;
+  ordre?: number;
+  epinglee?: boolean;
   createdAt: string;
 }
 
@@ -169,13 +171,14 @@ export default function SuggestionsPage() {
         image:       form.image.trim(),
       };
       if (editId) {
-        const res = await adminPatch<{ data: Suggestion }>(`/suggestions/${editId}`, payload);
-        setSuggestions(prev => prev.map(s => s._id === editId ? res.data : s));
+        await adminPatch(`/suggestions/${editId}`, payload);
+        await reload();   // un changement de type la déplace en fin de liste de l'autre type
         toast.success('Suggestion modifiée');
       } else {
-        const res = await adminPost<{ data: Suggestion }>('/suggestions', payload);
-        setSuggestions(prev => [res.data, ...prev]);
-        toast.success('Suggestion ajoutée');
+        await adminPost('/suggestions', payload);
+        // Ajoutée en fin de liste par le serveur : on relit la liste pour afficher l'ordre réel.
+        await reload();
+        toast.success('Suggestion ajoutée en fin de liste');
       }
       resetForm();
     } catch (e: unknown) {
@@ -210,6 +213,41 @@ export default function SuggestionsPage() {
     }
   };
 
+  const reload = async () => {
+    const res = await adminGet<{ data: Suggestion[] }>('/suggestions/all', { ttl: 0 });
+    setSuggestions(res.data);
+  };
+
+  // « Meilleure salade » : une seule par type, toujours en première position, même quand on ajoute d'autres suggestions.
+  const togglePin = async (s: Suggestion) => {
+    try {
+      await adminPatch(`/suggestions/${s._id}/pin`, { epinglee: !s.epinglee });
+      await reload();
+      toast.success(s.epinglee ? `${s.nom} n'est plus épinglée` : `${s.nom} est épinglée en première position`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erreur mise à jour');
+    }
+  };
+
+  // Monte ou descend d'un cran dans la liste de son type. L'épinglée reste devant quoi qu'on fasse.
+  const move = async (s: Suggestion, direction: -1 | 1) => {
+    const group = suggestions.filter(x => x.type === s.type);
+    const from = group.findIndex(x => x._id === s._id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= group.length) return;
+    const next = [...group];
+    [next[from], next[to]] = [next[to], next[from]];
+    const previous = suggestions;
+    setSuggestions(prev => [...prev.filter(x => x.type !== s.type), ...next].sort((a, b) => a.type.localeCompare(b.type) || next.indexOf(a) - next.indexOf(b)));
+    try {
+      await adminPatch('/suggestions/reorder', { type: s.type, ids: next.map(x => x._id) });
+      await reload();
+    } catch (e: unknown) {
+      setSuggestions(previous);
+      toast.error(e instanceof Error ? e.message : 'Ordre non enregistré');
+    }
+  };
+
   const toggleActif = async (s: Suggestion) => {
     try {
       const res = await adminPatch<{ data: Suggestion }>(`/suggestions/${s._id}`, { actif: !s.actif });
@@ -238,6 +276,9 @@ export default function SuggestionsPage() {
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Suggestions du Chef</h2>
           <p className="font-body text-sm text-muted-foreground">
             {kpi.total} suggestions · {kpi.actives} actives · {kpi.crudites} crudités · {kpi.fruits} fruits
+          </p>
+          <p className="font-body text-xs text-muted-foreground mt-1">
+            Les nouvelles suggestions s'ajoutent en fin de liste. Épinglez la meilleure salade pour la garder toujours en première position.
           </p>
         </div>
         <button
@@ -319,6 +360,11 @@ export default function SuggestionsPage() {
           {filtered.map(s => {
             const cfg = TYPE_CONFIG[s.type as keyof typeof TYPE_CONFIG] ?? TYPE_CONFIG['crudites'];
             const TypeIcon = cfg.icon;
+            const group = suggestions.filter(x => x.type === s.type);
+            const position = group.findIndex(x => x._id === s._id);
+            // Sous l'épinglée, on ne peut pas « monter » : elle reste devant.
+            const canMoveUp = position > 0 && !(position === 1 && group[0]?.epinglee && !s.epinglee) && !s.epinglee;
+            const canMoveDown = position >= 0 && position < group.length - 1 && !s.epinglee;
             return (
               <div
                 key={s._id}
@@ -346,6 +392,11 @@ export default function SuggestionsPage() {
                   }`}>
                     {s.actif ? 'Active' : 'Inactive'}
                   </span>
+                  {s.epinglee && (
+                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 font-body text-[11px] px-2 py-1 bg-primary text-primary-foreground">
+                      <Star className="w-3 h-3" /> Meilleure salade, en première position
+                    </span>
+                  )}
                 </div>
 
                 <div className="p-4">
@@ -356,6 +407,35 @@ export default function SuggestionsPage() {
                         {tag.trim()}
                       </span>
                     ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => togglePin(s)}
+                      aria-pressed={!!s.epinglee}
+                      title={s.epinglee ? 'Retirer de la première position' : 'Épingler en première position (meilleure salade)'}
+                      className={`min-h-9 flex items-center gap-1.5 px-3 text-xs font-body border transition-colors ${
+                        s.epinglee ? 'border-primary bg-primary/10 text-primary' : 'border-border text-foreground hover:bg-muted'
+                      }`}
+                    >
+                      <Star className="w-3.5 h-3.5" /> {s.epinglee ? 'Épinglée' : 'Épingler'}
+                    </button>
+                    <span className="flex-1" />
+                    <button
+                      type="button" onClick={() => move(s, -1)} disabled={!canMoveUp}
+                      aria-label={`Monter ${s.nom}`} title="Monter d'un cran"
+                      className="min-h-9 min-w-9 flex items-center justify-center border border-border text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button" onClick={() => move(s, 1)} disabled={!canMoveDown}
+                      aria-label={`Descendre ${s.nom}`} title="Descendre d'un cran"
+                      className="min-h-9 min-w-9 flex items-center justify-center border border-border text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-border/60">
