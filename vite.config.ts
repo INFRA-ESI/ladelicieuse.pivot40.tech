@@ -1,4 +1,4 @@
-import { defineConfig, type ProxyOptions } from "vite";
+import { defineConfig, type Plugin, type ProxyOptions } from "vite";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -17,6 +17,34 @@ const forwardHost: ProxyOptions['configure'] = proxy => {
   proxy.on('proxyReq', set);
   proxy.on('proxyReqWs', set);
 };
+
+// Les fichiers de /assets portent un hash dans leur nom : leur contenu ne change jamais sous un même nom. Par défaut le serveur de
+// production (vite preview) les envoie en « no-cache » : le navigateur les revérifie un par un à chaque visite, ce qui coûte un
+// aller-retour réseau par fichier sur une connexion lente. On les fait garder un an. Une adresse /assets/ inconnue reçoit la page
+// d'accueil en repli : celle-là ne doit jamais être gardée.
+const immutableAssets = (): Plugin => ({
+  name: 'immutable-assets',
+  configurePreviewServer(server) {
+    server.middlewares.use((req, res, next) => {
+      if (req.url?.startsWith('/assets/')) {
+        const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => typeof res;
+        // Le serveur de fichiers passe ses en-têtes directement à writeHead : ils l'emportent sur setHeader, il faut donc les modifier là.
+        res.writeHead = ((status: number, ...rest: unknown[]) => {
+          const headers = rest.find(arg => arg && typeof arg === 'object' && !Array.isArray(arg)) as Record<string, unknown> | undefined;
+          const names = headers ? Object.keys(headers) : [];
+          const type = String(headers?.[names.find(n => n.toLowerCase() === 'content-type') ?? ''] ?? res.getHeader('Content-Type') ?? '');
+          if (!type.includes('text/html')) {
+            for (const name of names) if (name.toLowerCase() === 'cache-control') delete headers![name];
+            if (headers) headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+            else res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+          return writeHead(status, ...rest);
+        }) as typeof res.writeHead;
+      }
+      next();
+    });
+  },
+});
 
 export default defineConfig(() => ({
   server: {
@@ -81,7 +109,7 @@ export default defineConfig(() => ({
       },
     },
   },
-  plugins: [react()],
+  plugins: [react(), immutableAssets()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
