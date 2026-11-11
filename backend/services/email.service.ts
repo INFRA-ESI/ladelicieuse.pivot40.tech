@@ -1,6 +1,9 @@
 import nodemailer from 'nodemailer';
 import { primaryFrontendUrl } from '../config/frontendUrl.js';
 
+// Google affiche le mot de passe d'application en quatre groupes séparés par des espaces ; SMTP l'attend sans espaces.
+export const normalizeAppPassword = (raw: string | undefined): string | undefined => raw?.replace(/\s+/g, '');
+
 // ── Singleton SMTP ────────────────────────────────────────────────────────────
 let _transporter: nodemailer.Transporter | null = null;
 
@@ -12,7 +15,7 @@ function getTransporter(): nodemailer.Transporter {
       secure: (process.env.SMTP_PORT ?? '465') !== '587',
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD,
+        pass: normalizeAppPassword(process.env.EMAIL_APP_PASSWORD),
       },
       pool:           true,
       maxConnections: 3,
@@ -610,6 +613,90 @@ export async function sendAdminPasswordResetEmail(to: string, resetUrl: string):
     subject: 'Réinitialisation du mot de passe administrateur',
     html:    wrapper(rows, 'Lien de réinitialisation du mot de passe administrateur. Valable 30 minutes.'),
     text:    `Une réinitialisation du mot de passe administrateur a été demandée.\n\nLien (valable 30 minutes, usage unique) : ${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
+  });
+}
+
+// ── Changement de l'adresse de connexion administrateur ───────────────────────
+
+// Envoyé à la NOUVELLE adresse : seul celui qui peut la lire peut confirmer le changement.
+export async function sendAdminEmailChangeCode(to: string, code: string): Promise<void> {
+  const rows = `
+    ${header('Acc&egrave;s administrateur')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                  font-weight:400;color:${C.textDark};">
+          Confirmer cette adresse e-mail
+        </p>
+        <p style="margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;
+                  line-height:1.9;color:${C.textMid};">
+          Cette adresse a &eacute;t&eacute; propos&eacute;e comme adresse de connexion du back-office.
+          Saisissez le code ci-dessous dans les param&egrave;tres pour confirmer le changement.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:${C.dark};border-radius:4px;padding:24px;text-align:center;">
+              <span style="font-family:Georgia,'Times New Roman',serif;font-size:34px;font-weight:700;
+                           letter-spacing:10px;color:#ffffff;">${escapeHtml(code)}</span>
+              <p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:${C.textLight};">
+                Valable <strong style="color:${C.tomato};">10 minutes</strong> &mdash; ne partagez jamais ce code.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        ${divider()}
+
+        ${alertBox('Si vous n&apos;&ecirc;tes pas &agrave; l&apos;origine de cette demande, ignorez cet email : rien ne sera modifi&eacute;.', C.tomato)}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète · Admin" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `[${code}] Confirmer votre adresse administrateur`,
+    html:    wrapper(rows, `Code de confirmation : ${code} — valable 10 minutes.`),
+    text:    `Code pour confirmer cette adresse comme adresse de connexion administrateur : ${code}
+
+Valable 10 minutes.
+Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
+  });
+}
+
+// Envoyé à l'ANCIENNE adresse une fois le changement fait : si ce n'est pas l'administrateur, il le saura tout de suite.
+export async function sendAdminEmailChangedNotice(to: string, newEmail: string): Promise<void> {
+  const rows = `
+    ${header('Acc&egrave;s administrateur')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                  font-weight:400;color:${C.textDark};">
+          Adresse de connexion modifi&eacute;e
+        </p>
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;
+                  line-height:1.9;color:${C.textMid};">
+          L&apos;adresse de connexion du back-office est d&eacute;sormais
+          <strong style="color:${C.textDark};">${escapeHtml(newEmail)}</strong>.
+          Les codes de connexion ne seront plus envoy&eacute;s &agrave; cette adresse-ci.
+        </p>
+
+        ${divider()}
+
+        ${alertBox('Si vous n&apos;&ecirc;tes pas &agrave; l&apos;origine de ce changement, contactez imm&eacute;diatement le support : quelqu&apos;un a acc&egrave;s &agrave; votre back-office.', C.tomato)}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète · Admin" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "L'adresse de connexion administrateur a changé",
+    html:    wrapper(rows, "L'adresse de connexion du back-office a été modifiée."),
+    text:    `L'adresse de connexion du back-office est désormais ${newEmail}.
+Les codes de connexion ne seront plus envoyés à cette adresse.
+
+Si vous n'êtes pas à l'origine de ce changement, contactez immédiatement le support.`,
   });
 }
 

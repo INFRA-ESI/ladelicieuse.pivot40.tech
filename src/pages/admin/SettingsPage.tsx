@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X, Film, Play } from '@/components/icons';
 import { toast } from 'sonner';
 import { passwordError } from '@/lib/password';
+import AdminEmailSection from '@/components/admin/AdminEmailSection';
 import { adminGet, adminPatch, adminPost, adminUploadImage, adminUploadVideo, adminDeleteUpload } from '@/services/adminApiService';
 
 interface SettingsData {
@@ -290,6 +291,7 @@ export default function SettingsPage() {
             <p className="font-body text-xs text-muted-foreground px-1">
               Le mot de passe est stocké de manière sécurisée (bcrypt). Après un premier changement, la valeur par défaut du fichier .env n'est plus utilisée.
             </p>
+            <AdminEmailSection />
           </div>
         </Section>
       </div>

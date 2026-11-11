@@ -143,6 +143,21 @@ describe('POST /auth/reset-password', () => {
 });
 
 describe('POST /auth/request-otp', () => {
+  it("après un changement d'adresse dans le back-office : la nouvelle adresse (même en majuscules) reçoit le code, l'ancienne est refusée", async () => {
+    Object.assign(settings, { adminEmail: 'nouveau@test.ga' });
+    try {
+      const ancienne = await post('/request-otp', { email: 'admin@test.ga', password: 'Secret123!' });
+      expect(ancienne.status).toBe(401);
+      expect(sendLoginOTPEmail).not.toHaveBeenCalled();
+
+      const nouvelle = await post('/request-otp', { email: 'Nouveau@Test.ga', password: 'Secret123!' });
+      expect(nouvelle.status).toBe(200);
+      expect(sendLoginOTPEmail.mock.calls[0][0]).toBe('nouveau@test.ga');
+    } finally {
+      Object.assign(settings, { adminEmail: undefined });
+    }
+  });
+
   it('refuse un mauvais mot de passe (401) sans envoyer de code', async () => {
     const res = await post('/request-otp', { email: 'admin@test.ga', password: 'mauvais' });
     expect(res.status).toBe(401);

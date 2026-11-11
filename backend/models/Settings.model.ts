@@ -46,6 +46,8 @@ export interface ISettings extends Document {
   notifEmail: boolean;
   notifWhatsApp: boolean;
   adminPasswordHash?: string;
+  /** Adresse de connexion de l'administrateur, choisie dans le back-office (sinon ADMIN_EMAIL). */
+  adminEmail?: string;
   zonesLivraison: IZoneLivraison[];
   creneauxLivraison: string[];
   etapesConsultation: IEtape[];
@@ -90,6 +92,7 @@ const SettingsSchema = new Schema<ISettings>(
     notifEmail:        { type: Boolean, default: true },
     notifWhatsApp:     { type: Boolean, default: true },
     adminPasswordHash: { type: String, select: false },
+    adminEmail:        { type: String, trim: true, lowercase: true, default: '' },
     zonesLivraison:    { type: [ZoneSchema], default: () => ZONES_DEFAULT },
     creneauxLivraison: { type: [String],     default: () => [...SLOTS_DEFAULT] },
     etapesConsultation:      { type: [EtapeSchema], default: [] },

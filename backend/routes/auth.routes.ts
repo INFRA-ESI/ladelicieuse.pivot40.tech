@@ -12,6 +12,7 @@ import Settings from '../models/Settings.model.js';
 import { logger } from '../config/logger.js';
 import { primaryFrontendUrl } from '../config/frontendUrl.js';
 import { passwordSchema, loginPasswordError } from '../utils/password.js';
+import { getAdminEmail } from '../services/adminEmail.service.js';
 
 const RequestOTPSchema = z.object({
   email:    z.string().email('Email invalide').max(254),
@@ -33,7 +34,6 @@ if (JWT_SECRET.length < 32) {
 const OTP_EXPIRY_S = 5 * 60; // 5 minutes en secondes
 
 const validCredentials = {
-  email:    process.env.ADMIN_EMAIL    || 'admin@ladelicieuse.ga',
   name:     'Administrateur',
   role:     'admin',
 };
@@ -102,9 +102,10 @@ router.post(
   validate(RequestOTPSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { email, password } = req.body as z.infer<typeof RequestOTPSchema>;
+      const { password } = req.body as z.infer<typeof RequestOTPSchema>;
+      const email = (req.body as z.infer<typeof RequestOTPSchema>).email.trim().toLowerCase();
 
-      if (email !== validCredentials.email) {
+      if (email !== await getAdminEmail()) {
         res.status(401).json({ success: false, message: 'Identifiants invalides' });
         return;
       }
@@ -160,7 +161,8 @@ router.post(
 // 10 tentatives / 15 min / IP — stoppe le bruteforce des 1M combinaisons OTP
 router.post('/verify-otp', rateLimiter(10, 900, 'otp-verify'), validate(VerifyOTPSchema), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, otp } = req.body as z.infer<typeof VerifyOTPSchema>;
+    const { otp } = req.body as z.infer<typeof VerifyOTPSchema>;
+    const email = (req.body as z.infer<typeof VerifyOTPSchema>).email.trim().toLowerCase();
     const stored = await getOTP(email);
 
     if (!stored) {
@@ -191,7 +193,7 @@ router.post('/verify-otp', rateLimiter(10, 900, 'otp-verify'), validate(VerifyOT
 
     const user = {
       id:    crypto.randomUUID(),
-      email: validCredentials.email,
+      email,
       name:  validCredentials.name,
       role:  validCredentials.role,
     };
@@ -230,8 +232,8 @@ router.post(
     // Même réponse que l'adresse soit la bonne ou non : on ne révèle pas l'e-mail du compte admin.
     const neutral = { success: true, message: "Si cette adresse correspond au compte administrateur, un lien de réinitialisation vient d'être envoyé." };
     try {
-      const { email } = req.body as z.infer<typeof ForgotPasswordSchema>;
-      if (email !== validCredentials.email) { res.json(neutral); return; }
+      const email = (req.body as z.infer<typeof ForgotPasswordSchema>).email.trim().toLowerCase();
+      if (email !== await getAdminEmail()) { res.json(neutral); return; }
 
       // Jamais l'en-tête Origin/Host de la requête : il permettrait d'envoyer un lien piégé à l'admin.
       const baseUrl = primaryFrontendUrl()

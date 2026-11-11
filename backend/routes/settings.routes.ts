@@ -6,8 +6,13 @@ import { verifyJWT } from './auth.routes.js';
 import { getRedis } from '../config/redis.js';
 import { logger } from '../config/logger.js';
 import { passwordError } from '../utils/password.js';
+import adminEmailRoutes from './adminEmail.routes.js';
+import { isAdminPassword } from '../services/adminEmail.service.js';
 
 const router = Router();
+
+// Adresse de connexion de l'administrateur : routes dédiées (mot de passe + code de confirmation), jamais via le PATCH général.
+router.use('/email', adminEmailRoutes);
 
 const CACHE_KEY = 'settings:main';
 
@@ -70,7 +75,7 @@ router.get('/', verifyJWT, async (_req: Request, res: Response): Promise<void> =
 // ── PATCH /api/settings ───────────────────────────────────────────────────────
 router.patch('/', verifyJWT, async (req: Request, res: Response): Promise<void> => {
   try {
-    const forbidden = ['adminPasswordHash', '_id', '__v', 'createdAt', 'updatedAt'];
+    const forbidden = ['adminPasswordHash', 'adminEmail', '_id', '__v', 'createdAt', 'updatedAt'];
     const update = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => !forbidden.includes(k))
     );
@@ -108,24 +113,16 @@ router.post('/password', verifyJWT, async (req: Request, res: Response): Promise
       return;
     }
 
-    const settings = await Settings.findOne().select('+adminPasswordHash');
-
-    let currentIsValid = false;
-
-    if (settings?.adminPasswordHash) {
-      currentIsValid = await bcrypt.compare(motDePasseActuel, settings.adminPasswordHash);
-    } else {
-      // Repli : variable d'environnement en clair (jamais de mot de passe par défaut)
-      const envPassword = process.env.ADMIN_PASSWORD;
-      currentIsValid = !!envPassword && motDePasseActuel === envPassword;
-    }
+    const currentIsValid = await isAdminPassword(motDePasseActuel);
 
     if (!currentIsValid) {
-      res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
+      // 403 et non 401 : le client admin déconnecte sur tout 401, une erreur de saisie ne doit pas fermer la session.
+      res.status(403).json({ success: false, message: 'Mot de passe actuel incorrect' });
       return;
     }
 
     const hash = await bcrypt.hash(nouveauMotDePasse, 12);
+    const settings = await Settings.findOne().select('+adminPasswordHash');
 
     if (settings) {
       settings.adminPasswordHash = hash;
