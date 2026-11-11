@@ -7,7 +7,7 @@
 //   KEEP=LDD-0007 APPLY=1 mongosh "$MONGO_URI" --quiet --file scripts/reset-orders.mongosh.js
 //
 // Seuls les commandes, le compteur de numéros et le journal d'activité sont touchés : factures, clients, points de fidélité
-// et abonnements restent intacts. Une sauvegarde de la base doit être faite AVANT (le workflow GitHub s'en charge).
+// et abonnements restent intacts. Une sauvegarde de la base doit être faite AVANT (à faire avant, par exemple avec mongodump).
 const keep = (process.env.KEEP || '').trim();
 const apply = process.env.APPLY === '1';
 const NUMERO_CONSERVE = 'LDD-0001';
