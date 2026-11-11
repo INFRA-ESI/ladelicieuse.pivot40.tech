@@ -10,7 +10,7 @@ import { cachedJson } from '@/services/publicApiService';
 import { toOrderLine } from '@/lib/orderLines';
 import { STORE_WHATSAPP } from '@/lib/config';
 import {
-  CheckCircle, Check, Star, Printer, ArrowRight, X,
+  CheckCircle, Check, Star, Download, ArrowRight, X,
   Leaf, Droplets, UtensilsCrossed, Stethoscope, RotateCcw,
   Trash2, Plus, Minus, AlertTriangle, MessageCircle,
   Truck, Package, MapPin, Calendar, Clock,
@@ -18,7 +18,8 @@ import {
 import { PaymentMethods } from '@/components/payment';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
-import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
+import { downloadPdf } from '@/lib/pdfDocument';
+import { safeFileName } from '@/lib/downloadFile';
 import { isSlotAvailable, toLocalDateStr } from '@/lib/deliverySlots';
 
 const CART_HERO = 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=1920&q=80';
@@ -240,38 +241,23 @@ function DeliverySlotPicker({
           <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
             <Clock className="w-3.5 h-3.5" /> {timeLabel}
           </label>
-          {!date ? (
-            <p className="font-body text-xs text-muted-foreground px-1 py-3.5 border border-dashed border-border rounded-xl text-center">
-              Choisissez d'abord la date
-            </p>
-          ) : (
-            <div role="radiogroup" aria-label={timeLabel} className="grid grid-cols-3 gap-2">
-              {slots.map(slot => {
-                const available = isSlotAvailable(slot, date, now);
-                const selected = time === slot;
-                return (
-                  <button
-                    key={slot}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    disabled={!available}
-                    title={available ? undefined : "Ce créneau n'est plus disponible"}
-                    onClick={() => onTimeChange(slot)}
-                    className={`font-body text-sm py-2.5 rounded-xl border-2 transition-colors ${
-                      !available
-                        ? 'bg-muted text-muted-foreground/50 border-transparent line-through cursor-not-allowed'
-                        : selected
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-background hover:border-primary/40'
-                    }`}
-                  >
-                    {slot}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <select
+            value={time}
+            onChange={e => onTimeChange(e.target.value)}
+            disabled={!date}
+            aria-label={timeLabel}
+            className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <option value="">{date ? 'Choisir' : "Choisissez d'abord la date"}</option>
+            {slots.map(slot => {
+              const available = !date || isSlotAvailable(slot, date, now);
+              return (
+                <option key={slot} value={slot} disabled={!available} className={available ? undefined : 'text-muted-foreground/50'}>
+                  {slot}{available ? '' : ' (passé)'}
+                </option>
+              );
+            })}
+          </select>
           {date && !slots.some(slot => isSlotAvailable(slot, date, now)) && (
             <p className="font-body text-xs text-amber-700 mt-2">
               Plus de créneau disponible ce jour-là : choisissez une autre date.
@@ -666,7 +652,8 @@ export default function CartPage() {
     setCheckoutOpen(false);
   };
 
-  const handlePrint = () => {
+  // Reçu enregistré en PDF dans le dossier de téléchargements de l'appareil.
+  const handleDownloadReceipt = () => {
     const short = confirmedOrderId.slice(-8).toUpperCase();
     const pts = calcPoints(confirmedTotal);
     const fee = confirmedDelivery?.mode === 'livraison' ? (confirmedDelivery.fee ?? 0) : 0;
@@ -675,38 +662,29 @@ export default function CartPage() {
         ? `${confirmedDelivery.address ?? ''} · ${formatDeliveryDate(confirmedDelivery.date ?? '')} à ${confirmedDelivery.time ?? ''}`
         : (confirmedDelivery.address ?? '')
       : '';
-    const info = (label: string, value: string) =>
-      `<div><div class="doc-label">${label}</div><div style="font-size:13px">${escapeHtml(value)}</div></div>`;
-    const rows = confirmedItems.map(item => `<tr>
-        <td>${escapeHtml(item.name)}</td>
-        <td class="r">${item.quantity}</td>
-        <td class="r">${escapeHtml(formatPrice(item.totalPrice * item.quantity))}</td>
-      </tr>`).join('');
-    const body = `
-      <div class="receipt-info">
-        ${info('Référence', `#${short}`)}${info('Date et heure', confirmedAt)}
-        ${info('Client', fullName || nom)}${info('Paiement', confirmedMode)}
-        ${where ? `<div style="grid-column:1/-1">${info(confirmedDelivery?.mode === 'livraison' ? 'Livraison' : 'Retrait', where)}</div>` : ''}
-      </div>
-      <div class="table-wrap section"><table>
-        <thead><tr><th>Article</th><th class="r" style="width:60px">Qté</th><th class="r" style="width:120px">Prix</th></tr></thead>
-        <tbody>${rows}${fee > 0 ? `<tr><td colspan="2">Frais de livraison</td><td class="r">${escapeHtml(formatPrice(fee))}</td></tr>` : ''}</tbody>
-      </table></div>
-      <div class="receipt-total"><span>Total</span><strong>${escapeHtml(formatPrice(confirmedTotal))}</strong></div>
-      ${pts > 0 && user ? `<div class="note"><strong>+${pts} points fidélité</strong> crédités sur cette commande</div>` : ''}`;
-    const css = `
-      .receipt-info{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin-bottom:24px}
-      .receipt-total{display:flex;justify-content:space-between;align-items:center;background:#1c4028;color:#fff;padding:14px 18px;margin-bottom:20px;text-transform:uppercase;letter-spacing:2px;font-size:11px}
-      .receipt-total strong{font-family:Georgia,'Times New Roman',serif;font-size:20px;letter-spacing:0;text-transform:none;font-weight:400}`;
-    printDocument({
-      title: `Reçu #${short} — ${BRAND.name}`,
+    const rows = confirmedItems.map(item => [item.name, String(item.quantity), formatPrice(item.totalPrice * item.quantity)]);
+    if (fee > 0) rows.push(['Frais de livraison', '', formatPrice(fee)]);
+    downloadPdf({
+      fileName: `recu-${safeFileName(short)}`,
       label: 'Document',
       heading: 'Reçu de commande',
       lines: [`#${short}`],
-      body,
-      css,
-      footerRight: 'Merci pour votre confiance',
-    }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
+      footerRight: ['Merci pour votre confiance'],
+      blocks: [
+        { kind: 'info', items: [
+          { label: 'Référence', value: `#${short}` },
+          { label: 'Date et heure', value: confirmedAt },
+          { label: 'Client', value: fullName || nom },
+          { label: 'Paiement', value: confirmedMode },
+          ...(where ? [{ label: confirmedDelivery?.mode === 'livraison' ? 'Livraison' : 'Retrait', value: where }] : []),
+        ] },
+        { kind: 'table', head: ['Article', 'Qté', 'Prix'], rows, align: ['left', 'right', 'right'], widths: [undefined, 18, 40] },
+        { kind: 'totals', rows: [], total: ['Total', formatPrice(confirmedTotal)] },
+        ...(pts > 0 && user ? [{ kind: 'note' as const, text: `+${pts} points fidélité crédités sur cette commande` }] : []),
+      ],
+    })
+      .then(() => toast.success('Reçu enregistré dans vos téléchargements'))
+      .catch(() => toast.error('Impossible de générer le PDF'));
   };
 
   // ── Confirmation ─────────────────────────────────────────────────────────────
@@ -786,11 +764,11 @@ export default function CartPage() {
                   <p className="font-body text-xs text-muted-foreground mt-0.5">#{short}</p>
                 </div>
                 <button
-                  onClick={handlePrint}
+                  onClick={handleDownloadReceipt}
                   className="flex items-center gap-1.5 font-body text-xs text-muted-foreground hover:text-primary transition-colors border border-border rounded-lg px-3 py-2"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  Imprimer
+                  <Download className="w-3.5 h-3.5" />
+                  Télécharger le PDF
                 </button>
               </div>
 
@@ -1403,34 +1381,24 @@ export default function CartPage() {
                           transition={{ duration: 0.22 }}
                           className="flex flex-col gap-4 overflow-hidden"
                         >
-                          {/* 4 cartes de zone */}
+                          {/* Zone de livraison : même liste déroulante que la date */}
                           <div>
                             <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
                               <MapPin className="w-3.5 h-3.5" /> Zone de livraison
                             </label>
-                            <div className="grid grid-cols-2 gap-2.5">
-                              {ZONE_CARDS.map(card => {
-                                const active = deliveryZoneGroup === card.group;
-                                return (
-                                  <button
-                                    key={card.group}
-                                    type="button"
-                                    onClick={() => { setDeliveryZoneGroup(card.group); setInfoError(''); }}
-                                    className={`relative flex flex-col items-start gap-0.5 px-4 py-3 rounded-xl border-2 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
-                                      active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 bg-background'
-                                    }`}
-                                  >
-                                    {active && (
-                                      <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                                        <Check className="w-2.5 h-2.5 text-white" />
-                                      </span>
-                                    )}
-                                    <span className={`font-display text-sm ${active ? 'text-primary' : 'text-foreground'}`}>{card.label}</span>
-                                    <span className="font-body text-xs text-muted-foreground">{cardFeeLabel(card.group, zones)}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            <select
+                              value={deliveryZoneGroup ?? ''}
+                              onChange={e => { setDeliveryZoneGroup((e.target.value || null) as ZoneGroup | null); setInfoError(''); }}
+                              aria-label="Zone de livraison"
+                              className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
+                            >
+                              <option value="">Choisir</option>
+                              {ZONE_CARDS.map(card => (
+                                <option key={card.group} value={card.group}>
+                                  {card.label} · {cardFeeLabel(card.group, zones)}
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           {/* Descriptif exact du lieu — obligatoire, apparaît après le choix de la zone */}

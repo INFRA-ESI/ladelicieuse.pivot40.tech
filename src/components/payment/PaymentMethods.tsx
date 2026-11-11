@@ -17,14 +17,14 @@ const PAYMENT_OPTIONS = [
     label: 'Airtel Money',
     sub:   'Mobile Money · Gabon via SingPay',
     icon:  Smartphone,
-    logo:  '/payment/airtel-money.png',
+    logo:  '/payment/airtel-money.webp',
   },
   {
     value: 'moov',
     label: 'Moov Money',
     sub:   'Mobile Money · Gabon via SingPay',
     icon:  Smartphone,
-    logo:  '/payment/moov-money.png',
+    logo:  '/payment/moov-money.webp',
   },
   {
     value: 'cash',
