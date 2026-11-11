@@ -4,13 +4,14 @@ import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/
 import { useUser } from '@/context/UserContext';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, Play, X, Tag, Calendar, ShoppingCart, FileText } from '@/components/icons';
+import { Leaf, Truck, Heart, ChefHat, Star, ArrowRight, X, Tag, Calendar, ShoppingCart, FileText } from '@/components/icons';
 import { toast } from 'sonner';
 import heroImage from '@/assets/hero-salad.webp';
 import juicesImage from '@/assets/juices.webp';
 import mealImage from '@/assets/balanced-meal.webp';
 import prepImage from '@/assets/preparation.webp';
 import Footer from '@/components/Footer';
+import VideoPresentation from '@/components/VideoPresentation';
 import ProductSheetModal from '@/components/ProductSheetModal';
 import TestimonialSubmitForm from '@/components/TestimonialSubmitForm';
 import { FlyingIngredient } from '@/components/FlyingIngredient';
@@ -66,11 +67,11 @@ export default function HomePage() {
   const { user } = useUser();
   const { addItem, updateQuantity, items } = useCart();
   const { flyingItems, launchFly, removeFlyingItem } = useFlyToCart();
-  const [videoOpen, setVideoOpen]       = useState(false);
   const [promotions, setPromotions]     = useState<ApiPromotion[]>([]);
   const [menuDuJour, setMenuDuJour]     = useState<ApiDailyMenu | null>(null);
   const [promoBanner, setPromoBanner]   = useState(true);
   const [videoUrl, setVideoUrl]         = useState<string | null>(null);
+  const [videoPoster, setVideoPoster]   = useState<string | null>(null);
   const [sheetId, setSheetId]           = useState<string | null>(null);
   // Avis validés depuis l'admin ; tant qu'il n'y en a aucun, on garde les exemples ci-dessus.
   const [testimonials, setTestimonials] = useState(TESTIMONIALS);
@@ -109,8 +110,9 @@ export default function HomePage() {
         setTestimonials(data.slice(0, 6).map(t => ({ name: t.nom, text: t.texte, rating: t.note })));
       }
     });
-    publicFetch<{ videoPresentation?: string }>('/api/settings/public').then(data => {
+    publicFetch<{ videoPresentation?: string; videoPoster?: string }>('/api/settings/public').then(data => {
       if (data?.videoPresentation) setVideoUrl(data.videoPresentation);
+      if (data?.videoPoster) setVideoPoster(data.videoPoster);
     });
   }, []);
 
@@ -279,79 +281,8 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Video Section — masquée si aucune vidéo configurée */}
-      {videoUrl && (
-        <>
-          <section className="py-20 md:py-28 px-6 md:px-12 bg-background">
-            <div className="max-w-4xl mx-auto text-center">
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.7 }}
-              >
-                <span className="font-body text-xs text-primary mb-4 block">Notre concept</span>
-                <h2 className="font-display text-3xl md:text-5xl text-foreground mb-6">
-                  Comment ça se passe chez nous ?
-                </h2>
-                <p className="font-body text-muted-foreground text-lg mb-10 max-w-2xl mx-auto">
-                  Découvrez comment nous préparons nos salades de fruits colorées — des produits frais,
-                  choisis avec soin, assemblés avec amour à la façon africaine.
-                </p>
-
-                <button
-                  onClick={() => setVideoOpen(true)}
-                  className="relative group mx-auto block w-full max-w-2xl overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-shadow bg-black"
-                  aria-label="Lancer la vidéo de présentation"
-                >
-                  {/* Première image du fichier vidéo comme miniature naturelle */}
-                  <video
-                    src={videoUrl}
-                    preload="metadata"
-                    muted
-                    playsInline
-                    className="w-full aspect-video object-cover pointer-events-none"
-                  />
-                  <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <motion.div
-                      whileTap={{ scale: 0.95 }}
-                      className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-lg"
-                    >
-                      <Play className="w-8 h-8 text-primary fill-primary ml-1" />
-                    </motion.div>
-                  </div>
-                </button>
-              </motion.div>
-            </div>
-          </section>
-
-          {videoOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
-              onClick={(e) => { if (e.target === e.currentTarget) setVideoOpen(false); }}
-            >
-              <div className="relative w-full max-w-3xl">
-                <button
-                  onClick={() => setVideoOpen(false)}
-                  className="absolute -top-10 right-0 text-white/80 hover:text-white transition-colors"
-                  aria-label="Fermer"
-                >
-                  <X className="w-8 h-8" />
-                </button>
-                <div className="aspect-video rounded-xl overflow-hidden shadow-2xl bg-black">
-                  <video
-                    src={videoUrl}
-                    autoPlay
-                    controls
-                    className="w-full h-full"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      {/* Vidéo de présentation — masquée si aucune vidéo configurée ; chargée seulement au clic */}
+      {videoUrl && <VideoPresentation url={videoUrl} poster={videoPoster ?? undefined} fallbackPoster={prepImage} />}
 
       {/* Advantages strip */}
       <section className="py-16 md:py-20 px-6 md:px-12 bg-muted">

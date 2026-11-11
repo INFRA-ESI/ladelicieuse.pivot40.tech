@@ -59,6 +59,8 @@ export interface ISettings extends Document {
   dieteticienCredentials: string[];
   dieteticienPhoto: string;
   videoPresentation: string;
+  /** Image affichée avant la lecture de la vidéo (générée dans le back-office à l'envoi de la vidéo). */
+  videoPoster: string;
   updatedAt: Date;
 }
 
@@ -104,6 +106,7 @@ const SettingsSchema = new Schema<ISettings>(
     dieteticienCredentials:  { type: [String], default: ['Master en Sciences de l\'Alimentation et Nutrition', 'Spécialisation en sécurité alimentaire appliquée', 'Prise en charge des maladies métaboliques et chroniques', 'Suivi nutritionnel périnatal (grossesse & post-partum)'] },
     dieteticienPhoto:        { type: String,   default: '' },
     videoPresentation:       { type: String,   default: '' },
+    videoPoster:             { type: String,   default: '' },
   },
   { timestamps: true }
 );

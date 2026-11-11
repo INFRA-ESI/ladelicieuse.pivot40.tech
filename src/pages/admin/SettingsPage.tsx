@@ -3,6 +3,7 @@ import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope,
 import { toast } from 'sonner';
 import { passwordError } from '@/lib/password';
 import AdminEmailSection from '@/components/admin/AdminEmailSection';
+import { capturePoster } from '@/lib/videoPoster';
 import { adminGet, adminPatch, adminPost, adminUploadImage, adminUploadVideo, adminDeleteUpload } from '@/services/adminApiService';
 
 interface SettingsData {
@@ -22,6 +23,7 @@ interface SettingsData {
   dieteticienCredentials: string[];
   dieteticienPhoto: string;
   videoPresentation: string;
+  videoPoster: string;
 }
 
 const DEFAULTS: SettingsData = {
@@ -41,6 +43,7 @@ const DEFAULTS: SettingsData = {
   dieteticienCredentials: [],
   dieteticienPhoto: '',
   videoPresentation: '',
+  videoPoster: '',
 };
 
 // ─── Sous-composants au niveau du module (jamais recréés à chaque rendu) ──────────────
@@ -125,6 +128,24 @@ export default function SettingsPage() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   // Garde la dernière URL sauvegardée pour suppression propre après remplacement
   const savedVideoUrlRef = useRef<string>('');
+  const savedPosterUrlRef = useRef<string>('');
+  const [generatingPoster, setGeneratingPoster] = useState(false);
+
+  // Image affichée sur la page d'accueil avant la lecture : la vidéo ne se télécharge qu'au clic du visiteur.
+  const makePoster = async (source: Blob | string): Promise<boolean> => {
+    setGeneratingPoster(true);
+    try {
+      const blob = await capturePoster(source);
+      const url = await adminUploadImage(new File([blob], 'miniature.webp', { type: 'image/webp' }));
+      setForm(f => ({ ...f, videoPoster: url }));
+      return true;
+    } catch (e: unknown) {
+      toast.warning(`${e instanceof Error ? e.message : 'Miniature impossible.'} Une image par défaut sera affichée sur l'accueil.`);
+      return false;
+    } finally {
+      setGeneratingPoster(false);
+    }
+  };
 
   const handleVideoFile = async (file: File) => {
     const MAX_SIZE = 200 * 1024 * 1024;
@@ -137,7 +158,8 @@ export default function SettingsPage() {
     setUploadProgress(0);
     try {
       const url = await adminUploadVideo(file, (pct) => setUploadProgress(pct));
-      setForm(f => ({ ...f, videoPresentation: url }));
+      setForm(f => ({ ...f, videoPresentation: url, videoPoster: '' }));
+      await makePoster(file);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erreur upload vidéo');
       setVideoPreview(form.videoPresentation ? `${window.location.origin.replace('5100', '3000')}${form.videoPresentation}` : '');
@@ -163,6 +185,7 @@ export default function SettingsPage() {
           setVideoPreview(merged.videoPresentation);
           savedVideoUrlRef.current = merged.videoPresentation;
         }
+        savedPosterUrlRef.current = merged.videoPoster ?? '';
       })
       .catch(() => toast.error('Impossible de charger les paramètres'))
       .finally(() => setLoading(false));
@@ -171,6 +194,7 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     const oldVideoUrl = savedVideoUrlRef.current;
+    const oldPosterUrl = savedPosterUrlRef.current;
     try {
       await adminPatch('/settings', {
         nom:                    form.nom,
@@ -189,12 +213,17 @@ export default function SettingsPage() {
         dieteticienCredentials: form.dieteticienCredentials,
         dieteticienPhoto:       form.dieteticienPhoto,
         videoPresentation:      form.videoPresentation,
+        videoPoster:            form.videoPoster,
       });
       // Supprimer l'ancienne vidéo après sauvegarde réussie du nouveau chemin
       if (oldVideoUrl && oldVideoUrl !== form.videoPresentation) {
         adminDeleteUpload(oldVideoUrl); // fire-and-forget
       }
+      if (oldPosterUrl && oldPosterUrl !== form.videoPoster) {
+        adminDeleteUpload(oldPosterUrl); // fire-and-forget
+      }
       savedVideoUrlRef.current = form.videoPresentation;
+      savedPosterUrlRef.current = form.videoPoster;
       toast.success('Paramètres enregistrés');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
@@ -425,7 +454,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={() => {
                     setVideoPreview('');
-                    setForm(f => ({ ...f, videoPresentation: '' }));
+                    setForm(f => ({ ...f, videoPresentation: '', videoPoster: '' }));
                     if (videoInputRef.current) videoInputRef.current.value = '';
                   }}
                   className="absolute top-2 right-2 p-1.5 bg-foreground/70 text-background rounded-full hover:bg-foreground transition-colors"
@@ -445,8 +474,25 @@ export default function SettingsPage() {
                 Remplacer la vidéo
               </button>
             )}
+            {!uploadingVideo && (
+              <div className="flex items-center gap-3">
+                {form.videoPoster && (
+                  <img src={form.videoPoster} alt="Miniature actuelle" className="w-24 aspect-video object-cover rounded border border-border" />
+                )}
+                <button
+                  type="button"
+                  disabled={generatingPoster}
+                  onClick={() => makePoster(form.videoPresentation)}
+                  className="flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-md font-body text-sm hover:bg-border transition-colors disabled:opacity-60"
+                >
+                  {generatingPoster ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4 text-primary" />}
+                  {form.videoPoster ? 'Régénérer la miniature' : 'Générer la miniature'}
+                </button>
+              </div>
+            )}
             <p className="font-body text-xs text-muted-foreground">
               MP4, WebM, MOV · 200 Mo maximum · La vidéo actuelle sera remplacée après enregistrement.
+              La miniature est l'image affichée sur l'accueil avant la lecture : la vidéo ne se télécharge qu'au clic du visiteur. Pensez à enregistrer.
             </p>
           </div>
         ) : (
