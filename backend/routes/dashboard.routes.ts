@@ -8,6 +8,19 @@ import Testimonial from '../models/Testimonial.model.js';
 import { verifyJWT } from './auth.routes.js';
 import { cache } from '../middleware/cache.js';
 
+// Le Gabon est en UTC+1 toute l'année (pas d'heure d'été) : les jours de vente se comptent à cette heure-là.
+const BOUTIQUE_TIMEZONE = 'Africa/Libreville';
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Début (UTC) du jour civil de Libreville pour « AAAA-MM-JJ » ; null si la date n'existe pas (ex. 30 février).
+function startOfBoutiqueDay(date: unknown): Date | null {
+  if (typeof date !== 'string' || !DAY_PATTERN.test(date)) return null;
+  const [y, m, d] = date.split('-').map(Number);
+  const check = new Date(Date.UTC(y, m - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) return null;
+  return new Date(`${date}T00:00:00+01:00`);
+}
+
 const router = Router();
 
 // ── GET /api/dashboard/stats — KPIs globaux (cache 2 min) ────────────────────
@@ -73,7 +86,8 @@ router.get('/revenue', verifyJWT, cache(300), async (_req: Request, res: Respons
       { $match: { createdAt: { $gte: thirtyDaysAgo }, statut: 'payee' } },
       {
         $group: {
-          _id:      { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          // Jour civil de Libreville (UTC+1) : une facture émise à 00h30 locale appartient au nouveau jour.
+          _id:      { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: BOUTIQUE_TIMEZONE } },
           revenu:   { $sum: '$totalTTC' },
           factures: { $sum: 1 },
         },
@@ -88,9 +102,24 @@ router.get('/revenue', verifyJWT, cache(300), async (_req: Request, res: Respons
 });
 
 // ── GET /api/dashboard/top-meals — Top repas commandés (cache 5 min) ──────────
-router.get('/top-meals', verifyJWT, cache(300), async (_req: Request, res: Response): Promise<void> => {
+// Sans paramètre : toutes les commandes. Avec ?date=AAAA-MM-JJ : uniquement celles du jour civil de Libreville
+// (rapport journalier), commandes annulées ou remboursées exclues.
+router.get('/top-meals', verifyJWT, cache(300), async (req: Request, res: Response): Promise<void> => {
   try {
+    const { date } = req.query;
+    const match: Record<string, unknown> = {};
+    if (date !== undefined) {
+      const start = startOfBoutiqueDay(date);
+      if (!start) {
+        res.status(400).json({ success: false, message: 'date invalide (format AAAA-MM-JJ attendu)' });
+        return;
+      }
+      match.createdAt = { $gte: start, $lt: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+      match.statut = { $nin: ['annulee', 'remboursee'] };
+    }
+
     const top = await Order.aggregate([
+      { $match: match },
       { $unwind: '$items' },
       {
         $group: {

@@ -7,13 +7,15 @@ import {
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight,
   Download, ChevronUp, ChevronDown, Minus, Loader2,
 } from '@/components/icons';
+import { toast } from 'sonner';
 import { adminGet } from '@/services/adminApiService';
+import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/admin/TablePagination';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Period = 'semaine' | 'mois';
+type Period = 'jour' | 'semaine' | 'mois';
 type SortKey = 'nom' | 'vendu' | 'ca' | 'marge' | 'margePct';
 
 interface RevenuePoint { _id: string; revenu: number; factures: number; }
@@ -83,9 +85,26 @@ const delta = (cur: number, prev: number) =>
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
+// Clé « AAAA-MM-JJ » du jour local (le serveur regroupe les ventes par jour de Libreville, la même clé).
+const toDayKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Les `count` jours qui se terminent à celui du rapport journalier, pour montrer la tendance autour de lui.
+const getTrailingDays = (data: DayData[], offset: number, count: number): DayData[] => {
+  const end = new Date(); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() - offset);
+  const start = new Date(end); start.setDate(end.getDate() - (count - 1));
+  return data.filter(d => d.dateStr >= toDayKey(start) && d.dateStr <= toDayKey(end));
+};
+
 const getPeriodDays = (period: Period, offset: number, data: DayData[]): DayData[] => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  if (period === 'jour') {
+    const day = new Date(today);
+    day.setDate(today.getDate() - offset);
+    return data.filter(d => d.dateStr === toDayKey(day));
+  }
 
   if (period === 'semaine') {
     const dow = today.getDay() || 7;
@@ -106,7 +125,7 @@ const getPeriodDays = (period: Period, offset: number, data: DayData[]): DayData
 };
 
 const getPeriodBilan = (period: Period, offset: number, bilan: BilanRow[]): BilanRow[] => {
-  if (period === 'semaine') return [];
+  if (period !== 'mois') return [];
   const today = new Date();
   const ref = new Date(today.getFullYear(), today.getMonth() - offset, 1);
   const moisKey = ref.toISOString().substring(0, 7);
@@ -114,6 +133,11 @@ const getPeriodBilan = (period: Period, offset: number, bilan: BilanRow[]): Bila
 };
 
 const getPeriodLabel = (period: Period, offset: number, days: DayData[], bilan: BilanRow[]): string => {
+  if (period === 'jour') {
+    const day = new Date(); day.setDate(day.getDate() - offset);
+    const label = day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return offset === 0 ? `Aujourd'hui · ${label}` : label;
+  }
   if (period === 'semaine') {
     if (days.length === 0) return offset === 0 ? 'Cette semaine' : `Semaine -${offset}`;
     const f = days[0].date;
@@ -130,7 +154,9 @@ const getPeriodLabel = (period: Period, offset: number, days: DayData[], bilan: 
 const getChartData = (period: Period, days: DayData[], prevDays: DayData[]) => {
   const dayLabel = (d: DayData) => period === 'semaine'
     ? d.date.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')
-    : d.date.getDate().toString();
+    : period === 'jour'
+      ? d.date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }).replace('.', '')
+      : d.date.getDate().toString();
 
   const prevMap = new Map(prevDays.map((d, i) => [i, d.revenus]));
   return days.map((d, i) => ({
@@ -210,6 +236,8 @@ export default function SalesReportPage() {
   const [topMealsData, setTopMealsData]     = useState<TopMeal[]>([]);
   const [bilanData, setBilanData]           = useState<BilanRow[]>([]);
   const [dataLoading, setDataLoading]       = useState(true);
+  // Produits vendus le jour affiché (rapport journalier) : le classement général ne dit rien d'un jour précis.
+  const [dayMealsData, setDayMealsData]     = useState<TopMeal[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -225,6 +253,21 @@ export default function SalesReportPage() {
       .catch(console.error)
       .finally(() => setDataLoading(false));
   }, []);
+
+  const dayKey = (() => {
+    if (period !== 'jour') return null;
+    const day = new Date(); day.setDate(day.getDate() - offset);
+    return toDayKey(day);
+  })();
+  useEffect(() => {
+    if (!dayKey) return;
+    let current = true;
+    setDayMealsData([]);
+    adminGet<{ success: boolean; data: TopMeal[] }>(`/dashboard/top-meals?date=${dayKey}`)
+      .then(res => { if (current) setDayMealsData(res.data ?? []); })
+      .catch(() => { if (current) toast.error('Erreur chargement des produits du jour'); });
+    return () => { current = false; };
+  }, [dayKey]);
 
   // Construit allDays depuis les données journalières réelles, en estimant le coût d'après le ratio du bilan mensuel
   const allDays = useMemo<DayData[]>(() => {
@@ -255,10 +298,15 @@ export default function SalesReportPage() {
   }, [period, prevDays, prevBilanRows]);
 
   const periodLabel = useMemo(() => getPeriodLabel(period, offset, periodDays, bilanData), [period, offset, periodDays, bilanData]);
-  const chartData   = useMemo(() => getChartData(period, periodDays, prevDays), [period, periodDays, prevDays]);
+  const chartData   = useMemo(
+    () => period === 'jour'
+      ? getChartData(period, getTrailingDays(allDays, offset, 7), [])
+      : getChartData(period, periodDays, prevDays),
+    [period, offset, allDays, periodDays, prevDays],
+  );
 
   const productStats = useMemo<ProductStat[]>(() => {
-    return topMealsData.map((m, i) => {
+    return (period === 'jour' ? dayMealsData : topMealsData).map((m, i) => {
       const prix      = m.total > 0 ? Math.round(m.revenu / m.total) : 0;
       const cout      = Math.round(prix * 0.40);
       const vendu     = m.total;
@@ -268,7 +316,7 @@ export default function SalesReportPage() {
       const margePct  = ca > 0 ? Math.round(marge / ca * 100) : 0;
       return { id: i + 1, nom: m._id, categorie: 'Plats', vendu, prix, cout, ca, coutTotal, marge, margePct };
     });
-  }, [topMealsData]);
+  }, [period, dayMealsData, topMealsData]);
 
   const sortedProducts = useMemo(() => {
     return [...productStats].sort((a, b) => {
@@ -303,44 +351,54 @@ export default function SalesReportPage() {
   const bestProduct  = sortedProducts[0];
 
   // ── Export CSV ───────────────────────────────────────────────────────────────
+  // Un CSV est du texte brut : il ne peut pas contenir d'image. L'identité de la boutique figure donc en tête de fichier,
+  // et le logo est sur le PDF. Les montants sont des nombres purs (sans « FCFA ») pour que le tableur puisse les additionner.
   const exportCSV = () => {
-    const rows: string[][] = [];
     const sep = ';';
+    const cell = (v: string | number) => {
+      const t = String(v);
+      return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const rows: (string | number)[][] = [];
 
-    rows.push(['La Délicieuse Diète — Rapport de ventes']);
-    rows.push([`Période : ${periodLabel}`]);
-    rows.push([`Généré le : ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`]);
+    rows.push([BRAND.name.toUpperCase()]);
+    rows.push([BRAND.tagline]);
+    rows.push([`${BRAND.address} · ${BRAND.email} · ${BRAND.phone}`]);
+    rows.push([]);
+    rows.push([period === 'jour' ? 'RAPPORT JOURNALIER' : 'RAPPORT DE VENTES']);
+    rows.push(['Période', periodLabel]);
+    rows.push(['Généré le', new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })]);
     rows.push([]);
 
-    rows.push(['=== RÉSUMÉ ===']);
-    rows.push(['Revenus', `${stats.revenus} FCFA`]);
-    rows.push(['Coût matières (estimé)', `${stats.cout} FCFA`]);
-    rows.push(['Marge brute', `${stats.marge} FCFA`]);
-    rows.push(['Marge %', `${r1(stats.margePct)}%`]);
-    rows.push(['Commandes', String(stats.commandes)]);
-    rows.push(['Panier moyen', `${Math.round(stats.panierMoyen)} FCFA`]);
+    rows.push(['1. INDICATEURS CLÉS']);
+    rows.push(['Indicateur', 'Valeur', 'Unité']);
+    rows.push(['Revenus', stats.revenus, 'FCFA']);
+    rows.push(['Coût matières (estimé)', stats.cout, 'FCFA']);
+    rows.push(['Marge brute', stats.marge, 'FCFA']);
+    rows.push(['Taux de marge', r1(stats.margePct), '%']);
+    rows.push(['Commandes', stats.commandes, '']);
+    rows.push(['Panier moyen', Math.round(stats.panierMoyen), 'FCFA']);
     rows.push([]);
 
     if (periodDays.length > 0) {
-      rows.push(['=== DONNÉES JOURNALIÈRES ===']);
-      rows.push(['Date', 'Revenus (FCFA)', 'Commandes', 'Coût (FCFA)', 'Marge (FCFA)', 'Marge %']);
+      rows.push(['2. DÉTAIL JOURNALIER']);
+      rows.push(['Date', 'Revenus (FCFA)', 'Commandes', 'Coût (FCFA)', 'Marge (FCFA)', 'Marge (%)']);
       periodDays.forEach(d => {
         const marge = d.revenus - d.cout;
-        const pct   = d.revenus > 0 ? r1(marge / d.revenus * 100) : 0;
-        rows.push([d.dateStr, String(d.revenus), String(d.commandes), String(d.cout), String(marge), `${pct}%`]);
+        rows.push([d.dateStr, d.revenus, d.commandes, d.cout, marge, d.revenus > 0 ? r1(marge / d.revenus * 100) : 0]);
       });
       rows.push([]);
     }
 
     if (sortedProducts.length > 0) {
-      rows.push(['=== PRODUITS ===']);
-      rows.push(['Rang', 'Produit', 'Qté vendue', 'CA (FCFA)', 'Coût total (FCFA)', 'Marge (FCFA)', 'Marge %']);
+      rows.push(['3. PRODUITS']);
+      rows.push(['Rang', 'Produit', 'Qté vendue', 'CA (FCFA)', 'Coût total (FCFA)', 'Marge (FCFA)', 'Marge (%)']);
       sortedProducts.forEach((p, i) => {
-        rows.push([String(i + 1), p.nom, String(p.vendu), String(p.ca), String(p.coutTotal), String(p.marge), `${p.margePct}%`]);
+        rows.push([i + 1, p.nom, p.vendu, p.ca, p.coutTotal, p.marge, p.margePct]);
       });
     }
 
-    const csv = '﻿' + rows.map(r => r.join(sep)).join('\n'); // BOM pour Excel
+    const csv = '﻿' + rows.map(r => r.map(cell).join(sep)).join('\r\n'); // BOM pour Excel
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -352,17 +410,15 @@ export default function SalesReportPage() {
 
   // ── Export PDF (impression navigateur) ───────────────────────────────────────
   const printReport = () => {
-    const G2 = '#267340', GL = '#f4f7f2';
     const genDate = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const n = (v: number) => v.toLocaleString('fr-FR');
 
     // Barre de progression CSS pour la marge
     const bar = (pct: number) => {
       const clr = pct >= 55 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626';
       const w   = Math.max(4, Math.min(100, pct));
       return `<div style="display:flex;align-items:center;gap:6px">
-        <div style="flex:1;height:5px;background:#eee;border-radius:3px;overflow:hidden">
-          <div style="width:${w}%;height:100%;background:${clr};border-radius:3px"></div>
-        </div>
+        <div style="flex:1;height:5px;background:#eee"><div style="width:${w}%;height:100%;background:${clr}"></div></div>
         <span style="font-size:11px;font-weight:700;color:${clr};width:36px;text-align:right">${pct}%</span>
       </div>`;
     };
@@ -371,11 +427,11 @@ export default function SalesReportPage() {
       ? periodBilanRows.map(r => {
           const pct = r.revenus > 0 ? r1(r.benefice / r.revenus * 100) : 0;
           return `<tr>
-            <td><strong>${r.mois} ${new Date(r.moisKey + '-01').getFullYear()}</strong></td>
-            <td class="r">${r.revenus.toLocaleString('fr-FR')}</td>
+            <td><strong>${escapeHtml(r.mois)} ${new Date(r.moisKey + '-01').getFullYear()}</strong></td>
+            <td class="r">${n(r.revenus)}</td>
             <td class="r">${r.count}</td>
-            <td class="r">${r.coutMatieres.toLocaleString('fr-FR')}</td>
-            <td class="r">${r.benefice.toLocaleString('fr-FR')}</td>
+            <td class="r">${n(r.coutMatieres)}</td>
+            <td class="r">${n(r.benefice)}</td>
             <td style="min-width:120px">${bar(pct)}</td>
           </tr>`;
         }).join('')
@@ -383,23 +439,23 @@ export default function SalesReportPage() {
           const m = d.revenus - d.cout;
           const pct = d.revenus > 0 ? r1(m / d.revenus * 100) : 0;
           return `<tr>
-            <td>${d.dateStr}</td>
-            <td class="r">${d.revenus.toLocaleString('fr-FR')}</td>
+            <td>${escapeHtml(d.dateStr)}</td>
+            <td class="r">${n(d.revenus)}</td>
             <td class="r">${d.commandes}</td>
-            <td class="r">${d.cout.toLocaleString('fr-FR')}</td>
-            <td class="r">${m.toLocaleString('fr-FR')}</td>
+            <td class="r">${n(d.cout)}</td>
+            <td class="r">${n(m)}</td>
             <td style="min-width:120px">${bar(pct)}</td>
           </tr>`;
         }).join('');
 
     const prodRows = sortedProducts.map((p, i) =>
       `<tr>
-        <td class="r" style="color:#888;font-weight:300">${i + 1}</td>
-        <td><strong>${p.nom}</strong></td>
+        <td class="r" style="color:#888">${i + 1}</td>
+        <td><strong>${escapeHtml(p.nom)}</strong></td>
         <td class="r">${p.vendu}</td>
-        <td class="r"><strong>${p.ca.toLocaleString('fr-FR')}</strong></td>
-        <td class="r">${p.coutTotal.toLocaleString('fr-FR')}</td>
-        <td class="r">${p.marge.toLocaleString('fr-FR')}</td>
+        <td class="r"><strong>${n(p.ca)}</strong></td>
+        <td class="r">${n(p.coutTotal)}</td>
+        <td class="r">${n(p.marge)}</td>
         <td style="min-width:120px">${bar(p.margePct)}</td>
       </tr>`
     ).join('');
@@ -407,212 +463,72 @@ export default function SalesReportPage() {
     const totalMarge = r1(stats.margePct);
     const margeCls   = totalMarge >= 55 ? '#16a34a' : totalMarge >= 40 ? '#d97706' : '#dc2626';
 
-    const html = `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8">
-<title>Rapport de ventes — ${periodLabel}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;color:#333;font-size:12px;background:#fff;line-height:1.5}
-  .bar-top{height:4px;background:#267340;font-size:0;line-height:0}
-  .bar-mid{height:2px;background:#267340;font-size:0;line-height:0}
-  .bar-bot{height:4px;background:#267340;font-size:0;line-height:0}
-  /* ── En-tête ─────────────────────────────────────────────────────────── */
-  .header{background:#1c4028;color:#fff;padding:28px 44px;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;position:relative;overflow:hidden}
-  .header::before{content:'';position:absolute;right:-60px;bottom:-60px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.04)}
-  .brand-wrap{display:flex;align-items:center;gap:12px}
-  .brand-mono{width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:700;color:#fff;letter-spacing:-1px;flex-shrink:0}
-  .brand-name{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:4px;text-transform:uppercase;line-height:1.1}
-  .brand-tag{font-size:9px;color:#267340;letter-spacing:3px;text-transform:uppercase;margin-top:4px}
-  .doc-info{text-align:right}
-  .doc-title{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:3px;text-transform:uppercase;opacity:.95}
-  .doc-period{font-size:11px;opacity:.7;margin-top:4px}
-  .doc-date{font-size:10px;opacity:.5;margin-top:2px}
-  /* ── Séparateur ──────────────────────────────────────────────────────── */
-  .stripe{height:0}
-  /* ── Corps ───────────────────────────────────────────────────────────── */
-  .body{padding:32px 44px}
-  /* Section */
-  .section{margin-bottom:32px}
-  .section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-  .section-num{width:22px;height:22px;background:${G2};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
-  .section-title{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:${G2};font-weight:700}
-  .section-line{flex:1;height:1px;background:${GL}}
-  /* KPI */
-  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .kpi-card{border-radius:10px;padding:14px 16px;border:1px solid transparent}
-  .kpi-card.primary{background:#f4f7f2;border-color:#d0dccb}
-  .kpi-card.secondary{background:#f9faf9;border-color:#e4ebe2}
-  .kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#7a9488;font-weight:700;margin-bottom:6px}
-  .kpi-val{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:400;line-height:1.1}
-  .kpi-card.primary .kpi-val{color:#267340}
-  .kpi-card.secondary .kpi-val{color:#1c4028}
-  .kpi-unit{font-size:10px;font-family:Arial,Helvetica,sans-serif;font-weight:400;color:#7a9488;margin-left:3px}
-  /* Synthèse marge */
-  .marge-summary{display:flex;align-items:center;gap:16px;background:#f4f7f2;border-left:3px solid #267340;border-radius:0 8px 8px 0;padding:14px 18px;margin-top:10px}
-  .marge-big{font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:400;color:${margeCls}}
-  .marge-bar-wrap{flex:1}
-  .marge-bar-bg{height:6px;background:#d0dccb;border-radius:4px;overflow:hidden}
-  .marge-bar-fill{height:100%;background:${margeCls};border-radius:4px;width:${Math.min(100, totalMarge)}%}
-  .marge-label{font-size:10px;color:#4a6357;margin-top:4px}
-  /* Tables */
-  .table-wrap{border-radius:6px;overflow:hidden;border:1px solid #e4ebe2}
-  table{width:100%;border-collapse:collapse;font-size:11.5px}
-  thead tr{background:#1c4028}
-  th{padding:10px 12px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:2px;font-weight:700;text-align:left}
-  th.r{text-align:right}
-  td{padding:10px 12px;border-bottom:1px solid #f0f4f0;color:#333}
-  tr:last-child td{border-bottom:none}
-  tr:nth-child(even) td{background:#f9fbf9}
-  td.r{text-align:right}
-  /* Pied */
-  .footer-sep{height:1px;background:#e4ebe2;margin-top:24px;font-size:0}
-  .footer{background:#f4f7f2;padding:20px 44px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}
-  .footer-brand{font-family:Georgia,'Times New Roman',serif;font-size:12px;font-weight:400;color:#267340;letter-spacing:3px;text-transform:uppercase}
-  .footer-info{font-size:10px;color:#7a9488;line-height:1.7;margin-top:2px}
-  .footer-right{text-align:right;font-size:10px;color:#aaa;line-height:1.8}
-  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
-</style></head><body>
+    const section = (num: number, title: string, content: string) => `
+      <div class="section">
+        <div class="section-title">${num}. ${title}</div>
+        ${content}
+      </div>`;
+    const kpi = (label: string, value: string, unit: string, cls: string, color = '') =>
+      `<div class="kpi-card ${cls}"><div class="kpi-lbl">${label}</div><div class="kpi-val"${color ? ` style="color:${color}"` : ''}>${value}${unit ? `<span class="kpi-unit">${unit}</span>` : ''}</div></div>`;
 
-<div class="bar-top"></div>
-<div class="header">
-  <div class="brand-wrap">
-    <div class="brand-mono">LD</div>
-    <div>
-      <div class="brand-name">La Délicieuse Diète</div>
-      <div class="brand-tag">Cuisine saine &amp; savoureuse · Libreville, Gabon</div>
-    </div>
-  </div>
-  <div class="doc-info">
-    <div class="doc-title">Rapport de ventes</div>
-    <div class="doc-period">${periodLabel}</div>
-    <div class="doc-date">Généré le ${genDate}</div>
-  </div>
-</div>
-<div class="bar-mid"></div>
-<div class="stripe"></div>
+    const body = [
+      section(1, 'Indicateurs clés de performance', `
+        <div class="kpi">
+          ${kpi('Revenus totaux', n(stats.revenus), 'FCFA', 'primary')}
+          ${kpi('Marge brute', n(stats.marge), 'FCFA', 'primary')}
+          ${kpi('Commandes', String(stats.commandes), '', 'secondary')}
+          ${kpi('Panier moyen', n(Math.round(stats.panierMoyen)), 'FCFA', 'secondary')}
+          ${kpi('Coût matières', n(stats.cout), 'FCFA', 'secondary')}
+          ${kpi('Résultat net', n(stats.revenus - stats.cout), 'FCFA', 'secondary', margeCls)}
+        </div>
+        <div class="marge-summary">
+          <div>
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:4px">Taux de marge global</div>
+            <div class="marge-big" style="color:${margeCls}">${totalMarge}%</div>
+          </div>
+          <div style="flex:1">
+            <div style="height:6px;background:#d0dccb"><div style="height:100%;background:${margeCls};width:${Math.min(100, totalMarge)}%"></div></div>
+            <div style="font-size:10px;color:#4a6357;margin-top:4px">${totalMarge >= 55 ? 'Excellente rentabilité' : totalMarge >= 40 ? 'Rentabilité correcte' : 'Marge à améliorer'}</div>
+          </div>
+        </div>`),
+      detailRows ? section(2, period === 'jour' ? 'Ventes du jour' : `Détail ${period === 'mois' ? 'mensuel' : 'journalier'}`, `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Période</th><th class="r">Revenus (FCFA)</th><th class="r">Commandes</th><th class="r">Coût (FCFA)</th><th class="r">Marge (FCFA)</th><th>Marge %</th></tr></thead>
+          <tbody>${detailRows}</tbody>
+        </table></div>`) : '',
+      prodRows ? section(3, 'Performance produits', `
+        <div class="table-wrap"><table>
+          <thead><tr><th class="r">#</th><th>Produit</th><th class="r">Qté vendue</th><th class="r">CA (FCFA)</th><th class="r">Coût total</th><th class="r">Marge (FCFA)</th><th>Marge %</th></tr></thead>
+          <tbody>${prodRows}</tbody>
+        </table></div>`) : '',
+    ].join('');
 
-<div class="body">
+    const css = `
+      .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .kpi-card{padding:14px 16px;border:1px solid transparent}
+      .kpi-card.primary{background:#f4f7f2;border-color:#d0dccb}
+      .kpi-card.secondary{background:#f9faf9;border-color:#e4ebe2}
+      .kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#7a9488;font-weight:700;margin-bottom:6px}
+      .kpi-val{font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.1;color:#1c4028}
+      .kpi-card.primary .kpi-val{color:#267340}
+      .kpi-unit{font-size:10px;font-family:Arial,Helvetica,sans-serif;color:#7a9488;margin-left:3px}
+      .marge-summary{display:flex;align-items:center;gap:16px;background:#f4f7f2;border-left:3px solid #267340;padding:14px 18px;margin-top:10px}
+      .marge-big{font-family:Georgia,'Times New Roman',serif;font-size:32px}`;
 
-  <!-- 1. KPI -->
-  <div class="section">
-    <div class="section-head">
-      <div class="section-num">1</div>
-      <div class="section-title">Indicateurs clés de performance</div>
-      <div class="section-line"></div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-card primary">
-        <div class="kpi-lbl">Revenus totaux</div>
-        <div class="kpi-val">${stats.revenus.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
-      </div>
-      <div class="kpi-card primary">
-        <div class="kpi-lbl">Marge brute</div>
-        <div class="kpi-val">${stats.marge.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
-      </div>
-      <div class="kpi-card secondary">
-        <div class="kpi-lbl">Commandes</div>
-        <div class="kpi-val">${stats.commandes}</div>
-      </div>
-      <div class="kpi-card secondary">
-        <div class="kpi-lbl">Panier moyen</div>
-        <div class="kpi-val">${Math.round(stats.panierMoyen).toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
-      </div>
-      <div class="kpi-card secondary">
-        <div class="kpi-lbl">Coût matières</div>
-        <div class="kpi-val">${stats.cout.toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
-      </div>
-      <div class="kpi-card secondary">
-        <div class="kpi-lbl">Résultat net</div>
-        <div class="kpi-val" style="color:${margeCls}">${(stats.revenus - stats.cout).toLocaleString('fr-FR')}<span class="kpi-unit">FCFA</span></div>
-      </div>
-    </div>
-    <div class="marge-summary">
-      <div>
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:4px">Taux de marge global</div>
-        <div class="marge-big">${totalMarge}%</div>
-      </div>
-      <div class="marge-bar-wrap">
-        <div class="marge-bar-bg"><div class="marge-bar-fill"></div></div>
-        <div class="marge-label">${totalMarge >= 55 ? 'Excellente rentabilité' : totalMarge >= 40 ? 'Rentabilité correcte' : 'Marge à améliorer'}</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. Détail -->
-  ${detailRows ? `
-  <div class="section">
-    <div class="section-head">
-      <div class="section-num">2</div>
-      <div class="section-title">Détail ${period === 'mois' ? 'mensuel' : 'journalier'}</div>
-      <div class="section-line"></div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Période</th>
-          <th class="r">Revenus (FCFA)</th>
-          <th class="r">Commandes</th>
-          <th class="r">Coût (FCFA)</th>
-          <th class="r">Marge (FCFA)</th>
-          <th>Marge %</th>
-        </tr></thead>
-        <tbody>${detailRows}</tbody>
-      </table>
-    </div>
-  </div>` : ''}
-
-  <!-- 3. Produits -->
-  ${prodRows ? `
-  <div class="section">
-    <div class="section-head">
-      <div class="section-num">3</div>
-      <div class="section-title">Performance produits</div>
-      <div class="section-line"></div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th class="r">#</th>
-          <th>Produit</th>
-          <th class="r">Qté vendue</th>
-          <th class="r">CA (FCFA)</th>
-          <th class="r">Coût total</th>
-          <th class="r">Marge (FCFA)</th>
-          <th>Marge %</th>
-        </tr></thead>
-        <tbody>${prodRows}</tbody>
-      </table>
-    </div>
-  </div>` : ''}
-
-
-</div>
-
-<div class="footer-sep"></div>
-<div class="footer">
-  <div>
-    <div class="footer-brand">La Délicieuse Diète</div>
-    <div class="footer-info">Quartier Louis, Libreville, Gabon · ladelicieuse.1@gmail.com · +241 76 35 90 20</div>
-  </div>
-  <div class="footer-right">
-    Document confidentiel — usage interne<br>
-    Généré le ${genDate}
-  </div>
-</div>
-<div class="bar-bot"></div>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    if (!w) { return; }
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 600);
+    printDocument({
+      title: `${period === 'jour' ? 'Rapport journalier' : 'Rapport de ventes'} — ${periodLabel}`,
+      heading: period === 'jour' ? 'Rapport journalier' : 'Rapport de ventes',
+      lines: [escapeHtml(periodLabel), `Généré le ${genDate}`],
+      body,
+      css,
+      footerRight: `Document confidentiel — usage interne<br>Généré le ${genDate}`,
+    }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
   };
   const worstMarge   = productStats.length > 0 ? [...productStats].sort((a, b) => a.margePct - b.margePct)[0] : null;
 
   const canGoNext = offset > 0;
-  const canGoPrev = (() => {
+  // Les ventes journalières ne sont chargées que sur 30 jours, même s'il n'y a eu aucune vente la veille.
+  const canGoPrev = period === 'jour' ? offset < 29 : (() => {
     if (period === 'mois') {
       const prev = getPeriodBilan(period, offset + 1, bilanData);
       if (prev.length > 0) return true;
@@ -659,10 +575,10 @@ export default function SalesReportPage() {
       {/* Period tabs */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex bg-background border border-border rounded-lg overflow-hidden">
-          {(['semaine', 'mois'] as Period[]).map(p => (
+          {(['jour', 'semaine', 'mois'] as Period[]).map(p => (
             <button key={p} onClick={() => { setPeriod(p); setOffset(0); }}
               className={`px-4 py-2 font-body text-sm transition-colors capitalize ${period === p ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-              {p === 'semaine' ? 'Semaine' : 'Mois'}
+              {p === 'jour' ? 'Jour' : p === 'semaine' ? 'Semaine' : 'Mois'}
             </button>
           ))}
         </div>
@@ -720,8 +636,8 @@ export default function SalesReportPage() {
         />
         <KpiCard
           label="Produits vendus"
-          value={Math.round(stats.commandes * 2.2).toString()}
-          sub="~2.2 articles / commande"
+          value={period === 'jour' ? productStats.reduce((n, p) => n + p.vendu, 0).toString() : Math.round(stats.commandes * 2.2).toString()}
+          sub={period === 'jour' ? 'articles vendus ce jour' : '~2.2 articles / commande'}
           d={delta(stats.commandes, prevStats.commandes)}
         />
       </div>
@@ -733,12 +649,12 @@ export default function SalesReportPage() {
         <div className="lg:col-span-2 bg-background border border-border rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-5">
             <h3 className="font-display text-lg text-foreground">
-              {period === 'semaine' ? 'Revenus par jour' : 'Revenus par jour du mois'}
+              {period === 'jour' ? 'Revenus des 7 derniers jours' : period === 'semaine' ? 'Revenus par jour' : 'Revenus par jour du mois'}
             </h3>
             <div className="flex gap-3 font-body text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-primary inline-block" /> Revenus</span>
               <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-green-500 inline-block" /> Marge</span>
-              {showPrev && <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-muted-foreground/40 inline-block" /> Préc.</span>}
+              {showPrev && period !== 'jour' && <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-muted-foreground/40 inline-block" /> Préc.</span>}
             </div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
@@ -749,7 +665,7 @@ export default function SalesReportPage() {
                 tickFormatter={v => fmtK(v)} />
               <YAxis yAxisId="cmd" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
               <Tooltip content={<CurrencyTooltip />} />
-              {showPrev && (
+              {showPrev && period !== 'jour' && (
                 <Bar yAxisId="rev" dataKey="prevRevenus" name="Préc." fill="hsl(var(--muted-foreground) / 0.2)" radius={[3, 3, 0, 0]} />
               )}
               <Bar yAxisId="rev" dataKey="revenus" name="Revenus" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
@@ -799,7 +715,7 @@ export default function SalesReportPage() {
       <div className="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h3 className="font-display text-lg text-foreground">Performances par produit</h3>
-          <p className="font-body text-xs text-muted-foreground">{sortedProducts.length} produits · toutes périodes</p>
+          <p className="font-body text-xs text-muted-foreground">{sortedProducts.length} produits · {period === 'jour' ? 'ce jour' : 'toutes périodes'}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
