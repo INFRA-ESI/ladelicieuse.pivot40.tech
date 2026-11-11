@@ -131,7 +131,6 @@ function avgField(arr: ProgressEntry[], field: keyof ProgressEntry): number | nu
   return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10;
 }
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 function authHeaders(token: string) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 }
@@ -240,25 +239,22 @@ export default function SuiviPage() {
     setError(null);
     try {
       const [entriesRes, statsRes, goalsRes] = await Promise.all([
-        fetch(`${API}/api/tracking?days=30`, { headers: authHeaders(token) }),
-        fetch(`${API}/api/tracking/stats`,   { headers: authHeaders(token) }),
-        fetch(`${API}/api/client/goals`,     { headers: authHeaders(token) }),
+        fetch(`/api/tracking?days=30`, { headers: authHeaders(token) }),
+        fetch(`/api/tracking/stats`,   { headers: authHeaders(token) }),
+        fetch(`/api/client/goals`,     { headers: authHeaders(token) }),
       ]);
       const [e, s, g] = await Promise.all([
         entriesRes.json(),
         statsRes.json(),
         goalsRes.json(),
       ]);
-      if (e.success) setEntries(e.data ?? []);
-      if (s.success) setStats(s.data);
-      if (g.success) {
-        setGoals(g.data);
-        setGoalForm(
-          Object.fromEntries(
-            Object.entries(g.data as Goals).map(([k, v]) => [k, v != null ? String(v) : ''])
-          )
-        );
-      }
+      if (!e.success || !s.success || !g.success) throw new Error('réponse refusée');
+      setEntries(e.data ?? []);
+      setStats(s.data);
+      setGoals(g.data);
+      setGoalForm(
+        Object.fromEntries(Object.entries(g.data as Goals).map(([k, v]) => [k, v != null ? String(v) : ''])),
+      );
     } catch {
       setError('Impossible de charger vos données. Vérifiez votre connexion et réessayez.');
       toast.error('Erreur de chargement des données.');
@@ -287,7 +283,7 @@ export default function SuiviPage() {
 
     setSaving(true);
     try {
-      const res  = await fetch(`${API}/api/tracking`, {
+      const res  = await fetch(`/api/tracking`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify(payload),
@@ -313,7 +309,7 @@ export default function SuiviPage() {
       if (v !== '') payload[k] = parseFloat(v);
     }
     try {
-      const res  = await fetch(`${API}/api/client/goals`, {
+      const res  = await fetch(`/api/client/goals`, {
         method: 'PATCH',
         headers: authHeaders(token),
         body: JSON.stringify(payload),
@@ -333,7 +329,7 @@ export default function SuiviPage() {
   // ── Supprimer l'entrée ───────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`${API}/api/tracking/${id}`, {
+      const res = await fetch(`/api/tracking/${id}`, {
         method: 'DELETE',
         headers: authHeaders(token),
       });
