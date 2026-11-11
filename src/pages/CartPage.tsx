@@ -776,7 +776,8 @@ export default function CartPage() {
             transition={{ delay: 0.35 }}
             className="mb-8"
           >
-            <p className="font-body text-xs text-center text-muted-foreground mb-2">
+            {/* En rouge : sans cette étape la commande n'est pas prise en compte, il ne faut pas que le regard reste sur « Commande confirmée ». */}
+            <p className="font-body text-base font-semibold text-center text-red-600 leading-snug mb-3">
               Dernière étape — indispensable pour que votre commande soit prise en compte
             </p>
             <a
