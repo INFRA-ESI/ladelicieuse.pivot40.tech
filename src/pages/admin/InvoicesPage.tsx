@@ -12,6 +12,7 @@ import {
 import { adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
 import { formatPrixFcfa as fmt } from '@/lib/fcfa';
 import { usePagination } from '@/hooks/usePagination';
+import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
 import TablePagination from '@/components/admin/TablePagination';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -109,179 +110,92 @@ function Th({ label, sortKey, cur, dir, onSort }: {
 // ─── Print helper ─────────────────────────────────────────────────────────────
 
 function printInvoice(inv: Invoice) {
-  const statusColors: Record<InvoiceStatus, string> = {
+  const statusStyles: Record<InvoiceStatus, string> = {
     payee:      'background:#d1fae5;color:#065f46',
     en_attente: 'background:#fef3c7;color:#92400e',
     annulee:    'background:#fee2e2;color:#991b1b',
     remboursee: 'background:#ede9fe;color:#5b21b6',
   };
-  const statStyle = statusColors[inv.statut] ?? statusColors.en_attente;
-  const watermarkText = inv.statut === 'payee' ? 'PAYÉE' : inv.statut === 'annulee' ? 'ANNULÉE' : inv.statut === 'remboursee' ? 'REMBOURSÉE' : '';
+  const watermark = inv.statut === 'payee' ? 'PAYÉE' : inv.statut === 'annulee' ? 'ANNULÉE' : inv.statut === 'remboursee' ? 'REMBOURSÉE' : '';
+  const statusLabel = STATUS_CONFIG[inv.statut].label;
+  const f = (n: number) => `${n.toLocaleString('fr-FR')} F`;
 
-  const html = `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8">
-<title>Facture ${inv.numero} — La Délicieuse Diète</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;color:#333;font-size:13px;background:#fff;line-height:1.5}
-  .bar-top{height:4px;background:#267340;font-size:0;line-height:0}
-  .bar-mid{height:2px;background:#267340;font-size:0;line-height:0}
-  .bar-bot{height:4px;background:#267340;font-size:0;line-height:0}
-  .header{background:#1c4028;color:#fff;padding:36px 48px;display:flex;justify-content:space-between;align-items:flex-start;position:relative;overflow:hidden}
-  .header::after{content:'';position:absolute;right:-50px;top:-50px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.04)}
-  .brand-wrap{display:flex;align-items:center;gap:14px}
-  .brand-mono{width:44px;height:44px;border-radius:10px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#fff;letter-spacing:-1px;flex-shrink:0}
-  .brand-name{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:4px;text-transform:uppercase;line-height:1.1}
-  .brand-tag{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:#267340;margin-top:4px}
-  .inv-meta{text-align:right}
-  .inv-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:4px}
-  .inv-num{font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:400;letter-spacing:2px}
-  .inv-date{font-size:11px;color:rgba(255,255,255,.55);margin-top:4px}
-  .status-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:8px;${statStyle}}
-  .body{padding:40px 48px}
-  .parties{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin-bottom:36px}
-  .party{padding:18px 20px}
-  .party:nth-child(2){background:#f4f7f2;border-radius:8px}
-  .party-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#7a9488;font-weight:700;margin-bottom:8px}
-  .party-name{font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:400;color:#1c4028;line-height:1.3}
-  .party-info{font-size:11px;color:#4a6357;margin-top:4px;line-height:1.7}
-  .party-detail-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#7a9488;font-weight:700;margin-bottom:6px}
-  .detail-row{display:flex;justify-content:space-between;font-size:12px;color:#4a6357;padding:4px 0;border-bottom:1px solid #e4ebe2}
-  .detail-row:last-child{border-bottom:none}
-  .table-wrap{margin-bottom:8px;border-radius:6px;overflow:hidden;border:1px solid #e4ebe2}
-  table{width:100%;border-collapse:collapse}
-  thead{background:#1c4028}
-  th{padding:10px 14px;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:2px;font-weight:700;text-align:left}
-  th.r{text-align:right}
-  td{padding:12px 14px;border-bottom:1px solid #f0f4f0;font-size:13px;color:#333}
-  tr:last-child td{border-bottom:none}
-  tr:nth-child(even) td{background:#f9fbf9}
-  td.r{text-align:right}
-  td.bold{font-weight:700}
-  .totals-wrap{display:flex;justify-content:flex-end;margin:20px 0 28px}
-  .totals{width:300px}
-  .trow{display:flex;justify-content:space-between;padding:8px 0;font-size:13px;color:#4a6357;border-bottom:1px solid #e4ebe2}
-  .trow:last-child{border:none}
-  .ttc{background:#1c4028;color:#fff;border-radius:6px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:10px}
-  .ttc-label{font-size:9px;text-transform:uppercase;letter-spacing:2px;opacity:.7}
-  .ttc-val{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400}
-  .payment{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f4f7f2;border-left:3px solid #267340;border-radius:0 6px 6px 0;margin-bottom:32px;font-size:12px;color:#4a6357}
-  .payment strong{color:#1c4028}
-  .thanks{text-align:center;margin:20px 0 4px;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#4a6357;font-style:italic}
-  .footer-sep{height:1px;background:#e4ebe2;font-size:0}
-  .footer{background:#f4f7f2;padding:24px 48px;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}
-  .footer-brand{font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#267340;letter-spacing:3px;text-transform:uppercase}
-  .footer-info{font-size:10px;color:#7a9488;margin-top:2px;line-height:1.6}
-  .footer-right{text-align:right;font-size:10px;color:#aaa;line-height:1.8}
-  .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-family:Georgia,'Times New Roman',serif;font-size:110px;font-weight:700;color:rgba(38,115,64,.06);white-space:nowrap;pointer-events:none;z-index:-1;user-select:none}
-  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
-</style></head><body>
+  const rows = inv.items.map(it => `<tr>
+      <td>${escapeHtml(it.nom)}</td>
+      <td class="r">${it.qty}</td>
+      <td class="r">${f(it.prixUnit)}</td>
+      <td class="r"><strong>${f(it.prixUnit * it.qty)}</strong></td>
+    </tr>`).join('');
 
-<div class="watermark">${watermarkText}</div>
-<div class="bar-top"></div>
-<div class="header">
-  <div class="brand-wrap">
-    <div class="brand-mono">LD</div>
-    <div>
-      <div class="brand-name">La Délicieuse Diète</div>
-      <div class="brand-tag">Cuisine saine &amp; savoureuse · Libreville</div>
-    </div>
-  </div>
-  <div class="inv-meta">
-    <div class="inv-label">Document</div>
-    <div class="inv-num">FACTURE ${inv.numero}</div>
-    <div class="inv-date">Émise le ${fmtDate(inv.createdAt)}</div>
-    <div class="status-badge">${STATUS_CONFIG[inv.statut].label}</div>
-  </div>
-</div>
-<div class="bar-mid"></div>
-
-<div class="body">
-  <div class="parties">
-    <div class="party">
-      <div class="party-label">Émetteur</div>
-      <div class="party-name">La Délicieuse Diète</div>
-      <div class="party-info">
-        Quartier Louis, Libreville, Gabon<br>
-        ladelicieuse.1@gmail.com<br>
-        +241 76 35 90 20
+  const body = `
+    <div class="parties">
+      <div>
+        <div class="section-title">Émetteur</div>
+        <div class="party-name">${escapeHtml(BRAND.name)}</div>
+        <div class="party-info">${escapeHtml(BRAND.address)}<br>${escapeHtml(BRAND.email)}<br>${escapeHtml(BRAND.phone)}</div>
+      </div>
+      <div>
+        <div class="section-title">Facturé à</div>
+        <div class="party-name">${escapeHtml(inv.client)}</div>
+        <div class="party-info">${escapeHtml(inv.email)}${inv.telephone ? '<br>' + escapeHtml(inv.telephone) : ''}</div>
+      </div>
+      <div>
+        <div class="section-title">Détails</div>
+        <div class="detail-row"><span>N°</span><strong>${escapeHtml(inv.numero)}</strong></div>
+        <div class="detail-row"><span>Date</span><span>${fmtDate(inv.createdAt)}</span></div>
+        <div class="detail-row"><span>Statut</span><strong>${statusLabel}</strong></div>
       </div>
     </div>
-    <div class="party">
-      <div class="party-label">Facturé à</div>
-      <div class="party-name">${inv.client}</div>
-      <div class="party-info">
-        ${inv.email}${inv.telephone ? '<br>' + inv.telephone : ''}
-      </div>
-    </div>
-    <div class="party" style="padding-left:32px">
-      <div class="party-detail-label">Détails</div>
-      <div class="detail-row"><span>N°</span><span><strong>${inv.numero}</strong></span></div>
-      <div class="detail-row"><span>Date</span><span>${fmtDate(inv.createdAt)}</span></div>
-      <div class="detail-row"><span>Statut</span><span><strong>${STATUS_CONFIG[inv.statut].label}</strong></span></div>
-    </div>
-  </div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
+    <div class="table-wrap section">
+      <table>
+        <thead><tr>
           <th>Description</th>
           <th class="r" style="width:60px">Qté</th>
           <th class="r" style="width:110px">Prix unit.</th>
           <th class="r" style="width:110px">Total HT</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${inv.items.map(it => `<tr>
-          <td>${it.nom}</td>
-          <td class="r">${it.qty}</td>
-          <td class="r">${it.prixUnit.toLocaleString('fr-FR')} F</td>
-          <td class="r bold">${(it.prixUnit * it.qty).toLocaleString('fr-FR')} F</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="totals-wrap">
-    <div class="totals">
-      <div class="trow"><span>Sous-total HT</span><span>${inv.totalHT.toLocaleString('fr-FR')} F</span></div>
-      <div class="trow"><span>TVA (18 %)</span><span>${inv.tva.toLocaleString('fr-FR')} F</span></div>
-      <div class="ttc">
-        <span class="ttc-label">Total TTC</span>
-        <span class="ttc-val">${inv.totalTTC.toLocaleString('fr-FR')} FCFA</span>
-      </div>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
-  </div>
 
-  ${inv.modePaiement || inv.notes ? `<div class="payment">
-    ${inv.modePaiement ? `<span>Mode de paiement : <strong>${inv.modePaiement}</strong></span>` : ''}
-    ${inv.notes ? `<span style="margin-left:auto;color:#7a9488;font-style:italic">${inv.notes}</span>` : ''}
-  </div>` : ''}
+    <div class="totals">
+      <div class="trow"><span>Sous-total HT</span><span>${f(inv.totalHT)}</span></div>
+      <div class="trow"><span>TVA (18 %)</span><span>${f(inv.tva)}</span></div>
+      <div class="ttc"><span>Total TTC</span><strong>${inv.totalTTC.toLocaleString('fr-FR')} FCFA</strong></div>
+    </div>
 
-  <div class="thanks">Merci pour votre confiance et à très bientôt</div>
-</div>
+    ${inv.modePaiement || inv.notes ? `<div class="note section">
+      ${inv.modePaiement ? `Mode de paiement : <strong>${escapeHtml(inv.modePaiement)}</strong>` : ''}
+      ${inv.notes ? `<span style="float:right;font-style:italic">${escapeHtml(inv.notes)}</span>` : ''}
+    </div>` : ''}
 
-<div class="footer-sep"></div>
-<div class="footer">
-  <div>
-    <div class="footer-brand">La Délicieuse Diète</div>
-    <div class="footer-info">Quartier Louis, Libreville, Gabon · ladelicieuse.1@gmail.com · +241 76 35 90 20</div>
-  </div>
-  <div class="footer-right">
-    Document généré le<br>${fmtDate(new Date().toISOString())}<br>
-    <span style="color:#ccc">Document non contractuel</span>
-  </div>
-</div>
-<div class="bar-bot"></div>
-</body></html>`;
+    <div class="thanks">Merci pour votre confiance et à très bientôt</div>`;
 
-  const w = window.open('', '_blank');
-  if (!w) { toast.error('Autorisez les popups pour imprimer'); return; }
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => { w.print(); }, 600);
+  const css = `
+    .parties{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-bottom:28px}
+    .party-name{font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#1c4028;line-height:1.3}
+    .party-info{font-size:11px;color:#4a6357;margin-top:4px;line-height:1.7}
+    .detail-row{display:flex;justify-content:space-between;font-size:12px;color:#4a6357;padding:4px 0;border-bottom:1px solid #e4ebe2}
+    .detail-row:last-child{border-bottom:none}
+    td{font-size:13px}
+    .totals{width:300px;margin:0 0 28px auto}
+    .trow{display:flex;justify-content:space-between;padding:8px 0;font-size:13px;color:#4a6357;border-bottom:1px solid #e4ebe2}
+    .ttc{background:#1c4028;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;text-transform:uppercase;letter-spacing:2px}
+    .ttc strong{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;letter-spacing:0;text-transform:none}
+    .thanks{text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#4a6357;font-style:italic}`;
+
+  printDocument({
+    title: `Facture ${inv.numero} — ${BRAND.name}`,
+    label: 'Document',
+    heading: `Facture ${escapeHtml(inv.numero)}`,
+    lines: [`Émise le ${fmtDate(inv.createdAt)}`],
+    badge: { text: statusLabel, style: statusStyles[inv.statut] ?? statusStyles.en_attente },
+    body,
+    css,
+    watermark,
+    footerRight: `Document généré le ${fmtDate(new Date().toISOString())}<br>Document non contractuel`,
+  }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
 }
 
 // ─── Skeleton row ─────────────────────────────────────────────────────────────
