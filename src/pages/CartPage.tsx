@@ -19,6 +19,7 @@ import { PaymentMethods } from '@/components/payment';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
 import { downloadPdf } from '@/lib/pdfDocument';
+import { normalizeGabonPhoneNumber, validateGabonPhoneNumber } from '@/lib/utils';
 import { safeFileName } from '@/lib/downloadFile';
 import { isSlotAvailable, toLocalDateStr } from '@/lib/deliverySlots';
 
@@ -81,6 +82,8 @@ const DELIVERY_SLOTS_DEFAULT: string[] = [
   '13h00', '14h00', '15h00', '16h00',
   '17h00', '18h00', '19h00', '20h00',
 ];
+
+const PHONE_ERROR = 'Numéro invalide : saisissez un mobile gabonais, par exemple 077 12 34 56 ou +241 77 12 34 56.';
 
 // ─── Date / heure ─────────────────────────────────────────────────────────────
 
@@ -309,6 +312,7 @@ export default function CartPage() {
   const [prenoms, setPrenoms]             = useState(user?.prenoms ?? '');
   const [telephone, setTelephone]         = useState(user?.telephone ?? '');
   const [infoError, setInfoError]         = useState('');
+  const [phoneTouched, setPhoneTouched]   = useState(false);
   // Devis signé par le serveur (prix vérifiés contre le catalogue) : sert au paiement puis à la commande.
   const [quote, setQuote]                 = useState('');
   const [quotedTotal, setQuotedTotal]     = useState<number | null>(null);
@@ -432,7 +436,8 @@ export default function CartPage() {
     const _id     = ov.pendingOrderId ?? pendingOrderId ?? `ORDER-${Date.now()}`;
     const _nom    = (ov.nom     ?? user?.nom     ?? nom).trim();
     const _pre    = (ov.prenoms ?? user?.prenoms ?? prenoms).trim();
-    const _phone  = (ov.telephone ?? user?.telephone ?? telephone).trim();
+    // Le numéro saisi (et validé à l'étape précédente) prime sur celui du compte : le champ en est prérempli.
+    const _phone  = normalizeGabonPhoneNumber((ov.telephone ?? telephone).trim());
     const _dMode  = ('deliveryMode' in ov) ? ov.deliveryMode! : deliveryMode;
     const _dDate  = ov.deliveryDate  ?? deliveryDate;
     const _dTime  = ov.deliveryTime  ?? deliveryTime;
@@ -576,6 +581,11 @@ export default function CartPage() {
     setInfoError('');
     if (!nom.trim() || !telephone.trim()) {
       setInfoError('Veuillez renseigner votre nom et votre numéro de téléphone.');
+      return;
+    }
+    if (!validateGabonPhoneNumber(telephone)) {
+      setPhoneTouched(true);
+      setInfoError(PHONE_ERROR);
       return;
     }
 
@@ -1290,15 +1300,28 @@ export default function CartPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="font-body text-xs text-muted-foreground block mb-2">Téléphone</label>
+                        <label htmlFor="cart-phone" className="font-body text-xs text-muted-foreground block mb-2">Téléphone</label>
                         <input
+                          id="cart-phone"
                           type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
                           value={telephone}
                           onChange={e => { setTelephone(e.target.value); setInfoError(''); }}
-                          placeholder="+241 XX XXX XXXX"
-                          className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors"
+                          onBlur={() => setPhoneTouched(true)}
+                          placeholder="+241 77 12 34 56"
+                          aria-invalid={phoneTouched && telephone.trim() !== '' && !validateGabonPhoneNumber(telephone)}
+                          aria-describedby="cart-phone-error"
+                          className={`w-full font-body text-sm px-4 py-3.5 border rounded-xl bg-background outline-none transition-colors ${
+                            phoneTouched && telephone.trim() !== '' && !validateGabonPhoneNumber(telephone)
+                              ? 'border-red-400 focus:border-red-500'
+                              : 'border-border focus:border-primary'
+                          }`}
                           required
                         />
+                        {phoneTouched && telephone.trim() !== '' && !validateGabonPhoneNumber(telephone) && (
+                          <p id="cart-phone-error" role="alert" className="font-body text-xs text-red-600 mt-1.5">{PHONE_ERROR}</p>
+                        )}
                       </div>
                     </div>
 

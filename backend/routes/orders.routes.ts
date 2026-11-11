@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { toGabonMobile } from '../utils/gabonPhone.js';
 import Order from '../models/Order.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { notifyOrderCreated, notifyOrderStatus, notifyOrderUpdated } from '../services/realtime.service.js';
@@ -168,6 +169,11 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
     if (!client.telephone || typeof client.telephone !== 'string') {
       res.status(400).json({ success: false, message: 'Téléphone du client requis.' }); return;
     }
+    // Le numéro sert à joindre le client (WhatsApp, livraison, Mobile Money) : il doit être un mobile gabonais valide.
+    const telephone = toGabonMobile(client.telephone);
+    if (!telephone) {
+      res.status(400).json({ success: false, message: 'Numéro de téléphone invalide : saisissez un numéro gabonais, par exemple 077 12 34 56 ou +241 77 12 34 56.' }); return;
+    }
 
     // Prix : ceux du devis signé par le serveur (vérifiés contre le catalogue AVANT le paiement),
     // jamais ceux du navigateur. Un devis donne une seule commande : un renvoi retourne la même.
@@ -209,7 +215,7 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
         prenoms:   client.prenoms ? String(client.prenoms).trim().slice(0, 100) : '',
         // Sans cette garde, un email absent était enregistré sous la forme de la chaîne « undefined ».
         email:     client.email ? String(client.email).toLowerCase().trim().slice(0, 200) : '',
-        telephone: String(client.telephone).trim().slice(0, 30),
+        telephone,
         adresse:   client.adresse ? String(client.adresse).trim().slice(0, 300) : 'Sur place',
       },
       // Le compte vient du jeton, jamais du corps : sinon n'importe qui pourrait rattacher une commande

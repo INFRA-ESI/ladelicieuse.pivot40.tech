@@ -11,19 +11,14 @@ export function cn(...inputs: ClassValue[]) {
  */
 export const formatFCFA = (amount: number): string => formatPrixFcfa(amount);
 
+// Mobile gabonais : 8 chiffres nationaux commençant par 6 ou 7 (Moov 60/62/65/66, Airtel 74/76/77…).
+// Accepte « 077 12 34 56 », « 77123456 », « +241 77 12 34 56 », « 00241… », « 24177123456 » ; sortie « +24177123456 ».
+// Même règle que le serveur (backend/utils/gabonPhone.ts) : à modifier des deux côtés.
 export const normalizeGabonPhoneNumber = (phoneNumber: string): string => {
-  const cleaned = phoneNumber.replace(/\D/g, '');
-  // 24177XXXXXX — international sans +
-  if (cleaned.startsWith('241') && cleaned.length === 11) return '+' + cleaned;
-  // 077XXXXXX — local avec zéro
-  if (cleaned.startsWith('0') && cleaned.length === 9) return '+241' + cleaned.slice(1);
-  // 77XXXXXX — 8 chiffres nationaux
-  if (cleaned.length === 8) return '+241' + cleaned;
-  return '+' + cleaned;
+  const compact = phoneNumber.replace(/[\s().-]/g, '');
+  const match = /^(?:(?:\+|00)?241)0?(\d{8})$/.exec(compact) ?? /^0?(\d{8})$/.exec(compact);
+  return match ? `+241${match[1]}` : '+' + compact.replace(/\D/g, '');
 };
 
-export const validateGabonPhoneNumber = (phoneNumber: string): boolean => {
-  const normalized = normalizeGabonPhoneNumber(phoneNumber);
-  // Gabon : +241 suivi de 8 chiffres (préfixes Airtel 74/76/77, Moov 62/66)
-  return /^\+241[0-9]{8}$/.test(normalized);
-};
+export const validateGabonPhoneNumber = (phoneNumber: string): boolean =>
+  /^\+241[67]\d{7}$/.test(normalizeGabonPhoneNumber(phoneNumber));

@@ -135,6 +135,34 @@ describe('POST /orders/quote', () => {
   });
 });
 
+describe('POST /orders — numéro de téléphone gabonais', () => {
+  it.each([
+    ['077 12 34 56', '+24177123456'],
+    ['+241 66 12 34 56', '+24166123456'],
+    ['24174123456', '+24174123456'],
+  ])('enregistre %s sous la forme %s', async (telephone, expected) => {
+    const { quote } = await getQuote();
+    const res = await post('/orders', { quote, client: { nom: 'Awa', telephone }, modePaiement: 'especes' });
+    expect(res.status).toBe(201);
+    expect((saved[0].client as { telephone: string }).telephone).toBe(expected);
+  });
+
+  it.each(['1234', '01123456', '+33 6 12 34 56 78', '77 12 34 5a'])("refuse %s : rien n'est enregistré", async (telephone) => {
+    const { quote } = await getQuote();
+    const res = await post('/orders', { quote, client: { nom: 'Awa', telephone }, modePaiement: 'especes' });
+    expect(res.status).toBe(400);
+    expect((await json(res)).message).toMatch(/numéro de téléphone invalide/i);
+    expect(saved).toHaveLength(0);
+  });
+
+  it("refuse un numéro qui n'est pas du texte", async () => {
+    const { quote } = await getQuote();
+    const res = await post('/orders', { quote, client: { nom: 'Awa', telephone: 77123456 } });
+    expect(res.status).toBe(400);
+    expect(saved).toHaveLength(0);
+  });
+});
+
 describe('POST /orders — prix issus du devis', () => {
   it('enregistre les prix du devis, même si le corps de la requête annonce autre chose', async () => {
     const { quote } = await getQuote();

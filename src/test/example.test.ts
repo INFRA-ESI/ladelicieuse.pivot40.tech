@@ -59,6 +59,18 @@ describe('validateGabonPhoneNumber', () => {
     expect(validateGabonPhoneNumber('')).toBe(false);
   });
 
+  it('accepte les écritures usuelles du même numéro', () => {
+    for (const n of ['077 12 34 56', '+241 77 12 34 56', '00241 77 12 34 56', '24177123456', '(077) 12-34-56']) {
+      expect(validateGabonPhoneNumber(n)).toBe(true);
+    }
+  });
+
+  it("rejette ce qui n'est pas un mobile gabonais", () => {
+    for (const n of ['01123456', '+33 6 12 34 56 78', '+24277123456', '12345678', '77 12 34 5a', '0771234567', '771234567']) {
+      expect(validateGabonPhoneNumber(n)).toBe(false);
+    }
+  });
+
   it('rejette un numéro non-gabonais', () => {
     expect(validateGabonPhoneNumber('+33612345678')).toBe(false);
   });
