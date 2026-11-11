@@ -22,7 +22,8 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      // En CI, Chrome préinstallé sur le runner (voir .github/workflows/e2e.yml).
+      use: { ...devices['Desktop Chrome'], ...(process.env.CI ? { channel: 'chrome' } : {}) },
     },
   ],
 });

@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: Playwright — Chromium
+    name: Playwright — Chrome
     runs-on: ubuntu-24.04
     # Playwright ne prend pas encore en charge Ubuntu 26.04 (ubuntu-latest) : on fixe la version du runner.
     timeout-minutes: 15
@@ -28,8 +28,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      # Chrome est déjà installé sur le runner : on l'utilise au lieu de télécharger un navigateur et ses paquets système
+      # avec apt (`playwright install --with-deps`), dont le réseau échouait régulièrement et faisait tomber tout le job.
+      - name: Vérifier Chrome
+        run: google-chrome --version
 
       - name: Build frontend
         run: npm run build
