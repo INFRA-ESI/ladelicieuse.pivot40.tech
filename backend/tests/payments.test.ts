@@ -7,6 +7,8 @@ process.env.JWT_SECRET = 'p'.repeat(48);
 const initTransaction = vi.fn(async (..._args: unknown[]) => ({ transactionId: 'TXN-1', paymentUrl: 'https://pay.test', message: 'ok' }));
 const initiateCardPayment = vi.fn(async (..._args: unknown[]) => ({ link: 'https://card.test', exp: '2027-01-01', reference: 'REF-1' }));
 const saveTransaction = vi.fn(async (..._args: unknown[]) => undefined);
+const checkDoublePayment = vi.fn(async (..._args: unknown[]) => ({ blocked: false } as { blocked: boolean; reason?: string }));
+const supersedePending = vi.fn(async (..._args: unknown[]) => 0);
 
 vi.mock('../config/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../config/redis.js', () => ({ getRedis: () => null }));
@@ -15,7 +17,7 @@ vi.mock('../services/whatsapp.service.js', () => ({ sendPaymentNotification: vi.
 vi.mock('../services/push.service.js', () => ({ sendPushToUser: vi.fn() }));
 vi.mock('../services/singpay.service.js', () => ({
   singPayService: {
-    checkDoublePayment: async () => ({ blocked: false }),
+    checkDoublePayment, supersedePending,
     initTransaction, initiateCardPayment, saveTransaction,
   },
 }));
@@ -118,6 +120,42 @@ describe("POST /payments/singpay/init — pannes et refus de l'opérateur", () =
     const res = await post('/singpay/card', { orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) });
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain('10.0.0.9');
+  });
+});
+
+describe("POST /payments/singpay/init — nouvel essai après annulation ou changement de moyen de paiement", () => {
+  const body = (provider: string) => ({ method: 'mobile_money', provider, phone: '066123456', orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) });
+
+  it("un nouvel essai part : les essais précédents en cours sont remplacés avant l'envoi", async () => {
+    supersedePending.mockResolvedValueOnce(1);
+    const res = await post('/singpay/init', body('airtel'));
+    expect(res.status).toBe(200);
+    expect(checkDoublePayment).toHaveBeenCalledWith('ORDER-1', 'airtel');
+    expect(supersedePending).toHaveBeenCalledWith('ORDER-1');
+    expect(initTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("commande déjà payée : 409, rien n'est remplacé ni envoyé", async () => {
+    checkDoublePayment.mockResolvedValueOnce({ blocked: true, reason: 'Cette commande a déjà été payée.' });
+    const res = await post('/singpay/init', body('moov'));
+    expect(res.status).toBe(409);
+    expect(await json(res)).toMatchObject({ error: 'Cette commande a déjà été payée.' });
+    expect(supersedePending).not.toHaveBeenCalled();
+    expect(initTransaction).not.toHaveBeenCalled();
+  });
+
+  it('base indisponible pour la vérification : le paiement reste possible', async () => {
+    checkDoublePayment.mockRejectedValueOnce(new Error('base indisponible'));
+    expect((await post('/singpay/init', body('moov'))).status).toBe(200);
+    expect(initTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('carte bancaire : même règle (déjà payée refusée, essais abandonnés remplacés)', async () => {
+    expect((await post('/singpay/card', { orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) })).status).toBe(200);
+    expect(checkDoublePayment).toHaveBeenCalledWith('ORDER-1', 'card');
+    expect(supersedePending).toHaveBeenCalledWith('ORDER-1');
+    checkDoublePayment.mockResolvedValueOnce({ blocked: true, reason: 'Cette commande a déjà été payée.' });
+    expect((await post('/singpay/card', { orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) })).status).toBe(409);
   });
 });
 

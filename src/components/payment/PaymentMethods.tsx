@@ -81,6 +81,9 @@ interface PaymentMethodsProps {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
+// Panne de l'opérateur ou de la passerelle (code PROVIDER_UNAVAILABLE) : on propose alors d'autres moyens de paiement.
+class ProviderUnavailableError extends Error {}
+
 async function callSingPay(body: Record<string, unknown>) {
   const resp = await fetch('/api/payments/singpay/init', {
     method:  'POST',
@@ -89,6 +92,7 @@ async function callSingPay(body: Record<string, unknown>) {
   });
   const json = await resp.json().catch(() => ({}));
   if (resp.status === 409) throw new Error(json.error ?? 'Paiement déjà en cours pour cette commande.');
+  if (json.code === 'PROVIDER_UNAVAILABLE') throw new ProviderUnavailableError(json.error);
   if (!resp.ok || !json.success) throw new Error(json.error ?? json.message ?? 'Erreur paiement.');
   return json.data as { transactionId?: string; paymentUrl?: string; message?: string };
 }
@@ -116,6 +120,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
   const [phone, setPhone]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const [unavailable, setUnavailable] = useState(false);
   const [done, setDone]       = useState(false);
   const [doneMsg, setDoneMsg] = useState('');
 
@@ -134,7 +139,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
     stopPolling();
     setMethod(m);
     setPhone('');
-    setError(''); setAwaitingPin(false); setPollSeconds(0);
+    setError(''); setUnavailable(false); setAwaitingPin(false); setPollSeconds(0);
     txnIdRef.current = '';
   };
 
@@ -172,7 +177,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
   const handleMobilePay = async (provider: 'airtel' | 'moov') => {
     if (!phone.trim())                    { setError('Entrez votre numéro.'); return; }
     if (!validateGabonPhoneNumber(phone)) { setError('Numéro invalide. Format : 07XXXXXXXX'); return; }
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setUnavailable(false);
     try {
       const data = await callSingPay({
         amount, orderId, quote, method: 'mobile_money', provider,
@@ -189,12 +194,12 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur paiement.';
-      setError(msg); onError?.(msg); setLoading(false);
+      setError(msg); setUnavailable(e instanceof ProviderUnavailableError); onError?.(msg); setLoading(false);
     }
   };
 
   const handleCard = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setUnavailable(false);
     try {
       const resp = await fetch('/api/payments/singpay/card', {
         method: 'POST',
@@ -210,6 +215,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
         }),
       });
       const json = await resp.json().catch(() => ({}));
+      if (json.code === 'PROVIDER_UNAVAILABLE') throw new ProviderUnavailableError(json.error);
       if (!resp.ok || !json.success) throw new Error(json.error ?? 'Erreur paiement carte.');
       const { link, reference } = json.data as { link: string; exp: string; reference: string };
       if (reference) sessionStorage.setItem('singpay_txn', reference);
@@ -217,7 +223,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
       window.location.href = link;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur paiement.';
-      setError(msg); onError?.(msg); setLoading(false);
+      setError(msg); setUnavailable(e instanceof ProviderUnavailableError); onError?.(msg); setLoading(false);
     }
   };
 
@@ -423,6 +429,24 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
           </div>
         );
       })}
+
+      {unavailable && method && (
+        <div role="group" aria-label="Autres moyens de paiement" className="rounded-xl border border-border bg-muted/40 p-4">
+          <p className="font-body text-sm text-foreground mb-3">Ce moyen de paiement ne répond pas pour le moment. Essayez avec un autre :</p>
+          <div className="flex flex-wrap gap-2">
+            {options.filter(o => o.value !== method).map(o => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => resetForm(o.value as PaymentValue)}
+                className="min-h-10 px-4 rounded-xl border border-primary text-primary font-body text-sm transition-colors hover:bg-primary/5"
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

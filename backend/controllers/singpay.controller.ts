@@ -59,9 +59,10 @@ export const initPayment = async (
       return;
     }
 
-    // Anti-double paiement (non-bloquant)
+    // Anti-double paiement (non-bloquant) : refuse une commande déjà payée ou un double clic, pas un nouvel essai.
+    const attempt = method === 'card' ? 'card' : provider;
     try {
-      const doubleCheck = await singPayService.checkDoublePayment(orderId);
+      const doubleCheck = await singPayService.checkDoublePayment(orderId, attempt);
       if (doubleCheck.blocked) {
         res.status(409).json({
           success: false,
@@ -69,6 +70,9 @@ export const initPayment = async (
         });
         return;
       }
+      // Annulation, délai dépassé, autre moyen de paiement : les essais précédents encore « en cours » ne bloquent plus.
+      const replaced = await singPayService.supersedePending(orderId);
+      if (replaced > 0) logger.info('[SingPay] Essais précédents remplacés', { orderId, replaced });
     } catch (dbError) {
       logger.warn('[Anti-double] Vérification DB échouée, paiement autorisé', { error: (dbError as Error).message });
     }
@@ -138,6 +142,15 @@ export const initCardPayment = async (
       return;
     }
     const amount = quoted.total;
+
+    // Même règle que pour le mobile : une commande déjà payée est refusée, les essais abandonnés sont remplacés.
+    try {
+      const doubleCheck = await singPayService.checkDoublePayment(orderId, 'card');
+      if (doubleCheck.blocked) { res.status(409).json({ success: false, error: doubleCheck.reason }); return; }
+      await singPayService.supersedePending(orderId);
+    } catch (dbError) {
+      logger.warn('[Anti-double] Vérification DB échouée, paiement autorisé', { error: (dbError as Error).message });
+    }
 
     const result = await singPayService.initiateCardPayment({
       amount, orderId,

@@ -33,6 +33,9 @@ export const normalizeGabonPhone = (phone: string): string => {
   throw new Error(`Numéro de téléphone invalide : "${phone}". Format accepté : +24177XXXXXX ou 077XXXXXX`);
 };
 
+// Deux demandes identiques (même commande, même moyen) à moins de 30 s : un double clic, pas un nouvel essai.
+const DUPLICATE_WINDOW_MS = 30_000;
+
 class SingPayService {
   private readonly client: AxiosInstance;
 
@@ -286,21 +289,33 @@ class SingPayService {
 
   // ── Anti-double paiement ────────────────────────────────────────────────────
 
-  async checkDoublePayment(orderId: string): Promise<{ blocked: boolean; reason?: string; transactionId?: string }> {
-    const existing = await TransactionModel.findOne({
-      orderId,
-      status: { $in: ['pending', 'processing', 'success'] },
-    }).sort({ createdAt: -1 });
+  // Ce qui est refusé : payer deux fois une commande déjà payée, ou envoyer deux fois la même demande à quelques secondes
+  // d'intervalle (double clic). Tout le reste est un nouvel essai légitime : le client a annulé, laissé expirer, ou veut
+  // payer autrement. Les essais précédents encore « en cours » sont alors remplacés (voir supersedePending), ils ne bloquent plus.
+  async checkDoublePayment(orderId: string, attempt?: TransactionProvider): Promise<{ blocked: boolean; reason?: string; transactionId?: string }> {
+    const paid = await TransactionModel.findOne({ orderId, status: 'success' }).select('transactionId');
+    if (paid) return { blocked: true, reason: 'Cette commande a déjà été payée.', transactionId: paid.transactionId };
 
-    if (!existing) return { blocked: false };
-    if (existing.status === 'success') {
-      return { blocked: true, reason: 'Cette commande a déjà été payée.', transactionId: existing.transactionId };
-    }
-    const ageMs = Date.now() - existing.createdAt.getTime();
-    if (ageMs < 5 * 60 * 1000) {
-      return { blocked: true, reason: 'Un paiement est déjà en cours pour cette commande.', transactionId: existing.transactionId };
+    const recent = await TransactionModel.findOne({
+      orderId,
+      status: { $in: ['pending', 'processing'] },
+      ...(attempt ? { provider: attempt } : {}),
+      createdAt: { $gt: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+    }).select('transactionId');
+    if (recent) {
+      return { blocked: true, reason: "Votre demande vient d'être envoyée. Patientez quelques secondes avant de réessayer.", transactionId: recent.transactionId };
     }
     return { blocked: false };
+  }
+
+  // Un nouvel essai remplace les essais précédents encore « en cours » de la même commande : sans cela, une annulation ou un
+  // changement de moyen de paiement restait bloqué plusieurs minutes. Un paiement abouti n'est jamais touché.
+  async supersedePending(orderId: string): Promise<number> {
+    const result = await TransactionModel.updateMany(
+      { orderId, status: { $in: ['pending', 'processing'] } },
+      { $set: { status: 'cancelled', errorMessage: 'Remplacé par un nouvel essai de paiement.' } },
+    );
+    return result.modifiedCount;
   }
 
   // ── Persistance MongoDB ─────────────────────────────────────────────────────
