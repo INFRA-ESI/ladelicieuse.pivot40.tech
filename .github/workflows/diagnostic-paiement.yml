@@ -1,0 +1,26 @@
+name: Diagnostic paiement (lecture seule)
+
+# Lit les dernières lignes SingPay du journal de l'API de production, pour voir ce que répond réellement la passerelle.
+# Ne modifie rien. Le journal d'un workflow est public : seules les lignes SingPay sont affichées, numéros masqués.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    name: Journal SingPay
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Lire le journal de l'API
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.IP_SERVER }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
+          port: ${{ secrets.PORT || '22' }}
+          script: |
+            docker logs --since 72h ladelicieuse-backend 2>&1 \
+              | grep -E "SingPay|Anti-double|Paiement non initié" \
+              | sed -E 's/(\+?241|0)[0-9]{8,9}/[numéro masqué]/g' \
+              | cut -c1-400 | tail -60
