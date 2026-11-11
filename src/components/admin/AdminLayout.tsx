@@ -79,7 +79,7 @@ export default function AdminLayout() {
   });
 
   return (
-    <div className="min-h-screen bg-muted flex">
+    <div className="min-h-dvh bg-muted flex">
       {/* Sidebar */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-foreground text-primary-foreground transform transition-[transform,width] duration-300 flex flex-col
@@ -160,14 +160,14 @@ export default function AdminLayout() {
       )}
 
       {/* Main content */}
-      <div className={`flex-1 min-w-0 flex flex-col min-h-screen transition-[margin] duration-300 ${collapsed ? 'lg:ml-[4.5rem]' : 'lg:ml-64'}`}>
+      <div className={`flex-1 min-w-0 flex flex-col min-h-dvh transition-[margin] duration-300 ${collapsed ? 'lg:ml-[4.5rem]' : 'lg:ml-64'}`}>
         <header className="bg-background border-b border-border px-4 md:px-8 py-4 flex items-center gap-4">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden">
             <Menu className="w-5 h-5 text-foreground" />
           </button>
           <h1 className="font-display text-xl text-foreground">Administration</h1>
         </header>
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <AdminErrorBoundary key={location.pathname}>
             <Outlet />
           </AdminErrorBoundary>

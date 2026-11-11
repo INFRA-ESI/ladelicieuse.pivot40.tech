@@ -235,7 +235,7 @@ export default function ConsultationsAdminPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border overflow-x-auto">
+      <div className="flex border-b border-border overflow-x-auto overflow-y-hidden">
         {(['consultations', 'reservations', 'calendrier'] as const).map(t => (
           <button
             key={t}

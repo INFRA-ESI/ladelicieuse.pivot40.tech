@@ -917,7 +917,7 @@ export default function PromotionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-border">
+      <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border">
         {([['offres', <Zap className="w-4 h-4" />, 'Offres spéciales'], ['codes', <Tag className="w-4 h-4" />, 'Codes promo'], ['fidelite', <Star className="w-4 h-4" />, 'Programme fidélité']] as const).map(([key, icon, label]) => (
           <button key={key} onClick={() => setTab(key as Tab)}
             className={`whitespace-nowrap shrink-0 flex items-center gap-2 px-4 py-2.5 font-body text-sm border-b-2 transition-colors -mb-px ${tab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>

@@ -456,7 +456,7 @@ export default function StocksPage() {
   // ── Rendu ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-5">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -535,7 +535,7 @@ export default function StocksPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex overflow-x-auto border-b border-border">
+      <div className="flex overflow-x-auto overflow-y-hidden border-b border-border">
         {(['stocks', 'fournisseurs', 'reappro'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`whitespace-nowrap shrink-0 px-5 py-3 font-body text-sm transition-colors ${tab === t ? 'border-b-2 border-primary text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}>

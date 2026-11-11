@@ -230,7 +230,7 @@ export default function SuggestionsPage() {
   const baseIngredients = ingredientGroups.find(g => g.category === 'base')?.items ?? [];
 
   return (
-    <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-6">
 
       {/* En-tête */}
       <div className="flex items-center justify-between gap-4 flex-wrap">

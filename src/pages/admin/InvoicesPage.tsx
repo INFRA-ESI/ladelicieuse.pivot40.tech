@@ -567,7 +567,7 @@ export default function InvoicesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-border">
+      <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border">
         {([
           ['factures',    <Receipt  className="w-4 h-4" />, 'Factures'],
           ['rentabilite', <Layers   className="w-4 h-4" />, 'Rentabilité ingrédients'],

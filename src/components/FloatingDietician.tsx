@@ -2,11 +2,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Stethoscope } from '@/components/icons';
 
+const HIDDEN_PREFIXES = ['/dieteticien', '/composer', '/admin', '/connexion', '/mon-compte', '/suivi', '/panier', '/mot-de-passe-oublie', '/reset-password'];
+
 export default function FloatingDietician() {
   const { pathname } = useLocation();
   // Pas sur la page diététicien elle-même, ni pendant la composition d'une salade où il masque le contenu,
   // ni dans le back office où il recouvre la pagination et les actions.
-  if (pathname === '/dieteticien' || pathname.startsWith('/composer/') || pathname.startsWith('/admin')) return null;
+  // Le bouton flottant masquerait du contenu sur les écrans étroits (formulaires de connexion, espace client, panier).
+  if (HIDDEN_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))) return null;
 
   return (
     <motion.div

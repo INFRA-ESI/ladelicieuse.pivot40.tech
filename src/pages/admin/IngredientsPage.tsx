@@ -264,7 +264,7 @@ export default function IngredientsPage() {
   };
 
   return (
-    <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Ingrédients</h2>

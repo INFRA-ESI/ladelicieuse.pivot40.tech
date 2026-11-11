@@ -342,7 +342,7 @@ export default function OrdersPage() {
   const canRefund  = (o: Order) => ['livree', 'annulee'].includes(o.statut) && o.statut !== 'remboursee';
 
   return (
-    <div className="space-y-5 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-5">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

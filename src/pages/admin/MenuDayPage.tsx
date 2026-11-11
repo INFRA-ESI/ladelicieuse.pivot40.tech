@@ -631,7 +631,7 @@ export default function MenuDayPage() {
 
   // ── Rendu ────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

@@ -110,7 +110,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="space-y-8 bg-muted/30 -m-6 p-6 min-h-screen">
+    <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Tableau de bord</h2>
