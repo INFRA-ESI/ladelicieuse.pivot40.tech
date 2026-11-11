@@ -1,3 +1,4 @@
+import PushNotificationsCard from '@/components/PushNotificationsCard';
 import { useState, useEffect, useRef } from 'react';
 import { Save, Store, Bell, Shield, Eye, EyeOff, Loader2, KeyRound, Stethoscope, Plus, Trash2, ImagePlus, X, Film, Play } from '@/components/icons';
 import { toast } from 'sonner';
@@ -306,6 +307,7 @@ export default function SettingsPage() {
             <Toggle label="Notifications par email" checked={form.notifEmail} onChange={v => setForm(f => ({ ...f, notifEmail: v }))} />
             <Toggle label="Notifications WhatsApp" checked={form.notifWhatsApp} onChange={v => setForm(f => ({ ...f, notifWhatsApp: v }))} />
           </div>
+          <div className="mt-5"><PushNotificationsCard audience="admin" /></div>
         </Section>
 
         <Section icon={Shield} title="Sécurité">

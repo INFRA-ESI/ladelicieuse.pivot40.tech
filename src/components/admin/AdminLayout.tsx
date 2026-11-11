@@ -1,3 +1,4 @@
+import { syncPushSilently } from '@/hooks/usePushNotifications';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import AdminErrorBoundary from './AdminErrorBoundary';
 import { useAdminTheme } from '@/hooks/useAdminTheme';
@@ -5,7 +6,7 @@ import { useRealtime } from '@/hooks/useRealtime';
 import { useSidebarCollapse } from '@/hooks/useSidebarCollapse';
 import { ADMIN_SIDEBAR_KEY } from '@/lib/sidebarKeys';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { logout as logoutAdmin } from '@/services/authService';
 import logo from '@/assets/logo.webp';
 import {
@@ -65,6 +66,8 @@ const NAV_GROUPS = [
 
 export default function AdminLayout() {
   useAdminTheme();
+  // Si l'autorisation est déjà accordée sur cet appareil, l'abonnement aux alertes est rafraîchi (jamais de demande ici).
+  useEffect(() => { void syncPushSilently('admin'); }, []);
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Réduction possible sur ordinateur uniquement : sur mobile la barre est un tiroir, toujours complète.

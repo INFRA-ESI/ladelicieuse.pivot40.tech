@@ -1,3 +1,4 @@
+import PushNotificationsCard from '@/components/PushNotificationsCard';
 import { useState, useEffect, useCallback, useRef, type ChangeEvent, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, Navigate } from 'react-router-dom';
@@ -1162,6 +1163,7 @@ export default function MonComptePage() {
                       transition={{ duration: 0.16 }}
                       className="p-6 flex flex-col gap-6"
                     >
+                      <PushNotificationsCard audience="client" />
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                           <UtensilsCrossed className="w-5 h-5 text-primary" />

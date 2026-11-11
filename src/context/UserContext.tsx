@@ -3,7 +3,7 @@ import { cachedJson } from '@/services/publicApiService';
 import { resizedUrl } from '@/lib/imageUrl';
 import { loginClient, registerClient, fetchMe, getClientOrders, updateClientProfile, changePassword as apiChangePassword, getClientPreferences, saveClientPreferences, uploadClientAvatar, deleteClientAvatar } from '@/services/clientService';
 import { isPrefKey, type PrefKey } from '@/lib/dietary';
-import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { syncPushSilently } from '@/hooks/usePushNotifications';
 import { ls } from '@/lib/storage';
 
 export type LoyaltyTier = 'bronze' | 'argent' | 'or' | 'platine';
@@ -156,7 +156,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
-  usePushNotifications(user?.id);
+  // Notifications : jamais de demande d'autorisation ici (bouton « Activer » dans Mon compte). Si elle est déjà accordée,
+  // on rafraîchit seulement l'abonnement de cet appareil.
+  useEffect(() => { if (user?.id) void syncPushSilently('client'); }, [user?.id]);
 
   // La base fait foi ; la copie locale évite de réafficher tout le menu le temps de la requête.
   const [preferences, setPreferences] = useState<PrefKey[]>(() => {
