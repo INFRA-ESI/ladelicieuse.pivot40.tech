@@ -1,3 +1,4 @@
+import { PaymentError, classifyProviderFailure, fromHttpFailure, type MobileProvider } from './paymentErrors.js';
 import axios, { AxiosInstance } from 'axios';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -96,16 +97,15 @@ class SingPayService {
       const { data } = await this.client.post<SingPayRawResponse>(endpoint, payload);
 
       if (data?.status?.success === false) {
-        throw new Error(
-          `SingPay: ${data.status.message ?? 'Erreur inconnue'} (code: ${data.status.result_code ?? data.status.code})`
-        );
+        // SingPay répond parfois HTTP 200 avec l'échec dans le corps (ex. « Moov gateway error: 502 Bad Gateway »).
+        throw classifyProviderFailure(data.status.message, data.status.result_code ?? data.status.code, dto.provider);
       }
 
       // L'ID de polling est dans data.transaction.id (ex: "916dcb70-08b3"), pas _id
       const txnId = data?.transaction?.id ?? data?.transaction?._id;
       return { ...data, transaction_id: txnId } as unknown as SingPayPaymentResponse;
     } catch (error) {
-      throw this.handleApiError(error, 'initiateMobileMoneyPayment');
+      throw this.handleApiError(error, 'initiateMobileMoneyPayment', dto.provider);
     }
   }
 
@@ -352,21 +352,20 @@ class SingPayService {
     }
   }
 
-  private handleApiError(error: unknown, context: string): Error {
-    if (axios.isAxiosError(error)) {
-      const status = error.response?.status;
-      const data = error.response?.data as Record<string, unknown> | undefined;
-      const message = (data?.message as string) || error.message;
-      switch (status) {
-        case 400: return new Error(`Requête invalide (${context}): ${message}`);
-        case 401: return new Error('Authentification SingPay échouée. Vérifiez SINGPAY_API_KEY et SINGPAY_API_SECRET.');
-        case 402: return new Error('Solde insuffisant sur le portefeuille SingPay.');
-        case 404: return new Error(`Endpoint SingPay introuvable (${context}) — vérifiez SINGPAY_API_BASE_URL.`);
-        case 429: return new Error('Limite de requêtes SingPay atteinte. Réessayez dans quelques secondes.');
-        case 503: return new Error('Service SingPay temporairement indisponible.');
-        default:  return new Error(`Erreur SingPay ${status} (${context}): ${message}`);
-      }
+  // Les détails techniques sont journalisés ; l'erreur renvoyée porte un message prévu pour le client (voir paymentErrors.ts).
+  private handleApiError(error: unknown, context: string, provider?: MobileProvider): Error {
+    if (error instanceof PaymentError) {
+      logger.error(`[SingPay] ${context} : ${error.kind}`, { detail: error.detail });
+      return error;
     }
+    if (axios.isAxiosError(error)) {
+      const data = error.response?.data as Record<string, unknown> | undefined;
+      const raw = (data?.message as string) || error.message;
+      const failure = fromHttpFailure(error.response?.status, error.code, raw, provider);
+      logger.error(`[SingPay] ${context} : ${failure.kind}`, { detail: failure.detail });
+      return failure;
+    }
+    logger.error(`[SingPay] ${context} : erreur inattendue`, { message: error instanceof Error ? error.message : String(error) });
     return error instanceof Error ? error : new Error(String(error));
   }
 }

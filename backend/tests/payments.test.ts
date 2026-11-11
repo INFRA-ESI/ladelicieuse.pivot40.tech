@@ -27,6 +27,7 @@ vi.mock('../models/Settings.model.js', () => ({ default: {}, ZONES_DEFAULT: [] }
 
 const { default: paymentRouter } = await import('../routes/payment.routes.js');
 const { signQuote } = await import('../services/quote.service.js');
+const { PaymentError, unavailableError } = await import('../services/paymentErrors.js');
 
 const app = express();
 app.use(express.json());
@@ -74,6 +75,49 @@ describe('POST /payments/singpay/init — le montant vient du devis', () => {
     const res = await post('/singpay/init', { ...mobile, orderId: 'ORDER-1', quote: `${h}.${forged}.${s}` });
     expect(res.status).toBe(400);
     expect(initTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /payments/singpay/init — pannes et refus de l'opérateur", () => {
+  const body = { method: 'mobile_money', provider: 'moov', phone: '066123456', orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) };
+
+  it("passerelle Moov en panne : 503, message clair, code PROVIDER_UNAVAILABLE, rien d'enregistré", async () => {
+    initTransaction.mockRejectedValueOnce(unavailableError('moov', 'Moov gateway error: 502 Bad Gateway (code: 502)'));
+    const res = await post('/singpay/init', body);
+    const out = (await res.json()) as { success: boolean; error: string; code: string };
+    expect(res.status).toBe(503);
+    expect(out).toMatchObject({ success: false, code: 'PROVIDER_UNAVAILABLE' });
+    expect(out.error).toMatch(/Moov Money est momentanément indisponible/);
+    expect(JSON.stringify(out)).not.toMatch(/gateway|502|SingPay/i);
+    expect(saveTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refus de l'opérateur (solde) : 400 avec son message", async () => {
+    initTransaction.mockRejectedValueOnce(new PaymentError('Solde insuffisant', 'rejected'));
+    const res = await post('/singpay/init', body);
+    expect(res.status).toBe(400);
+    expect(await json(res)).toMatchObject({ success: false, error: 'Solde insuffisant' });
+  });
+
+  it('erreur inattendue (texte brut de SingPay) : 500 générique, le texte brut ne sort jamais', async () => {
+    initTransaction.mockRejectedValueOnce(new Error('SingPay: Moov gateway error: 502 Bad Gateway (code: 502)'));
+    const res = await post('/singpay/init', body);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toMatch(/gateway|502|SingPay/i);
+  });
+
+  it('carte bancaire, passerelle en panne : 503 aussi', async () => {
+    initiateCardPayment.mockRejectedValueOnce(unavailableError(undefined, 'HTTP 502'));
+    const res = await post('/singpay/card', { orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) });
+    expect(res.status).toBe(503);
+    expect((await res.json() as { code: string }).code).toBe('PROVIDER_UNAVAILABLE');
+  });
+
+  it('carte bancaire, erreur inattendue : 500 générique', async () => {
+    initiateCardPayment.mockRejectedValueOnce(new Error('connect ECONNREFUSED 10.0.0.9:443'));
+    const res = await post('/singpay/card', { orderId: 'ORDER-1', quote: quoteFor('ORDER-1', 2500) });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain('10.0.0.9');
   });
 });
 

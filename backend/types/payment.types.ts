@@ -67,6 +67,8 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   message?: string;
   error?: string;
+  /** Code lisible par le site : PROVIDER_UNAVAILABLE (réessayer plus tard) ou PAYMENT_REJECTED. */
+  code?: string;
 }
 
 export interface PaymentInitiatedResponse {

@@ -1,3 +1,4 @@
+import { PaymentError } from '../services/paymentErrors.js';
 import { Request, Response, NextFunction } from 'express';
 import { singPayService } from '../services/singpay.service.js';
 import { sendPaymentNotification } from '../services/whatsapp.service.js';
@@ -78,11 +79,15 @@ export const initPayment = async (
         amount, orderId, method, phone, provider, customerName, customerEmail, description,
       });
     } catch (singpayError) {
-      const message = singpayError instanceof Error
-        ? singpayError.message
-        : "Erreur lors de l'initialisation du paiement.";
-      logger.error('[SingPay] Erreur initTransaction', { message });
-      res.status(400).json({ success: false, error: message });
+      // Panne ou refus de l'opérateur : message prévu pour le client, code HTTP qui dit la vérité (503 = réessayer plus tard).
+      if (singpayError instanceof PaymentError) {
+        logger.error('[SingPay] Paiement non initié', { kind: singpayError.kind, detail: singpayError.detail });
+        res.status(singpayError.httpStatus).json({ success: false, error: singpayError.message, code: singpayError.code });
+        return;
+      }
+      // Validation interne (numéro absent…) : message déjà rédigé pour le client. Le reste ne sort jamais tel quel.
+      logger.error('[SingPay] Erreur initTransaction', { message: singpayError instanceof Error ? singpayError.message : String(singpayError) });
+      res.status(500).json({ success: false, error: "Le paiement n'a pas pu être lancé. Réessayez dans quelques instants." });
       return;
     }
 
@@ -154,9 +159,13 @@ export const initCardPayment = async (
 
     res.json({ success: true, data: { link: result.link, exp: result.exp, reference: result.reference } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erreur paiement carte.';
-    logger.error('[SingPay Card]', { message });
-    res.status(400).json({ success: false, error: message });
+    if (error instanceof PaymentError) {
+      logger.error('[SingPay Card]', { kind: error.kind, detail: error.detail });
+      res.status(error.httpStatus).json({ success: false, error: error.message, code: error.code });
+      return;
+    }
+    logger.error('[SingPay Card]', { message: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ success: false, error: "Le paiement par carte n'a pas pu être lancé. Réessayez dans quelques instants." });
   }
 };
 
@@ -179,7 +188,7 @@ export const checkPayment = async (
     } catch (singpayError) {
       const message = singpayError instanceof Error ? singpayError.message : 'Erreur de vérification.';
       logger.error('[SingPay] Erreur checkTransaction', { message });
-      res.status(400).json({ success: false, error: message });
+      res.status(singpayError instanceof PaymentError ? singpayError.httpStatus : 400).json({ success: false, error: message });
       return;
     }
 
