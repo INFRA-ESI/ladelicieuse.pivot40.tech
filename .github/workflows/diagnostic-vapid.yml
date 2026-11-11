@@ -1,0 +1,56 @@
+name: Diagnostic VAPID (lecture seule)
+
+# Vérifie, sans rien modifier ni afficher de valeur secrète, que les notifications push sont correctement configurées
+# sur le serveur : variables présentes, clé privée qui correspond à la clé publique, valeur servie par l'API.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    name: Diagnostic VAPID
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Lire la configuration push du serveur
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.IP_SERVER }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE_PRIVATE_KEY }}
+          port: ${{ secrets.PORT || '22' }}
+          script: |
+            set -e
+            dossier_de() { docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$1" 2>/dev/null || true; }
+            D="${{ secrets.FOLDER }}"
+            if [ ! -f "$D/.env" ]; then D=$(dossier_de la-delicieuse); fi
+            B="$D/backend"
+            if [ ! -f "$B/.env" ]; then B=$(dossier_de ladelicieuse-backend); fi
+
+            valeur() { grep -E "^$1=" "$B/.env" | head -1 | cut -d= -f2- | sed -E "s/[\"'[:space:]]//g"; }
+            for nom in VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_EMAIL; do
+              v=$(valeur "$nom")
+              if [ -n "$v" ]; then echo "backend/.env : $nom présent (${#v} caractères)"; else echo "backend/.env : $nom ABSENT"; fi
+            done
+
+            echo "--- Conteneur en cours d'exécution ---"
+            echo "Démarré le : $(docker inspect -f '{{.State.StartedAt}}' ladelicieuse-backend)"
+            docker exec ladelicieuse-backend node -e "
+              const c = require('crypto');
+              const pub = process.env.VAPID_PUBLIC_KEY || '';
+              const priv = process.env.VAPID_PRIVATE_KEY || '';
+              console.log('conteneur : VAPID_PUBLIC_KEY ' + (pub ? 'présent' : 'ABSENT') + ', VAPID_PRIVATE_KEY ' + (priv ? 'présent' : 'ABSENT') + ', VAPID_EMAIL ' + (process.env.VAPID_EMAIL || '(défaut : EMAIL_USER)').replace(/^(mailto:).*/, '\$1…'));
+              if (!pub || !priv) process.exit(0);
+              const e = c.createECDH('prime256v1');
+              e.setPrivateKey(Buffer.from(priv, 'base64url'));
+              const derivee = e.getPublicKey().toString('base64url');
+              console.log('la clé privée correspond à la clé publique : ' + (derivee === pub ? 'OUI' : 'NON'));
+            "
+
+            echo "--- Clé servie aux navigateurs ---"
+            servie=$(curl -fsS http://127.0.0.1:5402/api/notifications/push/vapid-key | sed -E 's/.*"publicKey":"([^"]+)".*/\1/')
+            if [ "$servie" = "$(valeur VAPID_PUBLIC_KEY)" ]; then echo "l'API sert bien la clé publique du .env"; else echo "ATTENTION : la clé servie diffère du .env (conteneur non recréé depuis la modification ?)"; fi
+
+            echo "--- Journal de l'API (alertes VAPID) ---"
+            n=$(docker logs --tail 500 ladelicieuse-backend 2>&1 | grep -ci "VAPID absentes\|VAPID non configuré" || true)
+            echo "alertes « VAPID » dans les 500 dernières lignes : $n"
