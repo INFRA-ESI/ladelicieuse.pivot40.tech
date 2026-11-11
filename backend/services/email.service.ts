@@ -1097,3 +1097,56 @@ export async function sendOrderConfirmationEmail(to: string, order: OrderEmailDa
     text:    `Merci ${order.nom} !\n\nCommande n° ${order.numero} reçue.\n\nArticles :\n${itemsText}\n\nSous-total : ${fmt(order.sousTotal)}\nFrais de livraison : ${order.fraisLivraison > 0 ? fmt(order.fraisLivraison) : 'Offert'}\nTotal : ${fmt(order.total)}\n\nLivraison : ${COMMANDE_LABELS[order.modeCommande] || order.modeCommande}\nPaiement : ${PAIEMENT_LABELS[order.modePaiement] || order.modePaiement}\n\nSuivez votre commande : ${frontendUrl}/mon-compte\n\n© ${new Date().getFullYear()} La Délicieuse Diète · Libreville, Gabon`,
   });
 }
+
+// ── Alerte équipe : nouvelle commande (secours quand aucun appareil n'a pu recevoir le push) ──────────────────────
+
+export interface StaffOrderEmailData {
+  numero:       string;
+  clientNom:    string;
+  telephone:    string;
+  total:        number;
+  modeCommande: string;
+  adresse?:     string;
+  items:        { nom: string; qty: number }[];
+}
+
+export async function sendNewOrderStaffEmail(to: string, order: StaffOrderEmailData): Promise<void> {
+  const frontendUrl = primaryFrontendUrl() ?? 'http://localhost:5100';
+  const pickup = order.modeCommande === 'sur_place';
+  const modeLabel = pickup ? 'Retrait sur place' : 'Livraison';
+  const lines = order.items.map(i => `${i.qty} × ${i.nom}`);
+  const total = fmt(order.total);
+
+  const rows = `
+    ${header('Nouvelle commande')}
+    <tr>
+      <td class="email-body" style="padding:44px 48px;">
+        <p style="margin:0 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:400;color:${C.textDark};">
+          Commande ${escapeHtml(order.numero)}
+        </p>
+        <p style="margin:0 0 20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.9;color:${C.textMid};">
+          <strong style="color:${C.textDark};">${escapeHtml(order.clientNom)}</strong> · ${escapeHtml(order.telephone)}<br>
+          ${escapeHtml(modeLabel)}${order.adresse && !pickup ? ' · ' + escapeHtml(order.adresse) : ''}<br>
+          Total : <strong style="color:${C.textDark};">${escapeHtml(total)}</strong>
+        </p>
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.8;color:${C.textMid};">
+          ${lines.map(escapeHtml).join('<br>')}
+        </p>
+
+        ${divider()}
+
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:${C.textMid};">
+          <a href="${frontendUrl}/admin/commandes" style="color:${C.primary};">Ouvrir les commandes</a>
+        </p>
+      </td>
+    </tr>
+    ${footer()}`;
+
+  await getTransporter().sendMail({
+    from:    `"La Délicieuse Diète · Commandes" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Nouvelle commande ${order.numero} · ${total}`,
+    html:    wrapper(rows, `${order.clientNom} · ${total} · ${modeLabel}`),
+    text:    `Nouvelle commande ${order.numero}\n\n${order.clientNom} · ${order.telephone}\n${modeLabel}${order.adresse && !pickup ? ' · ' + order.adresse : ''}\nTotal : ${total}\n\n${lines.join('\n')}\n\nOuvrir les commandes : ${frontendUrl}/admin/commandes`,
+  });
+}

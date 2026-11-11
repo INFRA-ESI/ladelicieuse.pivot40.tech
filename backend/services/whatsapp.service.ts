@@ -1,3 +1,4 @@
+import { isPickup } from './orderNotifications.js';
 import axios from 'axios';
 import { logger } from '../config/logger.js';
 
@@ -114,7 +115,9 @@ function buildStatusMessage(
   customerName: string,
   newStatus: string,
   note?: string,
+  mode?: unknown,
 ): string {
+  const pickup = isPickup(mode);
   const ref  = orderId.slice(-8).toUpperCase();
   const name = prenom(customerName);
 
@@ -127,14 +130,36 @@ function buildStatusMessage(
       titre: 'En cours de préparation',
       corps: `C'est parti ! Votre commande *#${ref}* est *en cours de préparation*.\n\nNos cuisiniers travaillent avec soin pour vous offrir le meilleur.\n\n_Patience, la fraîcheur se mérite !_`,
     },
-    prete: {
-      titre: 'Prête — Livraison imminente !',
-      corps: `Votre commande *#${ref}* est *prête* et notre livreur prend la route !\n\nRestez disponible, il arrive bientôt. La fraîcheur est garantie jusqu'à votre porte.`,
-    },
-    livree: {
-      titre: 'Commande livrée !',
-      corps: `Votre commande *#${ref}* a bien été *livrée*.\n\nNous espérons vous faire passer un délicieux moment. Régalez-vous bien !\n\n_Votre avis compte — dites-nous ce que vous avez pensé de votre repas._`,
-    },
+    prete: pickup
+      ? {
+          titre: 'Prête — à retirer sur place',
+          corps: `Votre commande *#${ref}* est *prête* !
+
+Vous pouvez venir la récupérer sur place dès maintenant. La fraîcheur est garantie.`,
+        }
+      : {
+          titre: 'Prête — Livraison imminente !',
+          corps: `Votre commande *#${ref}* est *prête* et notre livreur prend la route !
+
+Restez disponible, il arrive bientôt. La fraîcheur est garantie jusqu'à votre porte.`,
+        },
+    livree: pickup
+      ? {
+          titre: 'Commande retirée',
+          corps: `Votre commande *#${ref}* a bien été *retirée*.
+
+Merci de votre visite. Régalez-vous bien !
+
+_Votre avis compte — dites-nous ce que vous avez pensé de votre repas._`,
+        }
+      : {
+          titre: 'Commande livrée !',
+          corps: `Votre commande *#${ref}* a bien été *livrée*.
+
+Nous espérons vous faire passer un délicieux moment. Régalez-vous bien !
+
+_Votre avis compte — dites-nous ce que vous avez pensé de votre repas._`,
+        },
     annulee: {
       titre: 'Commande annulée',
       corps: `Votre commande *#${ref}* a été *annulée*.\n\n${note ? `_Motif : ${note}_\n\n` : ''}Nous sommes désolés pour la gêne occasionnée. N'hésitez pas à repasser commande quand vous le souhaitez.`,
@@ -275,9 +300,10 @@ export async function sendStatusNotification(
   customerName: string,
   newStatus: string,
   note?: string,
+  mode?: unknown,
 ): Promise<void> {
   if (!phone) return;
-  const msg = buildStatusMessage(orderId, customerName, newStatus, note);
+  const msg = buildStatusMessage(orderId, customerName, newStatus, note, mode);
   const sent = await sendMessage(normalizePhone(phone), msg);
   if (!sent) logger.info(`[WhatsApp] Statut non envoyé pour ${orderId} -> ${newStatus}`);
 }

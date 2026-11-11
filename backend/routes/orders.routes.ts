@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { toGabonMobile } from '../utils/gabonPhone.js';
+import { alertStaffNewOrder } from '../services/staffAlerts.js';
+import { statusNotification, CLIENT_ORDERS_URL } from '../services/orderNotifications.js';
 import Order from '../models/Order.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
 import { notifyOrderCreated, notifyOrderStatus, notifyOrderUpdated } from '../services/realtime.service.js';
@@ -266,6 +268,8 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
     }
 
     notifyOrderCreated(order);
+    // Équipe : push sur ses appareils, e-mail si aucun n'a pu le recevoir. Sans attendre, et sans jamais faire échouer la commande.
+    void alertStaffNewOrder(order).catch(e => logger.error('[Alerte équipe] échec', { message: (e as Error).message }));
     res.status(201).json({ success: true, data: order });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Erreur création commande', error: (error as Error).message });
@@ -280,6 +284,9 @@ router.patch('/:id/status', verifyJWT, async (req: Request, res: Response): Prom
     if (!order) { res.status(404).json({ success: false, message: 'Commande introuvable' }); return; }
 
     const prev = order.statut;
+    // Même statut renvoyé (double clic, deux onglets) : rien à enregistrer ni à notifier, sinon le client recevrait
+    // deux fois le même message.
+    if (prev === statut) { res.json({ success: true, data: order }); return; }
     order.statut = statut;
     order.historique.push({ statut, date: new Date(), note, par: par || 'Admin' });
     await order.save();
@@ -291,22 +298,15 @@ router.patch('/:id/status', verifyJWT, async (req: Request, res: Response): Prom
     const userId = order.userId ? String(order.userId) : null;
 
     // WhatsApp — changement de statut
-    sendStatusNotification(phone, order.numero, name, statut, note)
+    sendStatusNotification(phone, order.numero, name, statut, note, order.modeCommande)
       .catch(e => logger.error('[WhatsApp] status notification failed', { error: (e as Error).message }));
 
-    // Push — changement de statut
+    // Push — changement de statut, au propriétaire du compte seulement (jamais aux appareils de l'équipe), avec le texte
+    // du mode de réception. Un tag par commande : la notification d'un nouvel état remplace la précédente.
     if (userId) {
-      const PUSH_MESSAGES: Record<string, { title: string; body: string }> = {
-        confirmee:      { title: 'Commande confirmée',       body: `Commande #${order.numero.slice(-8).toUpperCase()} confirmée.` },
-        en_preparation: { title: 'En préparation',           body: 'Nos cuisiniers préparent votre commande.' },
-        prete:          { title: 'Livraison en route',        body: 'Votre livreur prend la route !' },
-        livree:         { title: 'Commande livrée',           body: 'Régalez-vous !' },
-        annulee:        { title: 'Commande annulée',          body: note || 'Votre commande a été annulée.' },
-        remboursee:     { title: 'Remboursement en cours',    body: 'Votre remboursement est en traitement.' },
-      };
-      const pushMsg = PUSH_MESSAGES[statut];
+      const pushMsg = statusNotification(statut, order.modeCommande, order.numero, note);
       if (pushMsg) {
-        sendPushToUser(userId, { ...pushMsg, url: '/commandes' })
+        sendPushToUser(userId, { ...pushMsg, url: CLIENT_ORDERS_URL, tag: `order-${String(order._id)}` })
           .catch(e => logger.error('[Push] status notification failed', { error: (e as Error).message }));
       }
     }

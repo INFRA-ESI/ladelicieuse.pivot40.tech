@@ -19,10 +19,13 @@ const transactionQuery = vi.fn();
 vi.mock('../config/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../routes/auth.routes.js', () => ({ verifyJWT: (_q: unknown, _r: unknown, next: () => void) => next() }));
 vi.mock('../models/HistoryLog.model.js', () => ({ logAction: vi.fn(async () => undefined) }));
-vi.mock('../services/fidelite.service.js', () => ({ attributerPoints: vi.fn() }));
+vi.mock('../services/fidelite.service.js', () => ({ attributerPoints: vi.fn(async () => ({ pointsGagnes: 0, soldeApres: 0, tierAvant: 'bronze', tierApres: 'bronze' })) }));
 vi.mock('../services/whatsapp.service.js', () => ({ sendStatusNotification: vi.fn(async () => undefined), sendFideliteNotification: vi.fn(async () => undefined) }));
 vi.mock('../services/realtime.service.js', () => realtime);
-vi.mock('../services/push.service.js', () => ({ sendPushToUser: vi.fn(async () => undefined) }));
+const push = vi.hoisted(() => ({ sendPushToUser: vi.fn(async () => ({ sent: 1, failed: 0, removed: 0 })) }));
+const staff = vi.hoisted(() => ({ alertStaffNewOrder: vi.fn(async () => ({ push: 1, email: false })) }));
+vi.mock('../services/push.service.js', () => push);
+vi.mock('../services/staffAlerts.js', () => staff);
 vi.mock('../services/email.service.js', () => ({ sendOrderConfirmationEmail: vi.fn(async () => undefined) }));
 
 vi.mock('../models/Order.model.js', () => ({
@@ -294,6 +297,86 @@ describe('POST /orders — validation du client', () => {
     const { quote } = await getQuote();
     expect((await post('/orders', { quote, client: { telephone: '077000000' } })).status).toBe(400);
     expect((await post('/orders', { quote, client: { nom: 'Awa' } })).status).toBe(400);
+  });
+});
+
+describe("notifications — push client par statut et par mode de réception, alerte de l'équipe", () => {
+  const patch = (path: string, body: unknown) =>
+    fetch(`${base()}${path}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const seed = (extra: Record<string, unknown> = {}) => {
+    const order = {
+      _id: 'order-1', numero: 'LDD-0001', statut: 'en_attente', userId: 'user-123', total: 4000, modeCommande: 'livraison',
+      client: { nom: 'Awa', telephone: '+24177000000' }, historique: [] as unknown[],
+      save: vi.fn(async () => undefined), ...extra,
+    };
+    stored.set('order-1', order);
+    return order;
+  };
+
+  it.each([
+    ['livraison', 'prete', 'Commande prête, livraison imminente'],
+    ['sur_place', 'prete', 'Commande prête à retirer'],
+    ['livraison', 'livree', 'Commande livrée'],
+    ['sur_place', 'livree', 'Commande retirée'],
+    ['livraison', 'en_preparation', 'En préparation'],
+    ['sur_place', 'confirmee', 'Commande confirmée'],
+    ['livraison', 'annulee', 'Commande annulée'],
+    ['sur_place', 'remboursee', 'Remboursement en cours'],
+  ])('mode %s, statut %s : le propriétaire reçoit « %s », lien /mon-compte, tag par commande', async (mode, statut, title) => {
+    seed({ modeCommande: mode });
+    expect((await patch('/orders/order-1/status', { statut })).status).toBe(200);
+    expect(push.sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(push.sendPushToUser).toHaveBeenCalledWith('user-123', expect.objectContaining({ title, url: '/mon-compte', tag: 'order-order-1' }));
+  });
+
+  it("commande d'invité (sans compte) : pas de push, jamais", async () => {
+    seed({ userId: undefined });
+    expect((await patch('/orders/order-1/status', { statut: 'prete' })).status).toBe(200);
+    expect(push.sendPushToUser).not.toHaveBeenCalled();
+  });
+
+  it("le même statut renvoyé deux fois : rien n'est enregistré, aucun push en double", async () => {
+    const order = seed({ statut: 'prete' });
+    const res = await patch('/orders/order-1/status', { statut: 'prete' });
+    expect(res.status).toBe(200);
+    expect(order.save).not.toHaveBeenCalled();
+    expect(push.sendPushToUser).not.toHaveBeenCalled();
+    expect(realtime.notifyOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it('push en échec : le changement de statut réussit quand même', async () => {
+    push.sendPushToUser.mockRejectedValueOnce(new Error('service push indisponible'));
+    seed();
+    const res = await patch('/orders/order-1/status', { statut: 'confirmee' });
+    expect(res.status).toBe(200);
+    expect(realtime.notifyOrderStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("nouvelle commande : l'équipe est alertée une fois, avec la commande créée", async () => {
+    const { quote } = await getQuote();
+    expect((await post('/orders', { quote, client, modePaiement: 'especes' })).status).toBe(201);
+    expect(staff.alertStaffNewOrder).toHaveBeenCalledTimes(1);
+    expect(staff.alertStaffNewOrder).toHaveBeenCalledWith(expect.objectContaining({ numero: 'CMD-1' }));
+  });
+
+  it("même devis renvoyé : pas de seconde alerte pour l'équipe", async () => {
+    const { quote } = await getQuote();
+    await post('/orders', { quote, client, modePaiement: 'especes' });
+    await post('/orders', { quote, client, modePaiement: 'especes' });
+    expect(staff.alertStaffNewOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('commande refusée : aucune alerte', async () => {
+    await post('/orders', { client, modePaiement: 'especes' });
+    expect(staff.alertStaffNewOrder).not.toHaveBeenCalled();
+  });
+
+  it("alerte de l'équipe en échec : la commande est quand même créée", async () => {
+    staff.alertStaffNewOrder.mockRejectedValueOnce(new Error('boom'));
+    const { quote } = await getQuote();
+    const res = await post('/orders', { quote, client, modePaiement: 'especes' });
+    expect(res.status).toBe(201);
+    expect(saved).toHaveLength(1);
   });
 });
 

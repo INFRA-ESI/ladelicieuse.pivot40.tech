@@ -3,6 +3,7 @@ import { sendWhatsAppNotification, sendWhatsAppBroadcast } from '../services/wha
 import { sendPushBroadcast } from '../services/push.service.js';
 import { sendBroadcastEmail } from '../services/email.service.js';
 import { verifyJWT } from './auth.routes.js';
+import { requireClient, type ClientRequest } from '../middleware/clientAuth.js';
 import { rateLimiter, memoryRateLimiter } from '../middleware/rateLimiter.js';
 import { mapWithConcurrency } from '../utils/concurrency.js';
 import PushSubscription from '../models/PushSubscription.model.js';
@@ -125,50 +126,101 @@ router.post('/email/broadcast', verifyJWT, async (req: Request, res: Response): 
 // ── GET /api/notifications/stats — Admin ─────────────────────────────────────
 router.get('/stats', verifyJWT, async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [pushCount, recentFidelite] = await Promise.all([
-      PushSubscription.countDocuments(),
+    const [pushCount, staffDevices, recentFidelite] = await Promise.all([
+      PushSubscription.countDocuments({ audience: { $ne: 'admin' } }),
+      PushSubscription.countDocuments({ audience: 'admin' }),
       FideliteTransaction.countDocuments({ type: 'gain', createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }),
     ]);
-    res.json({ success: true, data: { pushSubscriptions: pushCount, fideliteGainsToday: recentFidelite } });
+    res.json({ success: true, data: { pushSubscriptions: pushCount, staffDevices, fideliteGainsToday: recentFidelite } });
   } catch (err: unknown) {
     res.status(500).json({ success: false, message: (err as Error).message });
   }
 });
 
-// ── POST /api/notifications/push/subscribe ────────────────────────────────────
-router.post('/push/subscribe', memoryRateLimiter(20, 900, 'push-subscribe'), async (req: Request, res: Response): Promise<void> => {
-  const { subscription, userId, userAgent } = req.body as {
-    subscription: { endpoint: string; keys: { p256dh: string; auth: string } };
-    userId?: string;
-    userAgent?: string;
-  };
+// ── Abonnements push ──────────────────────────────────────────────────────────
+// L'identité vient TOUJOURS de la session (jeton vérifié par le serveur), jamais du corps de la requête : un navigateur
+// ne peut pas s'abonner aux notifications d'un autre compte. Deux audiences, deux routes, deux jetons :
+//   - clients : /push/subscribe          (jeton client)  → notifications de leurs commandes
+//   - équipe  : /push/admin/subscribe    (jeton admin)   → alertes de nouvelles commandes
 
-  if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-    res.status(400).json({ success: false, message: 'Subscription invalide' });
+const BASE64URL = /^[A-Za-z0-9_-]+={0,2}$/;
+
+interface ValidSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
+
+function parseSubscription(body: unknown): ValidSubscription | null {
+  const sub = (body as { subscription?: { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } } | undefined)?.subscription;
+  if (!sub || typeof sub.endpoint !== 'string' || sub.endpoint.length > 2048) return null;
+  let url: URL;
+  try { url = new URL(sub.endpoint); } catch { return null; }
+  if (url.protocol !== 'https:') return null; // les services push sont tous en HTTPS
+  const { p256dh, auth } = sub.keys ?? {};
+  if (typeof p256dh !== 'string' || typeof auth !== 'string') return null;
+  if (p256dh.length > 200 || auth.length > 100 || !BASE64URL.test(p256dh) || !BASE64URL.test(auth)) return null;
+  return { endpoint: sub.endpoint, keys: { p256dh, auth } };
+}
+
+const userAgentOf = (req: Request): string => String(req.headers['user-agent'] ?? '').slice(0, 300);
+
+async function saveSubscription(
+  req: Request, res: Response, identity: { audience: 'client'; userId: string } | { audience: 'admin' },
+): Promise<void> {
+  const subscription = parseSubscription(req.body);
+  if (!subscription) {
+    res.status(400).json({ success: false, message: 'Abonnement invalide.' });
     return;
   }
-
   try {
+    // Un même appareil ne garde qu'un abonnement (clé : endpoint) : se réabonner met à jour, sans doublon,
+    // et remet le compteur d'échecs à zéro.
     await PushSubscription.findOneAndUpdate(
       { endpoint: subscription.endpoint },
-      { endpoint: subscription.endpoint, keys: subscription.keys, userId: userId ?? undefined, userAgent: userAgent ?? '' },
-      { upsert: true, new: true },
+      {
+        $set: {
+          keys: subscription.keys,
+          audience: identity.audience,
+          userAgent: userAgentOf(req),
+          failures: 0,
+          ...(identity.audience === 'client' ? { userId: identity.userId } : {}),
+        },
+        ...(identity.audience === 'admin' ? { $unset: { userId: '' } } : {}),
+      },
+      { upsert: true },
     );
     res.json({ success: true });
   } catch (err: unknown) {
     logger.error('[Push] subscribe error', { error: (err as Error).message });
     res.status(500).json({ success: false, message: 'Erreur abonnement push' });
   }
-});
+}
 
-// ── DELETE /api/notifications/push/unsubscribe ────────────────────────────────
-router.delete('/push/unsubscribe', memoryRateLimiter(20, 900, 'push-subscribe'), async (req: Request, res: Response): Promise<void> => {
-  const { endpoint } = req.body as { endpoint: string };
+router.post('/push/subscribe', memoryRateLimiter(20, 900, 'push-subscribe'), requireClient,
+  (req: Request, res: Response) => saveSubscription(req, res, { audience: 'client', userId: (req as ClientRequest).clientId as string }));
+
+router.post('/push/admin/subscribe', memoryRateLimiter(20, 900, 'push-subscribe'), verifyJWT,
+  (req: Request, res: Response) => saveSubscription(req, res, { audience: 'admin' }));
+
+// Se désabonner : seulement ses propres abonnements (le client ne touche pas à ceux d'un autre compte ni de l'équipe).
+router.delete('/push/unsubscribe', memoryRateLimiter(20, 900, 'push-subscribe'), requireClient, async (req: Request, res: Response): Promise<void> => {
+  const endpoint = (req.body as { endpoint?: unknown })?.endpoint;
+  if (typeof endpoint !== 'string' || !endpoint) { res.status(400).json({ success: false, message: 'Endpoint requis.' }); return; }
   try {
-    await PushSubscription.deleteOne({ endpoint });
+    await PushSubscription.deleteOne({ endpoint, audience: { $ne: 'admin' }, userId: (req as ClientRequest).clientId });
     res.json({ success: true });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    logger.error('[Push] unsubscribe error', { error: (err as Error).message });
+    res.status(500).json({ success: false, message: 'Erreur désabonnement push' });
+  }
+});
+
+router.delete('/push/admin/unsubscribe', memoryRateLimiter(20, 900, 'push-subscribe'), verifyJWT, async (req: Request, res: Response): Promise<void> => {
+  const endpoint = (req.body as { endpoint?: unknown })?.endpoint;
+  if (typeof endpoint !== 'string' || !endpoint) { res.status(400).json({ success: false, message: 'Endpoint requis.' }); return; }
+  try {
+    await PushSubscription.deleteOne({ endpoint, audience: 'admin' });
+    res.json({ success: true });
+  } catch (err: unknown) {
+    logger.error('[Push] admin unsubscribe error', { error: (err as Error).message });
+    res.status(500).json({ success: false, message: 'Erreur désabonnement push' });
   }
 });
 
