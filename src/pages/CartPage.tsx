@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PageIntro, { introPrimaryClass, introSecondaryClass } from '@/components/PageIntro';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ls, ss } from '@/lib/storage';
@@ -18,6 +18,8 @@ import {
 import { PaymentMethods } from '@/components/payment';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
+import { BRAND, escapeHtml, printDocument } from '@/lib/printDocument';
+import { isSlotAvailable, toLocalDateStr } from '@/lib/deliverySlots';
 
 const CART_HERO = 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=1920&q=80';
 
@@ -81,17 +83,6 @@ const DELIVERY_SLOTS_DEFAULT: string[] = [
 
 // ─── Date / heure ─────────────────────────────────────────────────────────────
 
-// Retourne la date locale au format YYYY-MM-DD sans conversion UTC.
-// toISOString() convertit en UTC et peut retourner le jour précédent pour les
-// fuseaux UTC+ (ex: minuit local = 23h00 UTC J-1 en UTC+1 Gabon).
-function toLocalDateStr(d: Date): string {
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-  ].join('-');
-}
-
 function getNextDays(count = 5) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -105,15 +96,6 @@ function getNextDays(count = 5) {
            : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }),
     };
   });
-}
-
-function isSlotAvailable(slot: string, selectedDate: string): boolean {
-  const today = toLocalDateStr(new Date());
-  if (selectedDate !== today) return true;
-  const hour = parseInt(slot.replace('h', ''), 10);
-  const slotTime = new Date();
-  slotTime.setHours(hour, 0, 0, 0);
-  return slotTime.getTime() > Date.now() + 60 * 60 * 1000;
 }
 
 function formatDeliveryDate(dateStr: string): string {
@@ -223,9 +205,21 @@ function DeliverySlotPicker({
   const dateLabel    = mode === 'livraison' ? 'Date de livraison' : 'Date de retrait';
   const timeLabel    = mode === 'livraison' ? 'Heure de livraison' : 'Heure de retrait';
   const confirmLabel = mode === 'livraison' ? 'Livraison prévue' : 'Retrait prévu';
+
+  // L'heure avance pendant que le client remplit le formulaire : les créneaux se grisent au fil du temps,
+  // et un créneau déjà choisi qui devient trop proche est retiré.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (date && time && !isSlotAvailable(time, date, now)) onTimeChange('');
+  }, [date, time, now, onTimeChange]);
+
   return (
     <>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <div>
           <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
             <Calendar className="w-3.5 h-3.5" /> {dateLabel}
@@ -246,23 +240,43 @@ function DeliverySlotPicker({
           <label className="font-body text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
             <Clock className="w-3.5 h-3.5" /> {timeLabel}
           </label>
-          <select
-            value={time}
-            onChange={e => onTimeChange(e.target.value)}
-            disabled={!date}
-            aria-label={timeLabel}
-            className="w-full font-body text-sm px-4 py-3.5 border border-border rounded-xl bg-background outline-none focus:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <option value="">Heure</option>
-            {slots.map(slot => {
-              const available = isSlotAvailable(slot, date);
-              return (
-                <option key={slot} value={slot} disabled={!available}>
-                  {slot}{!available ? ' (passé)' : ''}
-                </option>
-              );
-            })}
-          </select>
+          {!date ? (
+            <p className="font-body text-xs text-muted-foreground px-1 py-3.5 border border-dashed border-border rounded-xl text-center">
+              Choisissez d'abord la date
+            </p>
+          ) : (
+            <div role="radiogroup" aria-label={timeLabel} className="grid grid-cols-3 gap-2">
+              {slots.map(slot => {
+                const available = isSlotAvailable(slot, date, now);
+                const selected = time === slot;
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={!available}
+                    title={available ? undefined : "Ce créneau n'est plus disponible"}
+                    onClick={() => onTimeChange(slot)}
+                    className={`font-body text-sm py-2.5 rounded-xl border-2 transition-colors ${
+                      !available
+                        ? 'bg-muted text-muted-foreground/50 border-transparent line-through cursor-not-allowed'
+                        : selected
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background hover:border-primary/40'
+                    }`}
+                  >
+                    {slot}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {date && !slots.some(slot => isSlotAvailable(slot, date, now)) && (
+            <p className="font-body text-xs text-amber-700 mt-2">
+              Plus de créneau disponible ce jour-là : choisissez une autre date.
+            </p>
+          )}
         </div>
       </div>
       {date && time && (
@@ -339,7 +353,6 @@ export default function CartPage() {
 
   const [clearConfirm, setClearConfirm] = useState(false);
 
-  const receiptRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -589,10 +602,12 @@ export default function CartPage() {
       if (!deliveryLocation.trim())  { setInfoError('Veuillez décrire précisément votre lieu de livraison.'); return; }
       if (!deliveryDate)             { setInfoError('Veuillez choisir une date de livraison.'); return; }
       if (!deliveryTime)             { setInfoError('Veuillez choisir un créneau horaire.'); return; }
+      if (!isSlotAvailable(deliveryTime, deliveryDate)) { setDeliveryTime(''); setInfoError("Ce créneau n'est plus disponible, choisissez-en un autre."); return; }
     }
     if (deliveryMode === 'retrait') {
       if (!deliveryDate)             { setInfoError('Veuillez choisir une date de retrait.'); return; }
       if (!deliveryTime)             { setInfoError('Veuillez choisir une heure de retrait.'); return; }
+      if (!isSlotAvailable(deliveryTime, deliveryDate)) { setDeliveryTime(''); setInfoError("Cette heure n'est plus disponible, choisissez-en une autre."); return; }
     }
     // Le serveur vérifie le panier contre le catalogue AVANT le paiement et le signe : s'il refuse (prix
     // modifié, article retiré), rien n'a encore été payé et on le dit tout de suite.
@@ -652,25 +667,46 @@ export default function CartPage() {
   };
 
   const handlePrint = () => {
-    if (!receiptRef.current) return;
-    const html = receiptRef.current.innerHTML;
-    const win = window.open('', '_blank', 'width=600,height=800');
-    if (!win) return;
-    win.document.write(`
-      <html><head><title>Reçu — La Délicieuse Diète</title>
-      <style>
-        body { font-family: Georgia, serif; padding: 32px; color: #1a1a1a; }
-        h1 { font-size: 24px; margin-bottom: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-        th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #888; padding-bottom: 8px; border-bottom: 1px solid #eee; }
-        td { padding: 8px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
-        .total td { font-weight: bold; font-size: 15px; border-top: 2px solid #1a1a1a; border-bottom: none; }
-        .pts { background: #fef9ee; border: 1px solid #f5e0a0; padding: 10px; border-radius: 8px; font-size: 12px; color: #92400e; margin-top: 12px; }
-      </style></head>
-      <body>${html}</body></html>
-    `);
-    win.document.close();
-    win.print();
+    const short = confirmedOrderId.slice(-8).toUpperCase();
+    const pts = calcPoints(confirmedTotal);
+    const fee = confirmedDelivery?.mode === 'livraison' ? (confirmedDelivery.fee ?? 0) : 0;
+    const where = confirmedDelivery
+      ? confirmedDelivery.mode === 'livraison'
+        ? `${confirmedDelivery.address ?? ''} · ${formatDeliveryDate(confirmedDelivery.date ?? '')} à ${confirmedDelivery.time ?? ''}`
+        : (confirmedDelivery.address ?? '')
+      : '';
+    const info = (label: string, value: string) =>
+      `<div><div class="doc-label">${label}</div><div style="font-size:13px">${escapeHtml(value)}</div></div>`;
+    const rows = confirmedItems.map(item => `<tr>
+        <td>${escapeHtml(item.name)}</td>
+        <td class="r">${item.quantity}</td>
+        <td class="r">${escapeHtml(formatPrice(item.totalPrice * item.quantity))}</td>
+      </tr>`).join('');
+    const body = `
+      <div class="receipt-info">
+        ${info('Référence', `#${short}`)}${info('Date et heure', confirmedAt)}
+        ${info('Client', fullName || nom)}${info('Paiement', confirmedMode)}
+        ${where ? `<div style="grid-column:1/-1">${info(confirmedDelivery?.mode === 'livraison' ? 'Livraison' : 'Retrait', where)}</div>` : ''}
+      </div>
+      <div class="table-wrap section"><table>
+        <thead><tr><th>Article</th><th class="r" style="width:60px">Qté</th><th class="r" style="width:120px">Prix</th></tr></thead>
+        <tbody>${rows}${fee > 0 ? `<tr><td colspan="2">Frais de livraison</td><td class="r">${escapeHtml(formatPrice(fee))}</td></tr>` : ''}</tbody>
+      </table></div>
+      <div class="receipt-total"><span>Total</span><strong>${escapeHtml(formatPrice(confirmedTotal))}</strong></div>
+      ${pts > 0 && user ? `<div class="note"><strong>+${pts} points fidélité</strong> crédités sur cette commande</div>` : ''}`;
+    const css = `
+      .receipt-info{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin-bottom:24px}
+      .receipt-total{display:flex;justify-content:space-between;align-items:center;background:#1c4028;color:#fff;padding:14px 18px;margin-bottom:20px;text-transform:uppercase;letter-spacing:2px;font-size:11px}
+      .receipt-total strong{font-family:Georgia,'Times New Roman',serif;font-size:20px;letter-spacing:0;text-transform:none;font-weight:400}`;
+    printDocument({
+      title: `Reçu #${short} — ${BRAND.name}`,
+      label: 'Document',
+      heading: 'Reçu de commande',
+      lines: [`#${short}`],
+      body,
+      css,
+      footerRight: 'Merci pour votre confiance',
+    }).then(opened => { if (!opened) toast.error('Autorisez les popups pour imprimer'); });
   };
 
   // ── Confirmation ─────────────────────────────────────────────────────────────
@@ -758,7 +794,7 @@ export default function CartPage() {
                 </button>
               </div>
 
-              <div ref={receiptRef} className="px-6 py-5">
+              <div className="px-6 py-5">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-5 pb-5 border-b border-border">
                   <div>
                     <p className="font-body text-xs text-muted-foreground">Référence</p>

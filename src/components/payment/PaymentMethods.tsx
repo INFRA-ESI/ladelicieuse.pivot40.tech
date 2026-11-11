@@ -17,12 +17,14 @@ const PAYMENT_OPTIONS = [
     label: 'Airtel Money',
     sub:   'Mobile Money · Gabon via SingPay',
     icon:  Smartphone,
+    logo:  '/payment/airtel-money.png',
   },
   {
     value: 'moov',
     label: 'Moov Money',
     sub:   'Mobile Money · Gabon via SingPay',
     icon:  Smartphone,
+    logo:  '/payment/moov-money.png',
   },
   {
     value: 'cash',
@@ -33,6 +35,25 @@ const PAYMENT_OPTIONS = [
 ] as const;
 
 export type PaymentValue = typeof PAYMENT_OPTIONS[number]['value'];
+
+// Logo officiel de l'opérateur (fichier déposé dans public/payment/) ; tant qu'il est absent, l'icône générique s'affiche.
+function MethodBadge({ logo, label, selected, Icon }: {
+  logo?: string; label: string; selected: boolean; Icon: React.ElementType;
+}) {
+  const [broken, setBroken] = useState(false);
+  if (logo && !broken) {
+    return (
+      <div className="w-12 h-12 flex items-center justify-center flex-shrink-0 bg-white border border-border overflow-hidden">
+        <img src={logo} alt={label} width={48} height={48} loading="lazy" decoding="async" onError={() => setBroken(true)} className="w-full h-full object-contain" />
+      </div>
+    );
+  }
+  return (
+    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${selected ? 'bg-primary' : 'bg-primary/10'}`}>
+      <Icon className={`w-5 h-5 ${selected ? 'text-white' : 'text-primary'}`} />
+    </div>
+  );
+}
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_MAX         = 72;
@@ -294,11 +315,7 @@ export const PaymentMethods: React.FC<PaymentMethodsProps> = ({
               onClick={() => resetForm(selected ? '' : opt.value as PaymentValue)}
               className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left"
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
-                selected ? 'bg-primary' : 'bg-primary/10'
-              }`}>
-                <Icon className={`w-5 h-5 ${selected ? 'text-white' : 'text-primary'}`} />
-              </div>
+              <MethodBadge logo={'logo' in opt ? opt.logo : undefined} label={opt.label} selected={selected} Icon={Icon} />
 
               <div className="flex-1 min-w-0">
                 <p className={`font-body text-sm font-semibold leading-tight transition-colors ${
