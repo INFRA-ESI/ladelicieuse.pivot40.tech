@@ -1,3 +1,4 @@
+import { evaluatePromo, PromoError } from './promoCodes.js';
 import { createHmac } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
@@ -28,6 +29,9 @@ export interface QuotePayload {
   items: QuoteLine[];
   sousTotal: number;
   fraisLivraison: number;
+  /** Réduction d'un code promo, déjà déduite du total. Absente = pas de code. */
+  remise?: number;
+  codePromo?: string;
   total: number;
   modeCommande: 'livraison' | 'sur_place' | 'emporter';
   /** Absent = devis de commande. Un devis d'abonnement ne peut jamais servir à créer une commande, et inversement. */
@@ -208,18 +212,32 @@ export async function buildQuote(input: {
   items: RawLine[];
   fraisLivraison: number;
   modeCommande: QuotePayload['modeCommande'];
+  /** Code promo saisi par le client : vérifié ici, jamais cru sur parole. */
+  codePromo?: string;
 }): Promise<QuotePayload> {
   const items = await priceLines(input.items);
   await checkDeliveryFee(input.fraisLivraison, input.modeCommande);
   // kind = 'commande' explicite : ce devis ne pourra pas servir à créer un abonnement.
   const sousTotal = items.reduce((s, i) => s + i.prix * i.qty, 0);
+
+  // La réduction porte sur les articles (pas sur la livraison) et entre dans le total signé, donc dans le montant débité.
+  let promo: Awaited<ReturnType<typeof evaluatePromo>> | null = null;
+  if (input.codePromo && input.codePromo.trim()) {
+    try {
+      promo = await evaluatePromo(input.codePromo, sousTotal);
+    } catch (error) {
+      if (error instanceof PromoError) throw new QuoteError(error.message);
+      throw error;
+    }
+  }
   return {
     kind: 'commande',
     orderId: input.orderId,
     items,
     sousTotal,
     fraisLivraison: input.fraisLivraison,
-    total: sousTotal + input.fraisLivraison,
+    ...(promo ? { remise: promo.remise, codePromo: promo.code } : {}),
+    total: sousTotal - (promo?.remise ?? 0) + input.fraisLivraison,
     modeCommande: input.modeCommande,
   };
 }

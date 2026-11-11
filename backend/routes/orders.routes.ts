@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { toGabonMobile } from '../utils/gabonPhone.js';
 import { alertStaffNewOrder } from '../services/staffAlerts.js';
+import { consumePromo } from '../services/promoCodes.js';
 import { statusNotification, CLIENT_ORDERS_URL } from '../services/orderNotifications.js';
 import Order from '../models/Order.model.js';
 import { logAction } from '../models/HistoryLog.model.js';
@@ -33,6 +34,7 @@ const QuoteRequestSchema = z.object({
   orderId: z.string().min(1).max(128),
   modeCommande: z.enum(['livraison', 'sur_place', 'emporter']),
   fraisLivraison: z.number().min(0).max(10_000),
+  codePromo: z.string().max(40).optional(),
   items: z.array(z.object({
     nom: z.string().min(1).max(200),
     qty: z.number().int().min(1).max(100),
@@ -135,18 +137,21 @@ function legacyPricing(body: Record<string, unknown>): Omit<QuotePayload, 'order
   const sousTotal      = items.reduce((s, i) => s + i.prix * i.qty, 0);
   const fraisLivraison = Math.min(Math.max(0, Number(body.fraisLivraison) || 0), 10_000);
   const modeCommande   = (['livraison', 'sur_place', 'emporter'] as const).find(m => m === body.modeCommande) ?? 'livraison';
-  return { items, sousTotal, fraisLivraison, total: sousTotal + fraisLivraison, modeCommande };
+  return { items, sousTotal, fraisLivraison, remise: 0, codePromo: '', total: sousTotal + fraisLivraison, modeCommande };
 }
 
 // ── POST /api/orders/quote — Devis : vérifie le panier contre le catalogue et le signe ─────────
 // Appelé avant le paiement. Refus (400) = le panier est périmé ; rien n'a encore été payé.
 router.post('/quote', memoryRateLimiter(60, 900, 'order-quote'), validate(QuoteRequestSchema), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { orderId, items, fraisLivraison, modeCommande } = req.body as z.infer<typeof QuoteRequestSchema>;
-    const payload = await buildQuote({ orderId, items: items as RawLine[], fraisLivraison, modeCommande });
+    const { orderId, items, fraisLivraison, modeCommande, codePromo } = req.body as z.infer<typeof QuoteRequestSchema>;
+    const payload = await buildQuote({ orderId, items: items as RawLine[], fraisLivraison, modeCommande, codePromo });
     res.json({
       success: true,
-      data: { quote: signQuote(payload), total: payload.total, sousTotal: payload.sousTotal, fraisLivraison: payload.fraisLivraison },
+      data: {
+        quote: signQuote(payload), total: payload.total, sousTotal: payload.sousTotal, fraisLivraison: payload.fraisLivraison,
+        remise: payload.remise ?? 0, codePromo: payload.codePromo ?? '',
+      },
     });
   } catch (error) {
     if (error instanceof QuoteError) { res.status(400).json({ success: false, message: error.message }); return; }
@@ -193,6 +198,8 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
     const pricing = quote ?? legacyPricing(body);
     if (typeof pricing === 'string') { res.status(400).json({ success: false, message: pricing }); return; }
     const { items: lines, sousTotal, fraisLivraison, total, modeCommande } = pricing;
+    const remise = pricing.remise ?? 0;
+    const codePromo = pricing.codePromo ?? '';
 
     const MODES_PAIEMENT = ['mobile_money', 'carte', 'especes'];
     const modePaiement   = MODES_PAIEMENT.includes(String(body.modePaiement)) ? String(body.modePaiement) : 'especes';
@@ -233,6 +240,8 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
       paiementVerifie,
       sousTotal,
       fraisLivraison,
+      remise,
+      codePromo,
       total,
       datelivraison:    datelivraison ?? null,
       creneauLivraison: body.creneauLivraison ? String(body.creneauLivraison).trim().slice(0, 10) : null,
@@ -249,6 +258,13 @@ router.post('/', memoryRateLimiter(20, 900, 'order-create'), optionalClient, asy
       throw saveError;
     }
     await logAction(`Commande ${order.numero} créée`, 'commande', String(client.nom).trim());
+
+    // Le code promo est compté une fois la commande enregistrée (un renvoi du même devis ne le consomme pas deux fois).
+    if (codePromo) {
+      consumePromo(codePromo)
+        .then(counted => { if (!counted) logger.warn('[Promo] plafond atteint entre le devis et la commande : commande honorée', { code: codePromo }); })
+        .catch(e => logger.error('[Promo] comptage impossible', { message: (e as Error).message }));
+    }
 
     // Confirmation email — sans attendre la fin (n'impacte pas la réponse)
     if (client.email) {

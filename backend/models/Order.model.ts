@@ -53,6 +53,9 @@ export interface IOrder extends Document {
   modePaiement: ModePaiement;
   sousTotal: number;
   fraisLivraison: number;
+  /** Réduction d'un code promo (déjà déduite du total) et le code utilisé. */
+  remise: number;
+  codePromo: string;
   total: number;
   datelivraison?: string;
   creneauLivraison?: string;
@@ -109,6 +112,8 @@ const OrderSchema = new Schema<IOrder>(
     modePaiement:  { type: String, enum: ['mobile_money','carte','especes'], default: 'especes' },
     sousTotal:        { type: Number, required: true, min: 0 },
     fraisLivraison:   { type: Number, default: 0, min: 0 },
+    remise:           { type: Number, default: 0, min: 0 },
+    codePromo:        { type: String, default: '' },
     total:            { type: Number, required: true, min: 0 },
     datelivraison:    { type: String, default: null },
     creneauLivraison: { type: String, default: null },

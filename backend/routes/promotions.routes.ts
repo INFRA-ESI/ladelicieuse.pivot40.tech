@@ -1,3 +1,6 @@
+import { evaluatePromo, PromoError, validatePromoInput } from '../services/promoCodes.js';
+import { memoryRateLimiter } from '../middleware/rateLimiter.js';
+import { logger } from '../config/logger.js';
 import { Router, Request, Response } from 'express';
 import Promotion from '../models/Promotion.model.js';
 import PromoCode from '../models/PromoCode.model.js';
@@ -77,34 +80,28 @@ router.get('/codes', verifyJWT, async (_req: Request, res: Response): Promise<vo
   }
 });
 
-// ── POST /api/promotions/codes/validate — Valider un code (front client) ─────
-router.post('/codes/validate', async (req: Request, res: Response): Promise<void> => {
+// ── POST /api/promotions/codes/validate — Valider un code (panier du client) ─
+// Renvoie la réduction que ce code donnerait sur ce montant d'articles. Indicatif : le montant réellement débité est
+// recalculé par le serveur au moment du devis (voir /api/orders/quote). Limité en débit : on ne devine pas un code par essais.
+router.post('/codes/validate', memoryRateLimiter(20, 900, 'promo-validate'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { code, montant } = req.body as { code: string; montant: number };
-    const promo = await PromoCode.findOne({ code: code.toUpperCase(), active: true });
-
-    if (!promo) { res.status(404).json({ success: false, message: 'Code invalide' }); return; }
-    if (promo.expiry && promo.expiry < new Date()) { res.status(400).json({ success: false, message: 'Code expiré' }); return; }
-    if (promo.maxUtilisations && promo.utilisations >= promo.maxUtilisations) {
-      res.status(400).json({ success: false, message: 'Code épuisé' }); return;
-    }
-    if (promo.minCommande && montant < promo.minCommande) {
-      res.status(400).json({ success: false, message: `Commande minimum : ${promo.minCommande} XAF` }); return;
-    }
-
-    const remise = promo.typeReduction === 'pourcentage'
-      ? (montant * promo.reduction) / 100
-      : promo.reduction;
-
-    res.json({ success: true, data: { reduction: remise, type: promo.typeReduction, code: promo.code } });
+    const { code, montant } = (req.body ?? {}) as { code?: unknown; montant?: unknown };
+    if (typeof montant !== 'number') { res.status(400).json({ success: false, message: 'Montant invalide' }); return; }
+    const applied = await evaluatePromo(code, montant);
+    // `reduction` = montant de la réduction en FCFA (nom conservé pour les clients déjà déployés).
+    res.json({ success: true, data: { reduction: applied.remise, remise: applied.remise, type: applied.type, code: applied.code } });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Erreur validation code', error: (error as Error).message });
+    if (error instanceof PromoError) { res.status(error.status).json({ success: false, message: error.message }); return; }
+    logger.error('[Promo] validation impossible', { message: (error as Error).message });
+    res.status(500).json({ success: false, message: 'Erreur validation code' });
   }
 });
 
 // ── POST /api/promotions/codes ────────────────────────────────────────────────
 router.post('/codes', verifyJWT, async (req: Request, res: Response): Promise<void> => {
   try {
+    const invalid = validatePromoInput(req.body ?? {});
+    if (invalid) { res.status(400).json({ success: false, message: invalid }); return; }
     const promoCode = new PromoCode(req.body);
     await promoCode.save();
     await logAction(`Code promo "${promoCode.code}" créé`, 'promotion', 'Admin');
@@ -117,6 +114,8 @@ router.post('/codes', verifyJWT, async (req: Request, res: Response): Promise<vo
 // ── PATCH /api/promotions/codes/:id ──────────────────────────────────────────
 router.patch('/codes/:id', verifyJWT, async (req: Request, res: Response): Promise<void> => {
   try {
+    const invalid = validatePromoInput(req.body ?? {}, true);
+    if (invalid) { res.status(400).json({ success: false, message: invalid }); return; }
     const promoCode = await PromoCode.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     if (!promoCode) { res.status(404).json({ success: false, message: 'Code introuvable' }); return; }
     res.json({ success: true, data: promoCode });

@@ -19,6 +19,8 @@ import { PaymentMethods } from '@/components/payment';
 import { toast } from 'sonner';
 import Footer from '@/components/Footer';
 import { downloadPdf } from '@/lib/pdfDocument';
+import PromoCodeField from '@/components/PromoCodeField';
+import { usePromoCode } from '@/hooks/usePromoCode';
 import { normalizeGabonPhoneNumber, validateGabonPhoneNumber } from '@/lib/utils';
 import { safeFileName } from '@/lib/downloadFile';
 import { isSlotAvailable, toLocalDateStr } from '@/lib/deliverySlots';
@@ -142,6 +144,7 @@ function buildWhatsAppMessage(
     time?: string;
     fee?: number;
   },
+  promo?: { code: string; remise: number } | null,
 ) {
   const ref       = orderId.slice(-8).toUpperCase();
   const sousTotal = items.reduce((s, i) => s + i.price * i.qty, 0);
@@ -156,6 +159,8 @@ function buildWhatsAppMessage(
     return sub ? `${head}\n${sub}` : head;
   }).join('\n\n');
 
+  const promoLine = promo && promo.remise > 0 ? `Code promo ${promo.code} : -${formatPrice(promo.remise)}
+` : '';
   const deliveryFeeLine = delivery?.mode === 'livraison' && (delivery.fee ?? 0) > 0
     ? `Livraison : ${formatPrice(delivery.fee ?? 0)}\n`
     : '';
@@ -175,6 +180,7 @@ function buildWhatsAppMessage(
     `*#${ref}*\n\n` +
     `${itemLines}\n\n` +
     `Total d'articles : ${formatPrice(sousTotal)} (Qté : ${totalQty})\n` +
+    promoLine +
     deliveryFeeLine +
     `*Total : ${formatPrice(total)}*\n\n` +
     `Client : *${nom}* ${telephone}\n` +
@@ -298,6 +304,7 @@ export default function CartPage() {
   const [pendingOrderId, setPendingOrderId]     = useState('');
   const [confirmedItems, setConfirmedItems]     = useState<typeof items>([]);
   const [confirmedTotal, setConfirmedTotal]     = useState(0);
+  const [confirmedPromo, setConfirmedPromo]     = useState<null | { code: string; remise: number }>(null);
   const [confirmedMode, setConfirmedMode]       = useState('');
   const [confirmedAt, setConfirmedAt]           = useState('');
   const [confirmedDelivery, setConfirmedDelivery] = useState<null | {
@@ -316,6 +323,8 @@ export default function CartPage() {
   // Devis signé par le serveur (prix vérifiés contre le catalogue) : sert au paiement puis à la commande.
   const [quote, setQuote]                 = useState('');
   const [quotedTotal, setQuotedTotal]     = useState<number | null>(null);
+  // Réduction confirmée par le serveur dans le devis (celle qui sera réellement déduite).
+  const [quotedPromo, setQuotedPromo]     = useState<null | { code: string; remise: number }>(null);
   const [quoting, setQuoting]             = useState(false);
 
   // ── Livraison / Retrait ────────────────────────────────────────────────────────
@@ -358,7 +367,7 @@ export default function CartPage() {
       deliveryMode: 'livraison' | 'retrait' | null;
       deliveryDate: string; deliveryTime: string;
       deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
-      deliveryFee: number; orderTotal: number; quote: string;
+      deliveryFee: number; orderTotal: number; quote: string; promoCode: string; remise: number;
     }> = {};
     const savedRaw = ss.get('pending_checkout');
     ss.remove('pending_checkout');
@@ -377,6 +386,8 @@ export default function CartPage() {
           deliveryLocation:  saved.deliveryLocation,
           deliveryFee:    saved.deliveryFee,
           orderTotal:     saved.orderTotal,
+          promoCode:      saved.promoCode,
+          remise:         saved.remise,
           quote:          saved.quote,
         };
       } catch { /* ignore malformed sessionStorage data */ }
@@ -416,7 +427,10 @@ export default function CartPage() {
     return getGroupFee(deliveryZoneGroup, deliveryLocation, zones);
   }, [deliveryMode, deliveryZoneGroup, deliveryLocation, zones]);
 
-  const orderTotal = totalPrice + deliveryFee;
+  // Code promo : réduction indicative sur les articles ; le serveur fixe le montant réel au devis.
+  const promo = usePromoCode(totalPrice);
+  const remise = promo.applied?.remise ?? 0;
+  const orderTotal = Math.max(0, totalPrice - remise) + deliveryFee;
 
   // ── Notifications + finalisation commande ────────────────────────────────────
   const fullName = user
@@ -428,7 +442,7 @@ export default function CartPage() {
     deliveryMode: 'livraison' | 'retrait' | null;
     deliveryDate: string; deliveryTime: string;
     deliveryZoneGroup: ZoneGroup | null; deliveryLocation: string;
-    deliveryFee: number; orderTotal: number; quote: string;
+    deliveryFee: number; orderTotal: number; quote: string; promoCode: string; remise: number;
   }> = {}) => {
     // Capture snapshot immédiatement avant toute opération async
     const itemsSnapshot = [...items];
@@ -447,7 +461,10 @@ export default function CartPage() {
       ? `${_dZoneGroup ?? ''} — ${_dLocation}`.trim()
       : `Sur place — retrait le ${formatDeliveryDate(_dDate)} à ${_dTime}`;
     const _dFee   = ov.deliveryFee  ?? deliveryFee;
-    const _total  = ov.orderTotal   ?? (totalPrice + _dFee);
+    // Total réellement débité : celui du devis signé par le serveur (réduction du code promo comprise).
+    const _total  = ov.orderTotal   ?? quotedTotal ?? (Math.max(0, totalPrice - remise) + _dFee);
+    const _promoCode = ov.promoCode ?? quotedPromo?.code ?? '';
+    const _remise = ov.remise ?? quotedPromo?.remise ?? 0;
     const _name   = [_pre, _nom].filter(Boolean).join(' ') || _nom;
 
     const now     = new Date();
@@ -466,6 +483,7 @@ export default function CartPage() {
     // Afficher l'écran de confirmation immédiatement (optimiste)
     setConfirmedItems(itemsSnapshot);
     setConfirmedTotal(_total);
+    setConfirmedPromo(_promoCode && _remise > 0 ? { code: _promoCode, remise: _remise } : null);
     setConfirmedMode(mode);
     setConfirmedAt(`${dateStr} à ${timeStr}`);
     setConfirmedOrderId(_id);
@@ -562,6 +580,7 @@ export default function CartPage() {
     setPendingOrderId(`ORDER-${Date.now()}`);
     setQuote('');
     setQuotedTotal(null);
+    setQuotedPromo(null);
     setInfoError('');
     setNom(user?.nom ?? '');
     setPrenoms(user?.prenoms ?? '');
@@ -616,6 +635,7 @@ export default function CartPage() {
           orderId: pendingOrderId,
           modeCommande: deliveryMode === 'retrait' ? 'sur_place' : 'livraison',
           fraisLivraison: deliveryFee,
+          ...(promo.applied ? { codePromo: promo.applied.code } : {}),
           items: items.map(i => toOrderLine(i, composeCustomizations(i))),
         }),
       });
@@ -627,11 +647,15 @@ export default function CartPage() {
             ? 'Un article de votre panier doit être mis à jour : retirez-le puis ajoutez-le de nouveau.'
             : json?.message ?? 'Impossible de vérifier votre panier pour le moment. Réessayez.',
         );
+        // Le serveur refuse le code (épuisé, expiré depuis…) : on le retire pour que le client puisse continuer sans.
+        if (promo.applied && /code/i.test(String(json?.message ?? ''))) promo.remove();
         return;
       }
       const verifiedTotal = json.data.total as number;
+      const verifiedPromo = json.data.remise > 0 ? { code: String(json.data.codePromo), remise: Number(json.data.remise) } : null;
       setQuote(json.data.quote);
       setQuotedTotal(verifiedTotal);
+      setQuotedPromo(verifiedPromo);
 
       // Conserve les données de paiement (dont le devis) avant une éventuelle redirection carte
       ss.set('pending_checkout', JSON.stringify({
@@ -645,6 +669,8 @@ export default function CartPage() {
         deliveryLocation,
         deliveryFee,
         orderTotal: verifiedTotal,
+        promoCode: verifiedPromo?.code ?? '',
+        remise: verifiedPromo?.remise ?? 0,
         quote: json.data.quote,
         pendingOrderId,
       }));
@@ -673,6 +699,7 @@ export default function CartPage() {
         : (confirmedDelivery.address ?? '')
       : '';
     const rows = confirmedItems.map(item => [item.name, String(item.quantity), formatPrice(item.totalPrice * item.quantity)]);
+    if (confirmedPromo) rows.push([`Code promo ${confirmedPromo.code}`, '', `-${formatPrice(confirmedPromo.remise)}`]);
     if (fee > 0) rows.push(['Frais de livraison', '', formatPrice(fee)]);
     downloadPdf({
       fileName: `recu-${safeFileName(short)}`,
@@ -709,6 +736,7 @@ export default function CartPage() {
       fullName || nom,
       user?.telephone || telephone,
       confirmedDelivery ?? undefined,
+      confirmedPromo,
     );
     const waUrl = `https://wa.me/${STORE_WHATSAPP}?text=${waMsg}`;
 
@@ -1247,6 +1275,12 @@ export default function CartPage() {
                   <span className="font-body text-sm text-muted-foreground">{totalItems} article{totalItems > 1 ? 's' : ''}</span>
                   <span className="font-body text-xs text-muted-foreground">{formatPrice(totalPrice)}</span>
                 </div>
+                {remise > 0 && promo.applied && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="font-body text-xs text-primary">Code {promo.applied.code}</span>
+                    <span className="font-body text-xs text-primary">− {formatPrice(remise)}</span>
+                  </div>
+                )}
                 {deliveryMode === 'livraison' && deliveryFee > 0 && (
                   <div className="flex items-center justify-between mt-1">
                     <span className="font-body text-xs text-muted-foreground">Livraison ({deliveryZoneGroup})</span>
@@ -1509,6 +1543,8 @@ export default function CartPage() {
                         </motion.div>
                       )}
                     </AnimatePresence>
+
+                    <PromoCodeField promo={promo} />
 
                     {/* Erreur */}
                     {infoError && (
