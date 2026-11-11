@@ -1,4 +1,4 @@
-name: Diagnostic paiement (lecture seule)
+name: Diagnostic SingPay (lecture seule)
 
 # Lit les dernières lignes SingPay du journal de l'API de production, pour voir ce que répond réellement la passerelle.
 # Ne modifie rien. Le journal d'un workflow est public : seules les lignes SingPay sont affichées, numéros masqués.
