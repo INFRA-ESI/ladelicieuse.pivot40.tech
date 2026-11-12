@@ -72,6 +72,11 @@ export interface IMeal extends Document {
   recommande: boolean;
   saisonnier: boolean;
   disponible: boolean;
+  // ─ Ordre d'affichage (catalogue seulement) ───────────────
+  /** Position dans sa catégorie (0 = premier). Absente sur les anciens repas : voir services/displayOrder.ts. */
+  ordre?: number;
+  /** « Le meilleur » de sa catégorie : toujours en première position. Un seul par catégorie. */
+  epinglee: boolean;
   // ─ Logistique ───────────────────────────────────────────────────────────
   date: string | null;
   portions: number;
@@ -141,6 +146,8 @@ const MealSchema = new Schema<IMeal>(
     recommande: { type: Boolean, default: false },
     saisonnier: { type: Boolean, default: false },
     disponible: { type: Boolean, default: true },
+    ordre:      { type: Number, min: 0 },
+    epinglee:   { type: Boolean, default: false },
     date:       { type: String, default: null },
     portions:   { type: Number, default: 1, min: 1 },
     portion:    { type: String, default: '' },

@@ -21,6 +21,10 @@ export interface IIngredient extends Document {
   };
   fournisseurId?: Types.ObjectId;
   actif: boolean;
+  /** Position dans sa catégorie (0 = premier). Absente sur les anciens ingrédients : voir services/displayOrder.ts. */
+  ordre?: number;
+  /** « Le meilleur » de sa catégorie : toujours en première position. Un seul par catégorie. */
+  epinglee: boolean;
   /** Où l'ingrédient est proposé : composeur de salades, repas chauds, ou les deux. */
   usage: 'salade' | 'repas' | 'tous';
   /** Poids (g) d'une portion vendue ; `nutrition` est exprimée pour 100 g. */
@@ -50,6 +54,8 @@ const IngredientSchema = new Schema<IIngredient>(
     },
     fournisseurId: { type: Schema.Types.ObjectId, ref: 'Supplier', default: null },
     actif:         { type: Boolean, default: true },
+    ordre:         { type: Number, min: 0 },
+    epinglee:      { type: Boolean, default: false },
     usage:         { type: String, enum: ['salade', 'repas', 'tous'], default: 'salade' },
     portionGrammes:{ type: Number, min: 1, default: 100 },
   },

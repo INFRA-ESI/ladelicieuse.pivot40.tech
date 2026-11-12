@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import SmartImage from '@/components/SmartImage';
-import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus, Eye, EyeOff } from '@/components/icons';
+import { Plus, Edit2, Trash2, Search, X, AlertTriangle, TrendingUp, Package, ChevronUp, ChevronDown, ImagePlus, Eye, EyeOff, Star } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminGet, adminPost, adminPatch, adminDelete, adminUploadImage } from '@/services/adminApiService';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/admin/TablePagination';
+import DisplayOrderModal from '@/components/admin/DisplayOrderModal';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
@@ -103,6 +104,7 @@ export default function IngredientsPage() {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('Tous');
   const [showForm, setShowForm] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<typeof EMPTY_FORM>({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
@@ -270,10 +272,16 @@ export default function IngredientsPage() {
           <h2 className="font-display text-2xl md:text-3xl text-foreground mb-1">Ingrédients</h2>
           <p className="font-body text-sm text-muted-foreground">{items.length} ingrédients gérés</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-body rounded-md hover:bg-primary/90 shrink-0">
-          <Plus className="w-4 h-4" /> Ajouter
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => setShowOrder(true)}
+            className="flex items-center gap-2 px-4 py-2.5 border border-border text-foreground text-sm font-body rounded-md hover:bg-muted">
+            <Star className="w-4 h-4" /> Ordre d'affichage
+          </button>
+          <button onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-body rounded-md hover:bg-primary/90">
+            <Plus className="w-4 h-4" /> Ajouter
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -500,6 +508,17 @@ export default function IngredientsPage() {
       </div>
 
       <TablePagination {...pagination} onPageChange={pagination.setPage} />
+
+      {showOrder && (
+        <DisplayOrderModal
+          title="Ordre d'affichage des ingrédients"
+          hint="Épinglez le plus commandé de chaque catégorie en première position, puis réglez le reste avec les flèches. C'est l'ordre que voient les clients dans la personnalisation."
+          basePath="/ingredients"
+          categories={categories}
+          initialCategory={catFilter === 'Tous' ? undefined : catFilter}
+          onClose={() => setShowOrder(false)}
+        />
+      )}
 
       {/* Form modal */}
       {showForm && (

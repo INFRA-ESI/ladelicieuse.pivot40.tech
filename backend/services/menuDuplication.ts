@@ -72,8 +72,8 @@ async function cloneMeals(sourceMeals: SourceMeal[], target: string): Promise<Ty
   const docs: Record<string, unknown>[] = [];
   for (const m of sourceMeals) {
     // Rien de l'identité du repas d'origine ne suit : ni _id, ni slug, ni dates de création/modification.
-    const { _id, slug: _slug, createdAt: _c, updatedAt: _u, __v: _v, ...content } = m as Record<string, unknown>;
-    void _id; void _slug; void _c; void _u; void _v;
+    const { _id, slug: _slug, createdAt: _c, updatedAt: _u, __v: _v, ordre: _o, epinglee: _e, ...content } = m as Record<string, unknown>;
+    void _id; void _slug; void _c; void _u; void _v; void _o; void _e;   // un repas daté n'a ni position ni épingle de catalogue
     docs.push({ ...content, slug: await uniqueSlug(m.nom, taken), date: target });
   }
   const inserted = await Meal.insertMany(docs, { ordered: true });

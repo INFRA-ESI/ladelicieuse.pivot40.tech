@@ -3,7 +3,7 @@ import SmartImage from '@/components/SmartImage';
 import {
   Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight,
   Flame, Eye, EyeOff, Search, GripVertical, ImagePlus, Loader2,
-  Send, Globe, BookOpen, CalendarDays, Copy,
+  Send, Globe, BookOpen, CalendarDays, Copy, Star,
 } from '@/components/icons';
 import { toast } from 'sonner';
 import { adminUploadImage, adminGet, adminPost, adminPatch, adminDelete } from '@/services/adminApiService';
@@ -12,6 +12,7 @@ import { adminUploadImage, adminGet, adminPost, adminPatch, adminDelete } from '
 
 // Fenêtre rarement ouverte : chargée à la demande.
 const ReuseMenuDialog = lazy(() => import('@/components/admin/ReuseMenuDialog'));
+const DisplayOrderModal = lazy(() => import('@/components/admin/DisplayOrderModal'));
 
 interface LibIngredient {
   id: string;
@@ -299,6 +300,7 @@ export default function MenuDayPage() {
   const [uploading, setUploading]       = useState(false);
   const fileInputRef                    = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab]       = useState<'menu' | 'catalogue'>('menu');
+  const [showOrder, setShowOrder]       = useState(false);
   const [catalogMeals, setCatalogMeals] = useState<Meal[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [showCatalog, setShowCatalog]   = useState(false);
@@ -693,6 +695,10 @@ export default function MenuDayPage() {
                 <p className="font-body text-sm text-muted-foreground">
                   {catalogMeals.length} repas · {catalogMeals.filter(m => m.disponible).length} visibles sur le site
                 </p>
+                <button type="button" onClick={() => setShowOrder(true)}
+                  className="min-h-11 flex items-center gap-2 px-4 border border-border text-foreground text-sm font-body rounded-md hover:bg-muted">
+                  <Star className="w-4 h-4" /> Ordre d'affichage
+                </button>
               </div>
               <div className="space-y-4">
                 {catalogMeals.map(meal => (
@@ -709,6 +715,18 @@ export default function MenuDayPage() {
             </>
           )}
         </div>
+      )}
+
+      {showOrder && (
+        <Suspense fallback={null}>
+          <DisplayOrderModal
+            title="Ordre d'affichage du catalogue"
+            hint="Épinglez le meilleur jus, plat ou omelette de chaque catégorie en première position, puis réglez le reste avec les flèches. C'est l'ordre que voient les clients sur le site."
+            basePath="/meals"
+            categories={[...new Set(catalogMeals.map(m => m.categorie))].sort((a, b) => a.localeCompare(b))}
+            onClose={() => setShowOrder(false)}
+          />
+        </Suspense>
       )}
 
       {/* ═══ ONGLET MENU DU JOUR ════════════════════════════════════════════════ */}
